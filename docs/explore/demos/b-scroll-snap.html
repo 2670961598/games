@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>方案B：CSS scroll-snap（mandatory 竖向）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; font: 14px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; }
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 9;
+    padding: 6px 10px; font-size: 12px; color: #9fd0ff; background: rgba(0,0,0,.65);
+    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  }
+  #hud b { color: #fff; }
+  .scroller {
+    height: 100dvh; overflow-y: auto; scroll-snap-type: y mandatory;
+    background: #0d0f13; color: #eee; overscroll-behavior-y: contain;
+  }
+  section {
+    height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always;
+    padding: 44px 10px 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  section > h2 { padding: 6px 10px; background: #2a2f3a; border-radius: 8px; font-size: 16px; }
+  section > iframe { flex: 1; width: 100%; border: 0; border-radius: 12px; background: #000; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span>section 数 <b id="secs">0</b></span>
+  <span>iframe 加载次数 <b id="loads">0</b></span>
+  <span>滚出去再滚回来：存活秒数不归零（iframe 不重载）</span>
+</div>
+<div class="scroller" id="scroller"></div>
+<script>
+'use strict';
+function gameSrcdoc(n, hue) {
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' +
+    'html,body{height:100%;margin:0;font:14px/1.7 system-ui,sans-serif;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;gap:8px;background:linear-gradient(160deg,hsl(' + hue + ',55%,22%),hsl(' + hue + ',60%,12%));color:#fff}' +
+    '.g{font-size:22px;font-weight:700}.t{opacity:.85;font-size:12px}' +
+    '</style></head><body>' +
+    '<div class="g">🎮 游戏 #' + n + '</div>' +
+    '<div class="t" id="ts"></div><div class="t" id="alive"></div>' +
+    '<script>' +
+    'var t0=Date.now();' +
+    'document.getElementById("ts").textContent="iframe 加载于 "+new Date(t0).toLocaleTimeString();' +
+    'var s=0;setInterval(function(){s++;document.getElementById("alive").textContent="存活 "+s+" 秒（重载归零）"},1000);' +
+    '<\/script></body></html>';
+}
+
+const scroller = document.getElementById('scroller');
+const hudSecs = document.getElementById('secs');
+const hudLoads = document.getElementById('loads');
+let next = 0, loads = 0, loading = new Set();
+
+function appendSection() {
+  const i = next++;
+  const s = document.createElement('section');
+  s.dataset.i = i;
+  const h = document.createElement('h2');
+  h.textContent = '游戏 #' + i + ' ｜ scroll-snap';
+  const f = document.createElement('iframe');
+  f.title = 'game';
+  f.dataset.i = i;                 // 先不赋 srcdoc：懒加载
+  s.append(h, f);
+  scroller.appendChild(s);
+  hudSecs.textContent = next;
+  return s;
+}
+
+// 懒加载：section 进入视口 ±150% 才把 srcdoc 赋上；赋上之后永不移除（关键策略）
+const io = new IntersectionObserver(entries => {
+  for (const en of entries) {
+    const f = en.target.querySelector('iframe');
+    if (en.isIntersecting && !loading.has(f)) {
+      loading.add(f);
+      const i = +f.dataset.i;
+      loads++; hudLoads.textContent = loads; // 计（重）加载动作次数（本方案：每屏一生成，永不重载）
+      f.srcdoc = gameSrcdoc(i, (i * 47) % 360);
+    }
+    // 滚出视口：什么都不做（iframe 保留在 DOM → 不重载）
+    if (en.isIntersecting && +en.target.dataset.i >= next - 2) {
+      appendSection(); appendSection(); appendSection(); // 无限 feed：接近尾部就补
+    }
+  }
+}, { root: scroller, rootMargin: '150% 0px' });
+
+for (let k = 0; k < 4; k++) appendSection();
+scroller.querySelectorAll('section').forEach(s => io.observe(s));
+// 后补的 section 也要观察：用 MutationObserver 兜底（极简写法）
+new MutationObserver(muts => {
+  for (const m of muts) for (const n of m.addedNodes) if (n.tagName === 'SECTION') io.observe(n);
+}).observe(scroller, { childList: true });
+</script>
+</body>
+</html>

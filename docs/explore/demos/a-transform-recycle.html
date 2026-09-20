@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>方案A：transform 手动回收（3 容器轮转）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; font: 14px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; }
+  #viewport { position: relative; height: 100dvh; overflow: hidden; background: #0d0f13; color: #eee; touch-action: none; }
+  #inner { position: relative; height: 100%; will-change: transform; }
+  .pane {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100dvh;
+    padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .pane > h2 { position: relative; z-index: 6; padding: 6px 10px; background: #2a2f3a; border-radius: 8px; font-size: 16px; }
+  .pane > iframe { flex: 1; width: 100%; border: 0; border-radius: 12px; background: #000; }
+  /* 手势层：盖住 iframe 接管拖动（否则 pointer 事件被 iframe 吞掉）。
+     代价：iframe 收不到任何点击——真实产品需要"激活/退出"机制，见主文档 §5.2 */
+  .gesture {
+    position: absolute; inset: 0; z-index: 5; cursor: grab;
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 18px;
+  }
+  .gesture span { background: rgba(0,0,0,.55); color: #fff; padding: 4px 12px; border-radius: 999px; font-size: 12px; }
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 9;
+    padding: 6px 10px; font-size: 12px; color: #9fd0ff; background: rgba(0,0,0,.65);
+    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  }
+  #hud b { color: #fff; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span>当前 <b id="cur">0</b></span>
+  <span>iframe（重）加载次数 <b id="loads">0</b></span>
+  <span>↓/↑ 或拖动翻页</span>
+</div>
+<div id="viewport">
+  <div id="inner"></div>
+</div>
+<script>
+'use strict';
+// —— 假游戏内容：iframe 内显示"加载时间 + 存活秒数"，重载则归零，肉眼可辨 ——
+function gameSrcdoc(n, hue) {
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' +
+    'html,body{height:100%;margin:0;font:14px/1.7 system-ui,sans-serif;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;gap:8px;background:linear-gradient(160deg,hsl(' + hue + ',55%,22%),hsl(' + hue + ',60%,12%));color:#fff}' +
+    '.g{font-size:22px;font-weight:700}.t{opacity:.85;font-size:12px}' +
+    '</style></head><body>' +
+    '<div class="g">🎮 游戏 #' + n + '</div>' +
+    '<div class="t" id="ts"></div><div class="t" id="alive"></div>' +
+    '<script>' +
+    'var t0=Date.now();' +
+    'document.getElementById("ts").textContent="iframe 加载于 "+new Date(t0).toLocaleTimeString();' +
+    'var s=0;setInterval(function(){s++;document.getElementById("alive").textContent="存活 "+s+" 秒（重载归零）"},1000);' +
+    '<\/script></body></html>';
+}
+
+const inner = document.getElementById('inner');
+const hudCur = document.getElementById('cur');
+const hudLoads = document.getElementById('loads');
+let loads = 0, currentIndex = 0, panes = [];
+
+function makePane() {
+  const p = document.createElement('div');
+  p.className = 'pane';
+  p.innerHTML = '<h2></h2><iframe title="game"></iframe><div class="gesture"><span>拖动我翻页（iframe 被手势层盖住）</span></div>';
+  inner.appendChild(p);
+  return p;
+}
+
+// 把逻辑屏 i 的内容绑到某个 pane。重绑 = 重设 srcdoc = iframe 必然重载（本方案核心代价）
+function assign(pane, i) {
+  pane.logicIndex = i;
+  pane.querySelector('h2').textContent = i < 0 ? '（没有上一屏）' : '游戏 #' + i + ' ｜ transform 轮转';
+  pane.style.transform = 'translateY(' + (i * 100) + 'dvh)';
+  const f = pane.querySelector('iframe');
+  f.removeAttribute('srcdoc');
+  if (i < 0) return;
+  loads++; hudLoads.textContent = loads; // 计（重）加载动作次数（含轮转重绑）
+  f.srcdoc = gameSrcdoc(i, (i * 47) % 360);
+}
+
+// 轮转：滑出视口的 pane 改绑到即将进入的另一端
+function layout() {
+  const want = [currentIndex - 1, currentIndex, currentIndex + 1];
+  const idle = panes.filter(p => !want.includes(p.logicIndex));
+  const need = want.filter(i => i >= 0 && !panes.some(p => p.logicIndex === i));
+  idle.forEach((p, k) => { if (need[k] !== undefined) assign(p, need[k]); else assign(p, -1); });
+}
+
+panes = [makePane(), makePane(), makePane()];
+assign(panes[0], -1); assign(panes[1], 0); assign(panes[2], 1);
+hudCur.textContent = currentIndex;
+
+// —— 手势：pointer 事件手动驱动 transform（跟手性完全取决于这段 JS） ——
+const viewport = document.getElementById('viewport');
+let dragging = false, startY = 0, dy = 0, lastY = 0, lastT = 0, vel = 0;
+
+viewport.addEventListener('pointerdown', e => {
+  dragging = true; startY = lastY = e.clientY; dy = 0; vel = 0; lastT = performance.now();
+  inner.style.transition = 'none';
+  viewport.setPointerCapture(e.pointerId);
+});
+viewport.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  dy = e.clientY - startY;
+  inner.style.transform = 'translateY(calc(' + (-currentIndex * 100) + 'dvh + ' + dy + 'px))';
+  const now = performance.now();
+  vel = (e.clientY - lastY) / Math.max(1, now - lastT); // px/ms
+  lastY = e.clientY; lastT = now;
+});
+function release() {
+  if (!dragging) return;
+  dragging = false;
+  let dir = 0;
+  if (dy < -60 || vel < -0.5) dir = 1;
+  else if (dy > 60 || vel > 0.5) dir = -1;
+  if (currentIndex + dir < 0) dir = 0;
+  inner.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1)';
+  inner.style.transform = 'translateY(' + (-(currentIndex + dir) * 100) + 'dvh)';
+  currentIndex += dir;
+  hudCur.textContent = currentIndex;
+}
+viewport.addEventListener('pointerup', release);
+viewport.addEventListener('pointercancel', release);
+inner.addEventListener('transitionend', layout);
+
+// 键盘辅助（桌面观察用）
+addEventListener('keydown', e => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const dir = e.key === 'ArrowDown' ? 1 : -1;
+  if (currentIndex + dir < 0) return;
+  inner.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1)';
+  inner.style.transform = 'translateY(' + (-(currentIndex + dir) * 100) + 'dvh)';
+  currentIndex += dir; hudCur.textContent = currentIndex;
+});
+</script>
+</body>
+</html>

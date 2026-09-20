@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>方案C：虚拟列表（只渲染 ±1 屏）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; font: 14px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif; }
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 9;
+    padding: 6px 10px; font-size: 12px; color: #9fd0ff; background: rgba(0,0,0,.65);
+    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  }
+  #hud b { color: #fff; }
+  .scroller { position: relative; height: 100dvh; overflow-y: auto; background: #0d0f13; color: #eee; }
+  #spacer { width: 100%; }
+  .panel {
+    position: absolute; left: 0; width: 100%; height: 100dvh;
+    padding: 44px 10px 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .panel > h2 { padding: 6px 10px; background: #2a2f3a; border-radius: 8px; font-size: 16px; }
+  .panel > iframe { flex: 1; width: 100%; border: 0; border-radius: 12px; background: #000; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span>当前 <b id="cur">0</b></span>
+  <span>挂载面板 <b id="mounted">0</b></span>
+  <span>iframe（重）加载次数 <b id="loads">0</b></span>
+  <span>滑远再回来：存活秒数归零（iframe 被卸载重载）</span>
+</div>
+<div class="scroller" id="scroller"><div id="spacer"></div></div>
+<script>
+'use strict';
+function gameSrcdoc(n, hue) {
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' +
+    'html,body{height:100%;margin:0;font:14px/1.7 system-ui,sans-serif;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;gap:8px;background:linear-gradient(160deg,hsl(' + hue + ',55%,22%),hsl(' + hue + ',60%,12%));color:#fff}' +
+    '.g{font-size:22px;font-weight:700}.t{opacity:.85;font-size:12px}' +
+    '</style></head><body>' +
+    '<div class="g">🎮 游戏 #' + n + '</div>' +
+    '<div class="t" id="ts"></div><div class="t" id="alive"></div>' +
+    '<script>' +
+    'var t0=Date.now();' +
+    'document.getElementById("ts").textContent="iframe 加载于 "+new Date(t0).toLocaleTimeString();' +
+    'var s=0;setInterval(function(){s++;document.getElementById("alive").textContent="存活 "+s+" 秒（重载归零）"},1000);' +
+    '<\/script></body></html>';
+}
+
+const TOTAL = 20;                    // 演示用固定长度（真实为无限流）
+const scroller = document.getElementById('scroller');
+const spacer = document.getElementById('spacer');
+const hudCur = document.getElementById('cur');
+const hudMounted = document.getElementById('mounted');
+const hudLoads = document.getElementById('loads');
+let loads = 0, mounted = new Map();  // logicIndex -> panel
+
+function vh() { return scroller.clientHeight; }
+spacer.style.height = (TOTAL * 100) + 'dvh';
+
+// 只保留当前 ±1：卸载 = remove() → iframe 销毁 → 回来必重载（本方案核心代价）
+function update() {
+  const idx = Math.max(0, Math.min(TOTAL - 1, Math.round(scroller.scrollTop / vh())));
+  hudCur.textContent = idx;
+  const want = new Set([idx - 1, idx, idx + 1]);
+  for (const [i, p] of mounted) {
+    if (!want.has(i)) { p.remove(); mounted.delete(i); }
+  }
+  for (const i of want) {
+    if (i < 0 || i >= TOTAL || mounted.has(i)) continue;
+    const p = document.createElement('div');
+    p.className = 'panel';
+    p.style.top = 'calc(' + (i * 100) + 'dvh + ' + 0 + 'px)';
+    p.innerHTML = '<h2>游戏 #' + i + ' ｜ 虚拟列表</h2><iframe title="game"></iframe>';
+    loads++; hudLoads.textContent = loads; // 每次挂载都重建 iframe（本方案核心代价）
+    p.querySelector('iframe').srcdoc = gameSrcdoc(i, (i * 47) % 360);
+    scroller.appendChild(p);
+    mounted.set(i, p);
+  }
+  hudMounted.textContent = mounted.size;
+}
+
+let raf = 0;
+scroller.addEventListener('scroll', () => {
+  if (raf) return;
+  raf = requestAnimationFrame(() => { raf = 0; update(); });
+}, { passive: true });
+update();
+</script>
+</body>
+</html>
