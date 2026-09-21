@@ -183,7 +183,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname.startsWith('/games/') || pathname === '/games') {
-      const file = await resolveStatic(pathname, GAMES_DIR, false)
+      // 挂载前缀 /games 剥掉后再映射进 games 根目录（否则拼成 games/games/...）
+      const gamesPath = pathname.replace(/^\/games/, '') || '/'
+      const file = await resolveStatic(gamesPath, GAMES_DIR, false)
       if (!file) return sendText(req, res, 404, `not found: ${pathname}`)
       return await serveFile(req, res, pathname, file)
     }

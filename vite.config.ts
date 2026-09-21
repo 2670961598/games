@@ -8,6 +8,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: true, // 手机同局域网真机调试（移动端 only 平台）
     port: 5173,
     strictPort: true,
     proxy: {
