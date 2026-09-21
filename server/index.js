@@ -8,8 +8,8 @@
 //   dist/  —— web 构建产物（npm run build），未命中文件回退 index.html（SPA）
 //   games/ —— 自包含游戏目录，按原路径伺服（/games/<type>/<slug>/...）
 import http from 'node:http'
-import { createReadStream, readFile } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
