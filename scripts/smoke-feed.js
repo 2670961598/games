@@ -165,11 +165,12 @@ section('时长：可见计时、切走/隐藏暂停、取走清零')
   recorded += tr2.drain() // 周期上报①
   t2 = 9000
   recorded += tr2.drain() // 周期上报②（中途未停）
+  const runningAfterDrain = tr2.running
   t2 = 12000
   tr2.stop() // 切走
   recorded += tr2.consume() // 结算
   check('drain 周期落账后 consume 结算不双计（合计 12000）', recorded === 12000, `实际 ${recorded}`)
-  check('drain 不中断运行（9000 时 drain 后区间继续）', true)
+  check('drain 不中断运行（9000 时 drain 后仍 running）', runningAfterDrain === true)
   const tr3 = new DurationTracker({ now: now2 })
   tr3.start()
   t2 = 15000
