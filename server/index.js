@@ -54,8 +54,37 @@ const COMPRESSIBLE = new Set([
 const isCompressible = (type) => COMPRESSIBLE.has(type.split(';')[0].trim())
 const typeOf = (file) => MIME[extname(file).toLowerCase()] || 'application/octet-stream'
 
-// 压缩阈值：小于 1KB 时压缩头开销大于收益，直接原样返回
+// 压缩阈值：小于 1KB 时压缩头开销大于收益，直接原样返回；
+// 大于 2MB 走同步压缩会长时间阻塞事件循环，降级为流式原样返回（大文件场景后续单再引入流式压缩）
 const COMPRESS_MIN_SIZE = 1024
+const COMPRESS_MAX_SIZE = 2 * 1024 * 1024
+
+// 压缩结果内存缓存（LRU）：产物文件少且小，避免每请求重复读盘+压缩。
+// 条数/字节双上限兜底，games/ 目录增多后也不会内存失控；etag 含 size+mtime，文件变更自动失效。
+const COMPRESS_CACHE_MAX_ENTRIES = 64
+const COMPRESS_CACHE_MAX_BYTES = 8 * 1024 * 1024
+const compressCache = new Map() // key: `${file}\0${etag}\0${encoding}` → 压缩后 Buffer
+let compressCacheBytes = 0
+
+function compressCacheGet(key) {
+  const hit = compressCache.get(key)
+  if (hit) { // 触达即移到末尾（Map 按插入序迭代，首键即最旧）
+    compressCache.delete(key)
+    compressCache.set(key, hit)
+  }
+  return hit
+}
+
+function compressCachePut(key, body) {
+  compressCache.set(key, body)
+  compressCacheBytes += body.length
+  while (compressCache.size > COMPRESS_CACHE_MAX_ENTRIES || compressCacheBytes > COMPRESS_CACHE_MAX_BYTES) {
+    const oldest = compressCache.keys().next().value
+    if (oldest === undefined) break
+    compressCacheBytes -= compressCache.get(oldest).length
+    compressCache.delete(oldest)
+  }
+}
 
 function send(req, res, status, headers, body = null) {
   res.writeHead(status, headers)
@@ -77,7 +106,13 @@ function sendText(req, res, status, text) {
 // 解析静态路径 → 绝对文件路径；防路径穿越；目录自动找 index.html。
 // 未命中：SPA 根回退到根 index.html（也不存在则 null），games 根直接 null。
 async function resolveStatic(pathname, root, allowSpaFallback) {
-  const decoded = decodeURIComponent(pathname)
+  let decoded
+  try {
+    decoded = decodeURIComponent(pathname)
+  } catch {
+    return null // 非法百分号编码（如 /%）按未命中处理，而非 500
+  }
+  if (decoded.includes('\0')) return null // 路径含 NUL（%00）同理
   const clean = decoded.replace(/\/+$/, '') || '/'
   let file = resolve(root, `.${clean}`)
   if (file !== root && !file.startsWith(root + sep)) return null // 穿越企图
@@ -136,15 +171,19 @@ async function serveFile(req, res, pathname, file) {
 
   const acceptEncoding = req.headers['accept-encoding'] || ''
   let encoding = null
-  if (isCompressible(type) && st.size >= COMPRESS_MIN_SIZE && req.method !== 'HEAD') {
+  if (isCompressible(type) && st.size >= COMPRESS_MIN_SIZE && st.size <= COMPRESS_MAX_SIZE && req.method !== 'HEAD') {
     if (acceptEncoding.includes('br')) encoding = 'br'
     else if (acceptEncoding.includes('gzip')) encoding = 'gzip'
   }
 
-  // 静态文件同步压缩缓存在内存（产物文件少且小），避免每请求流式压缩的 CPU 重复开销
   if (encoding) {
-    const buf = await readFile(file)
-    const body = encoding === 'br' ? brotliCompressSync(buf) : gzipSync(buf)
+    const key = `${file}\0${etag}\0${encoding}`
+    let body = compressCacheGet(key)
+    if (!body) {
+      const buf = await readFile(file)
+      body = encoding === 'br' ? brotliCompressSync(buf) : gzipSync(buf)
+      compressCachePut(key, body)
+    }
     headers['content-encoding'] = encoding
     headers['content-length'] = body.length
     return send(req, res, 200, headers, body)
