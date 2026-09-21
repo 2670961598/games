@@ -162,6 +162,9 @@ async function streamOut(file, res, headers, enc) {
     }
     const kill = () => {
       for (const s of chain) s.destroy()
+      // 源/压缩流出错时必须主动断开 res：pipe 不会替你 end/destroy 目标，
+      // 只销毁流会让应答无限挂起（客户端连状态行都收不到）
+      if (!res.writableEnded) res.destroy()
       settle()
     }
     res.on('close', kill) // 正常结束后也会触发，此时流已 end，destroy 是无害幂等操作

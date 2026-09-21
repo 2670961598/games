@@ -6,7 +6,7 @@
 // 全程不触碰仓库真实数据；finally 清理临时目录与子进程。绿 = exit 0。
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -359,6 +359,20 @@ try {
       c1.status === 200 && c2.status === 200 && /Smoke F1/.test(t1) !== /Smoke F1/.test(t2) && /Smoke F2/.test(t1) !== /Smoke F2/.test(t2),
       '两包各自完整上架（无混装）',
     )
+
+    // 上架目录洁净度：无 upload.json、无 writeFileAtomic 残片（并发/崩溃窗口可能带入）
+    const junk = []
+    for (const s of ['smoke-a', 'smoke-b', 'smoke-c', 'smoke-e', 'smoke-f', u1, u2]) {
+      const dir = s.startsWith('/games/') ? join(gamesDir, s.slice('/games/'.length), '..') : join(gamesDir, 'community', s)
+      try {
+        for (const f of await readdir(dir)) {
+          if (f === 'upload.json' || /\.tmp-[0-9a-f]+$/.test(f)) junk.push(`${s}/${f}`)
+        }
+      } catch {
+        /* 目录不存在（u 路径变体）则跳过 */
+      }
+    }
+    ok(junk.length === 0, `上架目录无杂物（${junk.join(',')}）`)
   }
 
   // ===== 9. 上传校验拒绝（负例） =====

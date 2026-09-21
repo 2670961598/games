@@ -291,8 +291,12 @@ export function createUploads({
     }
     if (!dest) throw new HttpError(409, 'slug 去重 100 次未命中（同名目录堆积）')
 
-    // rename 连 upload.json 一起带过去了：清单扫描只认 game.json，多这一个文件无害，顺手清掉
+    // rename 连 upload.json 一起带过去了：清单扫描只认 game.json，多这一个文件无害，顺手清掉；
+    // 同时清并发输家/崩溃窗口可能被整目录 rename 带进来的 writeFileAtomic 残片（*.tmp-xxx）
     await rm(join(dest, 'upload.json'), { force: true }).catch(() => {})
+    for (const f of await readdir(dest).catch(() => [])) {
+      if (/\.tmp-[0-9a-f]+$/.test(f)) await rm(join(dest, f), { force: true }).catch(() => {})
+    }
     const gameId = `${type}:${slug}`
     await ledger({ event: 'published', id, type, slug, gameId })
     if (onPublished) onPublished()
