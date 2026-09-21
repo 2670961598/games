@@ -24,11 +24,13 @@ export const store = {
   },
 }
 
-/** 访客 id：首次生成后长期复用（用于后端上报去重关联） */
+/** 访客 id：首次生成后长期复用（用于后端上报关联）。生成循环补齐，保证满足读取校验的长度 */
 export function visitorId() {
   let id = store.get('visitor', null)
   if (typeof id !== 'string' || !/^v-[a-z0-9]{8,}$/.test(id)) {
-    id = 'v-' + Math.random().toString(36).slice(2, 10)
+    let body = ''
+    while (body.length < 10) body += Math.random().toString(36).slice(2, 10)
+    id = 'v-' + body.slice(0, 10)
     store.set('visitor', id)
   }
   return id

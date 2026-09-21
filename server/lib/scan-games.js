@@ -40,7 +40,6 @@ export async function scanGames(gamesDir) {
       const slug = s.name
       const id = typeof meta.id === 'string' && meta.id.trim() ? meta.id.trim() : `${type}:${slug}`
       if (seenIds.has(id)) continue // id 冲突：后者跳过，保证清单唯一
-      seenIds.add(id)
       const entryFile = typeof meta.entry === 'string' && meta.entry ? meta.entry : 'index.html'
       try {
         const st = await stat(join(dir, entryFile))
@@ -48,6 +47,7 @@ export async function scanGames(gamesDir) {
       } catch {
         continue // 入口文件不存在 → 不入清单
       }
+      seenIds.add(id) // 登记必须在校验通过之后，否则坏目录会占住 id 挤掉后面的有效目录
       out.push({
         id,
         slug,

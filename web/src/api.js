@@ -20,14 +20,21 @@ export async function fetchGames({ timeout = 8000 } = {}) {
  *   beaconEvents()      —— navigator.sendBeacon（页面卸载时用，尽力而为）
  * 返回 true 表示已送达/已受理。
  */
-export async function reportEvents(events) {
-  const res = await fetch('/api/play-events', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ events }),
-  })
-  if (!res.ok) throw new Error(`/api/play-events HTTP ${res.status}`)
-  return true
+export async function reportEvents(events, { timeout = 8000 } = {}) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeout)
+  try {
+    const res = await fetch('/api/play-events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events }),
+      signal: ctrl.signal,
+    })
+    if (!res.ok) throw new Error(`/api/play-events HTTP ${res.status}`)
+    return true
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export function beaconEvents(events) {

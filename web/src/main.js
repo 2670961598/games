@@ -51,8 +51,10 @@ function eventsWithVisitor() {
   return pendingEvents.map((e) => ({ ...e, visitorId: vid }))
 }
 
+let flushing = false // 上报互斥：慢请求期间周期触发不得重发同批事件（服务端无幂等去重）
 async function flushEvents() {
-  if (pendingEvents.length === 0) return
+  if (pendingEvents.length === 0 || flushing) return
+  flushing = true
   const batch = eventsWithVisitor()
   try {
     await reportEvents(batch)
@@ -60,6 +62,8 @@ async function flushEvents() {
     store.set('events', pendingEvents)
   } catch {
     /* 后端未就绪/离线：仅本地保留，下轮再试 */
+  } finally {
+    flushing = false
   }
 }
 
@@ -82,11 +86,13 @@ function setActiveRef(ref) {
     recordDuration(activeRef.id, ms)
   }
   activeRef = ref
-  if (ref) {
-    stats = applyEnter(stats, ref.id, Date.now()) // 进入一次游戏
-    persistStats()
-    if (document.visibilityState === 'visible') ref.tracker.start()
-  }
+  if (ref && document.visibilityState === 'visible') ref.tracker.start()
+}
+
+/** 记一次“进入游戏”（feed 切到新屏 / 播放器打开时各调一次） */
+function enterGame(gameId) {
+  stats = applyEnter(stats, gameId, Date.now())
+  persistStats()
 }
 
 // ---- feed 袋子 ----
@@ -126,7 +132,12 @@ function showView(name) {
 function parseHash() {
   const h = location.hash || '#/feed'
   if (h.startsWith('#/play/')) {
-    const id = decodeURIComponent(h.slice('#/play/'.length))
+    let id = h.slice('#/play/'.length)
+    try {
+      id = decodeURIComponent(id)
+    } catch {
+      return { view: 'feed' } // 畸形编码（如 %ZZ）：回首页，不让路由抛错卡死
+    }
     return catalogById.has(id) ? { view: 'player', id } : { view: 'mine' }
   }
   if (h === '#/mine') return { view: 'mine' }
@@ -136,8 +147,18 @@ function parseHash() {
 function route() {
   if (!feed || !mine || !player) return // boot 未完成（含加载失败重试中）忽略路由
   const { view, id } = parseHash()
-  if (view === 'player') player.open(catalogById.get(id))
+  if (view === 'player') {
+    setActiveRef(null) // 先结算上一个 tracker（feed 当前屏或播放器里的旧游戏）
+    player.open(catalogById.get(id))
+    enterGame(id)
+    if (currentView === 'player') setActiveRef(player.getActive()) // 同视图换游戏：showView 会早退，手动重绑
+  }
   showView(view)
+  try {
+    sessionStorage.setItem('games5:nav', '1') // 应用内已有导航（播放器返回据此决定 back 还是回首页）
+  } catch {
+    /* 隐私模式下 sessionStorage 可能不可用：忽略 */
+  }
 }
 
 // ---- 启动 ----
@@ -148,6 +169,7 @@ function renderBoot(message) {
 }
 
 function renderError(detail) {
+  document.body.dataset.view = 'error'
   const app = document.getElementById('app')
   app.innerHTML = `<div class="error"><div class="error__msg">游戏清单加载失败</div><div class="error__detail">${detail}</div><button class="error__retry" type="button">重试</button></div>`
   app.querySelector('.error__retry').addEventListener('click', () => {
@@ -200,6 +222,7 @@ async function boot() {
     initialIds: bag.cycle,
     drawNext,
     onActiveChange: (ref) => setActiveRef(ref),
+    onEnter: (id) => enterGame(id),
   })
   viewFeed.appendChild(feed.el)
 
@@ -213,7 +236,9 @@ async function boot() {
 
   player = createPlayer({
     onClose: () => {
-      history.length > 1 ? history.back() : (location.hash = '#/feed')
+      // 外链直达播放器时 history.back() 会退出站点：仅在应用内导航过才走历史栈
+      if (sessionStorage.getItem('games5:nav') === '1') history.back()
+      else location.hash = '#/feed'
     },
   })
   viewPlayer.appendChild(player.el)
@@ -257,7 +282,7 @@ function wireGlobal() {
   })
   window.addEventListener('pagehide', () => {
     recordActiveDelta()
-    flushEventsBeacon()
+    if (!flushing) flushEventsBeacon() // 有在途 fetch 时不重发同批（fetch 随卸载取消）
   })
 
   window.addEventListener('hashchange', route)

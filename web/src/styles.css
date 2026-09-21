@@ -30,9 +30,10 @@ button {
   height: 100vh;
   height: 100dvh;
 }
-body[data-view='boot'] #app,
-body[data-view='error'] #app {
-  display: block;
+/* boot/error 屏在 #app 内，需盖过上面 #app > div 的 display:none（ID 选择器优先级更高） */
+body[data-view='boot'] #app > .boot,
+body[data-view='error'] #app > .error {
+  display: flex;
 }
 body[data-view='feed'] #view-feed,
 body[data-view='mine'] #view-mine,
@@ -93,7 +94,7 @@ body[data-view='player'] #view-player {
   position: relative;
   height: 100%;
   scroll-snap-align: start;
-  scroll-snap-stop: always; // 一次滑一屏
+  scroll-snap-stop: always; /* 一次滑一屏 */
   overflow: hidden;
 }
 
@@ -135,7 +136,7 @@ body[data-view='player'] #view-player {
   background: linear-gradient(180deg, rgba(11, 14, 20, 0.82), rgba(11, 14, 20, 0.42) 40%, rgba(11, 14, 20, 0.72));
 }
 .slot.is-active .slot__tap {
-  display: none; // 进入游戏：撤层放行全部交互
+  display: none; /* 进入游戏：撤层放行全部交互 */
 }
 .slot__name {
   font-size: 20px;
@@ -194,7 +195,7 @@ body[data-view='feed'] #mine-btn {
   display: block;
 }
 body.feed-active #mine-btn {
-  display: none; // 玩游戏时让路
+  display: none; /* 玩游戏时让路 */
 }
 
 /* ---- 我的页 ---- */

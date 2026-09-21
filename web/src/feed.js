@@ -7,7 +7,7 @@ import { DurationTracker } from './duration.js'
 const LOOKAHEAD = 3 // 视口外至少再备 3 屏（相邻预加载）
 const MAX_LIVE = 6 // 同时存活的 iframe 上限（LRU 池，超出销毁最久未见的）
 
-export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }) {
+export function createFeed({ catalogById, initialIds, drawNext, onActiveChange, onEnter }) {
   const scroller = document.createElement('div')
   scroller.className = 'feed'
 
@@ -15,6 +15,8 @@ export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }
   const slots = []
   let activeSlot = null
   let running = false // feed 视图是否处于前台
+  let positioned = false // 是否已定位到“最近刷到的一屏”
+  let lastEntered = null // 上次已计“进入”的 slot（视图往返不重复计）
 
   // ---- LRU 依据：可见时间戳 ----
   const lruIO = new IntersectionObserver(
@@ -29,17 +31,32 @@ export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }
   )
 
   // ---- 懒挂载：接近视口（±150%）才创建 iframe；接近尾部 → 无限追加 ----
+  // 注意：追加量以“当前可见屏”为基准（不是被观察到的最远屏——150% rootMargin 本身
+  // 已超前 2~3 屏，若按它再叠加 LOOKAHEAD 会开机连抽 7 张，小目录直接抽穿一轮）。
+  function visibleIdxEstimate() {
+    return Math.max(0, Math.round(scroller.scrollTop / Math.max(1, scroller.clientHeight)))
+  }
   const lazyIO = new IntersectionObserver(
     (entries) => {
       for (const en of entries) {
         const slot = slots[Number(en.target.dataset.idx)]
         if (slot && en.isIntersecting) mount(slot)
       }
-      let lastIdx = -1
-      for (const en of entries) lastIdx = Math.max(lastIdx, Number(en.target.dataset.idx))
-      if (lastIdx >= 0) ensureAhead(lastIdx)
+      if (entries.length > 0) ensureAhead(visibleIdxEstimate())
     },
     { root: scroller, rootMargin: '150% 0px' },
+  )
+
+  // ---- 滚动停稳后补抽（IO 回调只在交叉变化时触发；若邻居屏在滚动途中已被
+  //      观察，停稳位置不会再有回调，尾部就断了——scroll 事件兜底）----
+  let settleTimer = null
+  scroller.addEventListener(
+    'scroll',
+    () => {
+      if (settleTimer) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => ensureAhead(visibleIdxEstimate()), 120)
+    },
+    { passive: true },
   )
 
   // ---- 活动屏判定：交叉占比最大的 slot 为“当前游戏”（>0.5 才算）----
@@ -65,7 +82,13 @@ export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }
       deactivate(activeSlot) // 滑走的游戏自动退出激活态
     }
     activeSlot = best
-    if (best && running) best.tracker.start()
+    if (best && running) {
+      best.tracker.start()
+      if (best !== lastEntered) {
+        lastEntered = best // 真正切到新游戏才计“进入一次”（视图往返/重发不重复计）
+        onEnter(best.id)
+      }
+    }
     onActiveChange(best && running ? { id: best.id, tracker: best.tracker } : null)
   }
 
@@ -177,12 +200,20 @@ export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }
   }
 
   // ---- 初始化：从袋的当前轮次重建，落到最近刷到的一屏 ----
+  // display:none 子树里 offsetTop=0、scrollTop 赋值无效（如重载在 #/mine 时 boot 同步
+  // 切走了视图），因此定位动作可重入：首次真正可见时（rAF 或 setRunning(true)）再执行。
+  function scrollToLatest() {
+    if (positioned || slots.length === 0 || scroller.clientHeight === 0) return
+    const last = slots[slots.length - 1]
+    scroller.scrollTop = last.el.offsetTop // 末屏对齐（snap 定位）
+    positioned = true
+  }
+
   for (const id of initialIds) appendSlot(id)
   if (slots.length === 0) ensureAhead(0)
   if (slots.length > 0) {
     requestAnimationFrame(() => {
-      const last = slots[slots.length - 1]
-      scroller.scrollTop = last.el.offsetTop // 末屏对齐（snap 定位）
+      scrollToLatest()
       recomputeActive()
     })
   }
@@ -194,13 +225,14 @@ export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }
 
   return {
     el: scroller,
-    /** feed 前台/后台切换：后台暂停计时；前台强制重发当前游戏句柄 */
+    /** feed 前台/后台切换：后台暂停计时；前台定位+强制重发当前游戏句柄 */
     setRunning(on) {
       running = on
       if (!on) {
         if (activeSlot) activeSlot.tracker.stop()
         onActiveChange(null)
       } else {
+        scrollToLatest() // 重载入口不在 feed 时，rAF 期间 feed 是 display:none，这里补定位
         activeSlot = null // 清掉再重算，保证切换分支必走（重新 start + 上报句柄）
         recomputeActive()
       }
@@ -210,6 +242,7 @@ export function createFeed({ catalogById, initialIds, drawNext, onActiveChange }
     },
     destroy() {
       onActiveChange(null) // 让 main 先结算当前 tracker，再整体拆
+      if (settleTimer) clearTimeout(settleTimer)
       lazyIO.disconnect()
       activeIO.disconnect()
       lruIO.disconnect()

@@ -37,8 +37,17 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
+  '.avif': 'image/avif',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
+  '.webmanifest': 'application/manifest+json',
+  '.xml': 'application/xml',
 }
 
 // ---- 工具 ----
@@ -190,8 +199,17 @@ async function handler(req, res) {
     }
 
     if (path.startsWith('/games/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return sendJSON(res, 405, { ok: false, error: 'method not allowed' })
+      }
       const f = safeJoin(GAMES_DIR, path.slice('/games/'.length))
       if (f && (await serveFile(req, res, f))) return
+      return sendJSON(res, 404, { ok: false, error: 'not found' })
+    }
+
+    // 未知 /api/* 路径按 JSON 404 处理（不能落进 SPA 回退回 index.html，
+    // 否则 api.js 的 res.json() 会以 SyntaxError 的形式报错，掩盖真实问题）
+    if (path.startsWith('/api/')) {
       return sendJSON(res, 404, { ok: false, error: 'not found' })
     }
 
@@ -225,6 +243,15 @@ const server = http.createServer((req, res) => {
       /* 连接已断 */
     }
   })
+})
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[games-server] 端口 ${PORT} 已被占用（HOST=${HOST}）：可能已有实例在跑；换端口请用 PORT=xxxx`)
+  } else {
+    console.error('[games-server] 启动失败:', err)
+  }
+  process.exit(1)
 })
 
 server.listen(PORT, HOST, () => {
