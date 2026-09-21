@@ -320,6 +320,47 @@ try {
     ok(r.status === 404, '驳回后不可再 approve')
   }
 
+  // ===== 8b. 流转并发竞态（原子目录 rename 的回归保护） =====
+  {
+    // 同一 id 三个 approve 同时打：必须恰好一个生效
+    let r = await req('POST', '/api/upload?type=community&slug=smoke-e', {
+      headers: { 'Content-Type': 'text/html' },
+      body: gameHtml('Smoke E'),
+    })
+    const idE = json(r).id
+    const rs = await Promise.all([1, 2, 3].map(() => req('POST', `/api/uploads/${idE}/approve`)))
+    const codes = rs.map((x) => x.status).sort()
+    ok(codes.filter((c) => c === 200).length === 1 && codes.every((c) => c === 200 || c === 404 || c === 409), `同一 id 并发 approve 恰好一个生效（${codes.join(',')}）`)
+    r = await req('GET', '/api/games?pageSize=100')
+    ok(json(r)?.total === 4, '并发上架后 total=4（无重复目录）')
+
+    // 同 slug 两个不同包并发 approve：不允许混装（后来者应落 -2 目录）
+    const r1 = await req('POST', '/api/upload?type=community&slug=smoke-f', {
+      headers: { 'Content-Type': 'text/html' },
+      body: gameHtml('Smoke F1'),
+    })
+    const r2 = await req('POST', '/api/upload?type=community&slug=smoke-f', {
+      headers: { 'Content-Type': 'text/html' },
+      body: gameHtml('Smoke F2'),
+    })
+    const [a1, a2] = await Promise.all([
+      req('POST', `/api/uploads/${json(r1).id}/approve`),
+      req('POST', `/api/uploads/${json(r2).id}/approve`),
+    ])
+    ok(a1.status === 200 && a2.status === 200, `双包并发 approve 均成功（${a1.status}/${a2.status}）`)
+    const u1 = json(a1)?.game?.url
+    const u2 = json(a2)?.game?.url
+    ok(u1 && u2 && u1 !== u2, `同 slug 并发落不同目录（${u1} | ${u2}）`)
+    const c1 = await req('GET', u1)
+    const c2 = await req('GET', u2)
+    const t1 = c1.body.toString()
+    const t2 = c2.body.toString()
+    ok(
+      c1.status === 200 && c2.status === 200 && /Smoke F1/.test(t1) !== /Smoke F1/.test(t2) && /Smoke F2/.test(t1) !== /Smoke F2/.test(t2),
+      '两包各自完整上架（无混装）',
+    )
+  }
+
   // ===== 9. 上传校验拒绝（负例） =====
   {
     let r = await req('POST', '/api/upload', { headers: { 'Content-Type': 'text/html' }, body: '<h1>no html tag</h1>' })

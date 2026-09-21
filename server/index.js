@@ -292,7 +292,7 @@ async function handler(req, res) {
       if (mustClose) res.on('finish', () => res.destroy())
       return
     }
-    if (err && err.code === 'EPIPE') return // 客户端断连，无需应答
+    if (err && (err.code === 'EPIPE' || err.code === 'ECONNRESET')) return // 客户端断连/中止，无需应答
     return sendJSON(req, res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
   }
 }

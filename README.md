@@ -51,7 +51,7 @@ node scripts/smoke-api.js  # 冒烟验收（隔离临时目录，不碰真实数
 
 措施：keep-alive 65s；文本响应按 `Accept-Encoding` 协商 gzip/brotli（流式，低档位）；静态指纹资源（`/assets/*`）`immutable` 一年长缓存，其余 ETag+304 协商；`/api/games` 服务端 3s 内存缓存 + `max-age=30` + ETag 304。
 
-单机预估（Mac mini M 系实测，`scripts/bench-api.js`，32 并发 keep-alive）：
+单机预估（Mac mini M 系实测，`scripts/bench-api.js`，32 并发 keep-alive；12 款为压测时临时填充的清单规模，空清单下 /api/games 更快）：
 
 | 路径 | 压缩 | 实测 RPS |
 |---|---|---|

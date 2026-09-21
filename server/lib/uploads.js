@@ -20,19 +20,34 @@ function slugify(s, fallback) {
   return out || fallback
 }
 
-/** 提取上传元数据（query 参数或 multipart 字段），越界值收敛到默认 */
-function readMeta(src) {
-  const get = (k) => (typeof src.get === 'function' ? src.get(k) : src[k])
-  const levels = Number(get('levels'))
-  const tier = typeof get('tier') === 'string' ? get('tier').trim().slice(0, 16) : ''
-  return {
-    type: slugify(get('type'), 'community'),
-    slug: slugify(get('slug'), ''),
-    name: typeof get('name') === 'string' ? get('name').trim().slice(0, 64) : '',
-    levels: Number.isFinite(levels) && levels >= 1 ? Math.min(9999, Math.floor(levels)) : 1,
-    tier: tier || 'standard',
-    description: typeof get('description') === 'string' ? get('description').trim().slice(0, 256) : '',
+/** 收集已出现的非空元数据（query 或 multipart 字段），缺省键不填——避免空值覆盖另一来源的有效值 */
+function readRawMeta(src) {
+  const out = {}
+  for (const k of ['type', 'slug', 'name', 'levels', 'tier', 'description']) {
+    let v = typeof src.get === 'function' ? src.get(k) : src[k]
+    if (typeof v === 'string' && v.trim() !== '') out[k] = v.trim()
   }
+  return out
+}
+
+/** 归一化元数据：越界值收敛到默认 */
+function normalizeMeta(raw) {
+  const levels = Number(raw.levels)
+  return {
+    type: slugify(raw.type, 'community'),
+    slug: slugify(raw.slug, ''),
+    name: typeof raw.name === 'string' ? raw.name.slice(0, 64) : '',
+    levels: Number.isFinite(levels) && levels >= 1 ? Math.min(9999, Math.floor(levels)) : 1,
+    tier: typeof raw.tier === 'string' ? raw.tier.slice(0, 16) : 'standard',
+    description: typeof raw.description === 'string' ? raw.description.slice(0, 256) : '',
+  }
+}
+
+/** 原子写：先写临时文件再 rename 顶替。直接 writeFile 是 truncate 写，中途崩溃/磁盘满留半截 JSON */
+async function writeFileAtomic(target, content) {
+  const tmp = `${target}.tmp-${randomUUID().slice(0, 8)}`
+  await writeFile(tmp, content)
+  await rename(tmp, target)
 }
 
 /**
@@ -141,19 +156,20 @@ export function createUploads({
     const body = await readWithLimit(req)
 
     let file // { name, data }
-    let meta = readMeta(query)
+    const rawMeta = readRawMeta(query)
     if (/^multipart\/form-data/i.test(ct)) {
       const { fields, files } = parseMultipart(body, ct)
-      meta = { ...meta, ...readMeta(fields) }
+      Object.assign(rawMeta, readRawMeta(fields)) // 非空表单字段优先于 query
       if (!files.length) throw new HttpError(400, 'multipart 表单里没有文件（需带 filename 的文件字段）')
       file = { name: files[0].filename || 'upload', data: files[0].data }
     } else if (/zip/i.test(ct) || (looksLikeZip(body) && !/html/i.test(ct))) {
       file = { name: query.get('filename') || 'upload.zip', data: body }
-    } else if (/html/i.test(ct) || /<html[\s>]/i.test(body.toString('utf8', 0, Math.min(2048, body.length)))) {
+    } else if (/html/i.test(ct) || /<html[\s>]/i.test(body.toString('utf8'))) {
       file = { name: query.get('filename') || 'index.html', data: body }
     } else {
       throw new HttpError(415, `不支持的 Content-Type "${ct || '(空)'}"：用 text/html、application/zip 或 multipart/form-data`)
     }
+    const meta = normalizeMeta(rawMeta)
     if (!file.data.length) throw new HttpError(400, '上传内容为空')
     if (file.data.length > maxUploadBytes) {
       throw new HttpError(413, `文件超过大小上限 ${Math.floor(maxUploadBytes / 1024 / 1024)}MB`)
@@ -193,7 +209,7 @@ export function createUploads({
       await writeFile(target, f.data)
     }
     const rec = { id, state: 'pending', submittedAt: Date.now(), kind: isZip ? 'zip' : 'html', filename: file.name, bytes: file.data.length, entryFile, ...meta }
-    await writeFile(join(dir, 'upload.json'), JSON.stringify(rec, null, 2) + '\n')
+    await writeFileAtomic(join(dir, 'upload.json'), JSON.stringify(rec, null, 2) + '\n')
     await ledger({ event: 'submitted', id, kind: rec.kind, filename: rec.filename, bytes: rec.bytes })
     return { id }
   }
@@ -219,7 +235,11 @@ export function createUploads({
     }
   }
 
-  /** 上架：移入 games/<type>/<slug>/，补写 game.json 清单，清待审目录 */
+  /**
+   * 上架：先把终版 game.json 写进待审目录（原子写），再单次 rename 整目录到 games/<type>/<slug>/。
+   * 整目录 rename 同卷原子：要么完整上架要么原地未动——规避逐文件搬运在崩溃/并发下
+   * 产出的半成品目录、slug-2 分裂包、两包混装。dest 被并发占位（EEXIST/ENOTEMPTY）则换后缀重试。
+   */
   async function approve(id) {
     const pend = await loadPending(id)
     if (!pend) throw new HttpError(404, `上传 ${id} 不存在（可能已流转或被清理）`)
@@ -227,37 +247,53 @@ export function createUploads({
     const { rec, dir } = pend
 
     const type = slugify(rec.type, 'community')
-    let slug = slugify(rec.slug || rec.name, id)
-    let n = 2
-    while (n < 100 && (await exists(join(gamesDir, type, slug)))) slug = `${slugify(rec.slug || rec.name, id)}-${n++}`
-    const dest = join(gamesDir, type, slug)
-    await mkdir(dest, { recursive: true })
+    const base = slugify(rec.slug || rec.name, id)
+    await mkdir(join(gamesDir, type), { recursive: true })
 
-    for (const f of await readdir(dir)) {
-      if (f === 'upload.json') continue
-      await rename(join(dir, f), join(dest, f))
-    }
-    // 写入清单 game.json（已有时合并保字段，无时新建）
+    // 终版清单写进待审目录（id 由目录路径推导，不写死——rename 重试换 slug 时无需回写）
     let gm = {}
     try {
-      gm = JSON.parse(await readFile(join(dest, 'game.json'), 'utf8'))
+      gm = JSON.parse(await readFile(join(dir, 'game.json'), 'utf8'))
     } catch {
       /* 上传包里没有 → 新建 */
     }
-    const gameId = `${type}:${slug}`
+    delete gm.id // id 一律走 "<type>:<slug>" 目录推导，保证与应答一致
     gm = {
       ...gm,
-      id: gameId,
-      type,
-      slug,
-      name: rec.name || gm.name || slug,
+      name: rec.name || gm.name || base,
       levels: rec.levels,
       tier: rec.tier,
       entry: rec.entryFile,
+      uploadedAs: id, // 台账缺失时 get() 可凭此回溯末态
     }
     if (rec.description && !gm.description) gm.description = rec.description
-    await writeFile(join(dest, 'game.json'), JSON.stringify(gm, null, 2) + '\n')
-    await rm(dir, { recursive: true, force: true })
+    try {
+      await writeFileAtomic(join(dir, 'game.json'), JSON.stringify(gm, null, 2) + '\n')
+    } catch (e) {
+      if (e.code === 'ENOENT') throw new HttpError(409, `状态机拒绝：${id} 已被并发流转`)
+      throw e
+    }
+
+    let dest = null
+    let slug = base
+    for (let n = 1; n <= 100 && !dest; n++) {
+      slug = n === 1 ? base : `${base}-${n}`
+      const candidate = join(gamesDir, type, slug)
+      if (await exists(candidate)) continue
+      try {
+        await rename(dir, candidate) // 原子上架
+        dest = candidate
+      } catch (e) {
+        if (e.code === 'ENOENT') throw new HttpError(409, `状态机拒绝：${id} 已被并发流转`)
+        if (e.code === 'EEXIST' || e.code === 'ENOTEMPTY' || e.code === 'EPERM') continue // 并发占位 → 换后缀
+        throw e
+      }
+    }
+    if (!dest) throw new HttpError(409, 'slug 去重 100 次未命中（同名目录堆积）')
+
+    // rename 连 upload.json 一起带过去了：清单扫描只认 game.json，多这一个文件无害，顺手清掉
+    await rm(join(dest, 'upload.json'), { force: true }).catch(() => {})
+    const gameId = `${type}:${slug}`
     await ledger({ event: 'published', id, type, slug, gameId })
     if (onPublished) onPublished()
     return { id, state: 'published', game: { id: gameId, type, slug, url: `/games/${type}/${slug}/${rec.entryFile}` } }
@@ -274,7 +310,36 @@ export function createUploads({
     return { id, state: 'rejected' }
   }
 
-  /** 单查：优先待审目录，其次审计台账末态 */
+  /** 台账断档兜底：上架后、写台账前崩溃 → 凭 game.json 的 uploadedAs 回溯末态 */
+  async function findPublishedById(id) {
+    let types = []
+    try {
+      types = await readdir(gamesDir, { withFileTypes: true })
+    } catch {
+      return null
+    }
+    for (const t of types) {
+      if (!t.isDirectory() || t.name.startsWith('_') || t.name.startsWith('.')) continue
+      let slugs = []
+      try {
+        slugs = await readdir(join(gamesDir, t.name), { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const s of slugs) {
+        if (!s.isDirectory() || s.name.startsWith('.')) continue
+        try {
+          const gm = JSON.parse(await readFile(join(gamesDir, t.name, s.name, 'game.json'), 'utf8'))
+          if (gm.uploadedAs === id) return { state: 'published', type: t.name, slug: s.name }
+        } catch {
+          /* 跳过 */
+        }
+      }
+    }
+    return null
+  }
+
+  /** 单查：优先待审目录，其次审计台账末态；台账停在 submitted 且无待审目录 → 可能是 rename 后台账前崩溃，扫清单回溯 */
   async function get(id) {
     const pend = await loadPending(id)
     if (pend) return pend.rec
@@ -293,8 +358,13 @@ export function createUploads({
     } catch {
       /* 无台账 */
     }
-    if (!last) return null
-    return { id, state: last.event, reviewedAt: last.at, type: last.type, slug: last.slug, reason: last.reason }
+    if (last && (last.event === 'published' || last.event === 'rejected')) {
+      return { id, state: last.event, reviewedAt: last.at, type: last.type, slug: last.slug, reason: last.reason }
+    }
+    const published = await findPublishedById(id)
+    if (published) return { id, ...published, reviewedAt: last?.at }
+    if (last) return { id, state: 'lost', reviewedAt: last.at } // 提交过但包已不存（清理/孤儿）
+    return null
   }
 
   /** 待审列表（审阅 UI 用） */

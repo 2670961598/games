@@ -139,6 +139,39 @@ function cachePolicy(filePath, ext) {
 }
 
 /**
+ * 流式应答（可选压缩）。关键点：res 'close' 时（客户端中止/关页）立即销毁全链释放 fd——
+ * 此时 'finish' 永远不会来，若只等 finish 会造成 fd 永久泄漏（中止 N 个大文件下载就漏 N 个）。
+ */
+async function streamOut(file, res, headers, enc) {
+  const source = createReadStream(file)
+  const chain = [source]
+  let out = source
+  if (enc) {
+    const t = enc === 'br' ? zlib.createBrotliCompress(BROTLI) : zlib.createGzip(GZIP)
+    chain.push(t)
+    out = source.pipe(t)
+  }
+  res.writeHead(200, headers)
+  await new Promise((done) => {
+    let settled = false
+    const settle = () => {
+      if (!settled) {
+        settled = true
+        done()
+      }
+    }
+    const kill = () => {
+      for (const s of chain) s.destroy()
+      settle()
+    }
+    res.on('close', kill) // 正常结束后也会触发，此时流已 end，destroy 是无害幂等操作
+    for (const s of chain) s.on('error', kill)
+    out.pipe(res).on('finish', settle)
+    res.on('error', kill)
+  })
+}
+
+/**
  * 伺服静态文件（找到返回 true，未命中返回 false 交回路由层 404）。
  * 强缓存两级：/assets/ 指纹文件 immutable 一年；其余弱 ETag + 304 协商。
  * 文本类型按 Accept-Encoding 流式 gzip/brotli。
@@ -164,6 +197,7 @@ export async function serveFile(req, res, filePath) {
     'Content-Type': type,
     'Cache-Control': cachePolicy(file, ext),
     ETag: etag,
+    Vary: 'Accept-Encoding', // 304 与 200 一致声明变体，避免共享缓存串编码
     'X-Content-Type-Options': 'nosniff',
   }
   if ((req.method === 'GET' || req.method === 'HEAD') && req.headers['if-none-match'] === etag) {
@@ -174,35 +208,15 @@ export async function serveFile(req, res, filePath) {
   const enc = req.method === 'GET' ? negotiateEncoding(req) : null
   if (enc && COMPRESSIBLE.has(ext) && st.size >= COMPRESS_MIN_BYTES) {
     headers['Content-Encoding'] = enc
-    headers.Vary = 'Accept-Encoding'
-    let stream = createReadStream(file)
-    if (enc === 'br') stream = stream.pipe(zlib.createBrotliCompress(BROTLI))
-    else stream = stream.pipe(zlib.createGzip(GZIP))
-    res.writeHead(200, headers)
-    await new Promise((done) => {
-      stream.on('error', () => {
-        res.destroy()
-        done()
-      })
-      stream.pipe(res).on('finish', () => done())
-    })
+    await streamOut(file, res, headers, enc)
     return true
   }
   headers['Content-Length'] = st.size
-  headers.Vary = 'Accept-Encoding'
-  res.writeHead(200, headers)
   if (req.method === 'HEAD') {
+    res.writeHead(200, headers)
     res.end()
     return true
   }
-  await new Promise((done) => {
-    createReadStream(file)
-      .on('error', () => {
-        res.destroy()
-        done()
-      })
-      .pipe(res)
-      .on('finish', () => done())
-  })
+  await streamOut(file, res, headers, null)
   return true
 }
