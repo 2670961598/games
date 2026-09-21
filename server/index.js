@@ -200,25 +200,28 @@ async function handler(req, res) {
     }
 
     if (path === '/api/health') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
       return sendJSON(req, res, 200, { ok: true, uptime: process.uptime(), now: Date.now() })
     }
-    if (path === '/api/games' && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (path === '/api/games') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
       return await apiGames(req, res, u)
     }
-    if (path === '/api/upload' && req.method === 'POST') {
+    if (path === '/api/upload') {
+      if (req.method !== 'POST') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
       return await apiUploadPost(req, res)
     }
-    if (path === '/api/stats' && req.method === 'POST') {
-      return await apiStatsPost(req, res)
-    }
-    if (path === '/api/play-events' && req.method === 'POST') {
-      return await apiStatsPost(req, res) // GAMES-5 sendBeacon 别名，同一存储
+    if (path === '/api/stats' || path === '/api/play-events') {
+      if (req.method !== 'POST') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return await apiStatsPost(req, res) // /api/play-events 为 GAMES-5 sendBeacon 别名，同一存储
     }
     let m
-    if ((m = /^\/api\/stats\/([^/]+)$/.exec(path)) && (req.method === 'GET' || req.method === 'HEAD')) {
+    if ((m = /^\/api\/stats\/([^/]+)$/.exec(path))) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
       return await apiStatsGet(req, res, m[1])
     }
-    if (path === '/api/uploads' && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (path === '/api/uploads') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
       return sendJSON(req, res, 200, { ok: true, pending: await uploads.listPending() })
     }
     if ((m = /^\/api\/uploads\/([a-z0-9-]+)$/.exec(path)) && req.method === 'GET') {
@@ -240,12 +243,16 @@ async function handler(req, res) {
       return sendJSON(req, res, 200, { ok: true, ...r })
     }
 
-    // 游戏静态资源（iframe 入口）：games/ 原路径伺服
+    // 游戏静态资源（iframe 入口）：games/ 原路径伺服（_pending/_shared 等内部目录不外露）
     if (path.startsWith('/games/')) {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
       }
-      const f = safeJoin(GAMES_DIR, path.slice('/games/'.length))
+      const rest = path.slice('/games/'.length)
+      if (rest.startsWith('_') || rest.startsWith('.')) {
+        return sendJSON(req, res, 404, { ok: false, error: 'not found' })
+      }
+      const f = safeJoin(GAMES_DIR, rest)
       if (f && (await serveFile(req, res, f))) return
       return sendJSON(req, res, 404, { ok: false, error: 'not found' })
     }
@@ -272,7 +279,18 @@ async function handler(req, res) {
     return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
   } catch (err) {
     if (err instanceof HttpError) {
-      return sendJSON(req, res, err.status, { ok: false, error: err.message }, { headers: err.headers })
+      // 413 特殊：请求体没收完就提前应答，剩余字节会让 keep-alive 连接错位，
+      // 必须标记 Connection: close 并在响应冲刷后断开，客户端会自动换新连接重试
+      const mustClose = err.status === 413
+      sendJSON(
+        req,
+        res,
+        err.status,
+        { ok: false, error: err.message },
+        { headers: { ...(mustClose ? { Connection: 'close' } : {}), ...(err.headers || {}) } },
+      )
+      if (mustClose) res.on('finish', () => res.destroy())
+      return
     }
     if (err && err.code === 'EPIPE') return // 客户端断连，无需应答
     return sendJSON(req, res, 500, { ok: false, error: String(err && err.message ? err.message : err) })

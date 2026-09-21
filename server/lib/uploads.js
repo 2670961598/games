@@ -164,7 +164,12 @@ export function createUploads({
     let entryFile
     const isZip = looksLikeZip(file.data)
     if (isZip) {
-      const entries = readZip(file.data, { maxEntries: 500, maxFileBytes: 64 * 1024 * 1024, maxTotalBytes: 64 * 1024 * 1024 })
+      let entries
+      try {
+        entries = readZip(file.data, { maxEntries: 500, maxFileBytes: 64 * 1024 * 1024, maxTotalBytes: 64 * 1024 * 1024 })
+      } catch (e) {
+        throw new HttpError(400, e.message) // zip 结构/校验失败属客户端错误，不是服务器故障
+      }
       const norm = normalizeZipEntries(entries)
       files = norm.entries.map((e) => ({ path: e.name, data: e.data }))
       entryFile = norm.entryFile
