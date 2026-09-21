@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0e14">
+  <title>GAMES · 指尖刷玩</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body data-view="boot">
+  <div id="app"></div>
+
+  <!-- feed 态：退出游戏把手（游戏激活时可见） -->
+  <button id="exit-bar" type="button">✕ 退出游戏</button>
+  <!-- feed 态：入口按钮 -->
+  <button id="mine-btn" type="button">我的</button>
+
+  <!-- 宽屏提示：仅支持手机竖屏；桌面/横屏可点击缩窄继续（本机开发验证用） -->
+  <div id="rotate-tip">
+    <div class="rotate-tip__box">
+      <div class="rotate-tip__icon">📱</div>
+      <div class="rotate-tip__msg">本站为手机竖屏设计</div>
+      <div class="rotate-tip__sub">请用手机竖屏访问，获得最佳体验</div>
+      <button id="rotate-ok" type="button">缩窄窗口继续</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

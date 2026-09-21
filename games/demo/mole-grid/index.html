@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>地鼠九宫</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif;
+    display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; display: flex; justify-content: space-between; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    font-size: 14px; color: #8b94a7; }
+  header b { color: #e8ecf3; font-size: 18px; }
+  #grid { width: min(88vw, 60vh); aspect-ratio: 1; margin: auto 0; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+    gap: 10px; }
+  .cell { border-radius: 16px; background: #1a2130; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .cell.up { background: #2b3f63; box-shadow: inset 0 0 24px #6ea8ff33; }
+  .cell.up::after { content: '🐹'; }
+  .cell.hit { animation: hit .2s ease-out; }
+  @keyframes hit { 50% { transform: scale(.9); background: #7bd88f; } }
+  #over { position: fixed; inset: 0; background: #0b0e14ee; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; z-index: 10; }
+  #over h2 { font-size: 22px; }
+  #over .s { font-size: 44px; font-weight: 800; color: #6ea8ff; }
+  #over button { padding: 12px 32px; border-radius: 999px; border: 0; font-size: 16px; font-weight: 600;
+    color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+</style>
+</head>
+<body>
+<header><span>⏱ <b id="time">30</b>s</span><span>地鼠九宫</span><span>💎 <b id="score">0</b></span></header>
+<div id="grid"></div>
+<div id="over"><h2>时间到！</h2><div class="s" id="final">0</div><button id="again">再来一局</button></div>
+<script>
+  const grid = document.getElementById('grid')
+  const scoreEl = document.getElementById('score')
+  const timeEl = document.getElementById('time')
+  const overEl = document.getElementById('over')
+  const cells = []
+  for (let i = 0; i < 9; i++) {
+    const c = document.createElement('div')
+    c.className = 'cell'
+    grid.appendChild(c)
+    cells.push(c)
+  }
+  let score = 0, timeLeft = 30, moleTimer = null, tickTimer = null, upCell = -1
+
+  function whack(i) {
+    if (i === upCell) {
+      score++
+      scoreEl.textContent = score
+      cells[i].classList.add('hit')
+      setTimeout(() => cells[i].classList.remove('hit'), 200)
+      hideMole()
+    }
+  }
+  function hideMole() {
+    if (upCell >= 0) cells[upCell].classList.remove('up')
+    upCell = -1
+  }
+  function popMole() {
+    hideMole()
+    let next = (Math.random() * 9) | 0
+    if (next === upCell) next = (next + 1) % 9
+    upCell = next
+    cells[upCell].classList.add('up')
+  }
+  cells.forEach((c, i) => c.addEventListener('pointerdown', (e) => { e.preventDefault(); whack(i) }))
+
+  function start() {
+    score = 0; timeLeft = 30
+    scoreEl.textContent = '0'; timeEl.textContent = '30'
+    overEl.style.display = 'none'
+    clearInterval(moleTimer); clearInterval(tickTimer)
+    popMole()
+    moleTimer = setInterval(popMole, 700)
+    tickTimer = setInterval(() => {
+      timeLeft--
+      timeEl.textContent = timeLeft
+      if (timeLeft <= 0) {
+        clearInterval(moleTimer); clearInterval(tickTimer)
+        hideMole()
+        document.getElementById('final').textContent = score
+        overEl.style.display = 'flex'
+      }
+    }, 1000)
+  }
+  document.getElementById('again').addEventListener('click', start)
+  start()
+</script>
+</body>
+</html>

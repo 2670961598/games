@@ -203,8 +203,10 @@ async function handler(req, res) {
           : WEB_DIR
       const f = safeJoin(webRoot, path)
       if (f && (await serveFile(req, res, f))) return
-      // 回退 index.html（根路径与未知静态路径一致体验）
-      if (await serveFile(req, res, join(webRoot, 'index.html'))) return
+      // SPA 回退仅限无扩展名路径；带扩展名却未命中的按 404 处理（不掩盖真实缺失/穿越尝试）
+      if (!extname(path)) {
+        if (await serveFile(req, res, join(webRoot, 'index.html'))) return
+      }
       return sendJSON(res, 404, { ok: false, error: 'not found' })
     }
 

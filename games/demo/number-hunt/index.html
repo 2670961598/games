@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>数字猎手</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif;
+    display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; display: flex; justify-content: space-between; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    font-size: 14px; color: #8b94a7; }
+  header b { color: #e8ecf3; font-size: 18px; }
+  main { flex: 1; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+  #progress { font-size: 14px; color: #8b94a7; }
+  #grid { width: min(88vw, 58vh); aspect-ratio: 1; display: grid; grid-template: repeat(5, 1fr) / repeat(5, 1fr); gap: 6px; }
+  .cell { border-radius: 12px; background: #1a2130; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; }
+  .cell.done { background: #22c55e22; color: #7bd88f; }
+  .cell.bad { animation: bad .25s; }
+  @keyframes bad { 50% { background: #a3333355; transform: scale(.92); } }
+  #over { position: fixed; inset: 0; background: #0b0e14ee; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; z-index: 10; }
+  #over h2 { font-size: 22px; }
+  #over .s { font-size: 44px; font-weight: 800; color: #6ea8ff; }
+  #over button { padding: 12px 32px; border-radius: 999px; border: 0; font-size: 16px; font-weight: 600;
+    color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+</style>
+</head>
+<body>
+<header><span>💎 <b id="score">0</b> 轮</span><span>数字猎手</span><span>下一个: <b id="next-n">1</b></span></header>
+<main>
+  <div id="progress">按 1 → 25 的顺序点数字</div>
+  <div id="grid"></div>
+</main>
+<div id="over"><h2>时间到！</h2><div class="s" id="final">0</div><button id="again">再来一局</button></div>
+<script>
+  const grid = document.getElementById('grid')
+  const scoreEl = document.getElementById('score')
+  const nextEl = document.getElementById('next-n')
+  const timeWrap = document.getElementById('progress')
+  const overEl = document.getElementById('over')
+  const TOTAL = 25
+  const cells = new Map() // 数字 -> cell
+  let score = 0, expect = 1, timeLeft = 60, tickTimer = null
+
+  function build() {
+    grid.innerHTML = ''
+    cells.clear()
+    const nums = Array.from({ length: TOTAL }, (_, i) => i + 1).sort(() => Math.random() - .5)
+    for (const n of nums) {
+      const c = document.createElement('div')
+      c.className = 'cell'
+      c.textContent = n
+      c.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        tap(n, c)
+      })
+      grid.appendChild(c)
+      cells.set(n, c)
+    }
+  }
+  function tap(n, c) {
+    if (n === expect) {
+      c.classList.add('done')
+      expect++
+      if (expect > TOTAL) {
+        score++
+        scoreEl.textContent = score
+        expect = 1
+        build()
+      }
+      nextEl.textContent = Math.min(expect, TOTAL)
+    } else {
+      c.classList.remove('bad'); void c.offsetWidth; c.classList.add('bad')
+    }
+  }
+  function start() {
+    score = 0; expect = 1; timeLeft = 60
+    scoreEl.textContent = '0'; nextEl.textContent = '1'
+    overEl.style.display = 'none'
+    build()
+    clearInterval(tickTimer)
+    tickTimer = setInterval(() => {
+      timeLeft--
+      timeWrap.textContent = `按 1 → ${TOTAL} 的顺序点数字 · 剩余 ${timeLeft}s`
+      if (timeLeft <= 0) {
+        clearInterval(tickTimer)
+        document.getElementById('final').textContent = score
+        overEl.style.display = 'flex'
+      }
+    }, 1000)
+  }
+  document.getElementById('again').addEventListener('click', start)
+  start()
+</script>
+</body>
+</html>

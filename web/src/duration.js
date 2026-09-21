@@ -35,4 +35,15 @@ export class DurationTracker {
     this._total = 0
     return t
   }
+
+  /**
+   * 取走自上次取走以来的增量并清零，运行中的区间不中断（起点重置为当前时刻）。
+   * 周期性落账用（与 consume 互不重叠，杜绝双计）。
+   */
+  drain() {
+    const t = this.elapsed
+    this._total = 0
+    if (this.running) this._since = this._now()
+    return t
+  }
 }

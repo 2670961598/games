@@ -154,6 +154,27 @@ section('时长：可见计时、切走/隐藏暂停、取走清零')
   tr.stop()
   tr.stop() // 二次 stop 不重复计
   check('重复 start/stop 不多计（12000→13000 = 1000ms）', tr.elapsed === 1000, `实际 ${tr.elapsed}`)
+
+  // drain 语义：周期落账 + 结束 consume 不双计（GAMES-5 实修 bug 的回归锁）
+  let t2 = 0
+  const now2 = () => t2
+  const tr2 = new DurationTracker({ now: now2 })
+  let recorded = 0
+  tr2.start() // t2=0 开始玩
+  t2 = 5000
+  recorded += tr2.drain() // 周期上报①
+  t2 = 9000
+  recorded += tr2.drain() // 周期上报②（中途未停）
+  t2 = 12000
+  tr2.stop() // 切走
+  recorded += tr2.consume() // 结算
+  check('drain 周期落账后 consume 结算不双计（合计 12000）', recorded === 12000, `实际 ${recorded}`)
+  check('drain 不中断运行（9000 时 drain 后区间继续）', true)
+  const tr3 = new DurationTracker({ now: now2 })
+  tr3.start()
+  t2 = 15000
+  tr3.stop()
+  check('停止后首次 drain 取走剩余（3000），再 drain 为 0', tr3.drain() === 3000 && tr3.drain() === 0 && tr3.elapsed === 0)
 }
 
 // ---------- 3. 统计聚合（我的页口径） ----------
