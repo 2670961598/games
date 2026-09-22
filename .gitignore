@@ -1,8 +1,12 @@
 node_modules/
 dist/
-server/data/
+dist.tmp*/
 __pycache__/
 *.pyc
 .DS_Store
 .env
 *.log
+
+# 运行时数据（统计事件/上传台账/待审目录）
+server/data/
+games/_pending/

@@ -1,264 +1,337 @@
-// GAMES 平台静态 + API 服务器（Node 原生 http，零运行时依赖）
-// 高并发取向：keep-alive 长连接、brotli/gzip 压缩、强 ETag + 304、哈希资产 immutable 缓存。
+// GAMES 平台 server：静态托管 + 游戏/统计/上传全量 API（Node 原生 http，零运行时依赖）。
+// 与 GAMES-4/5 骨架约定对齐：端口默认 4399、/api/health → { ok: true }、games/<type>/<slug>/ 清单扫描。
 //
-// 端口：PORT 环境变量，默认 4399；绑定 HOST 默认 0.0.0.0（便于手机经局域网访问）。
-// 注意：macOS 下 0.0.0.0 与 127.0.0.1 可同端口并存绑定，选端口须确认回环也空闲（8787 被
-// studio-daemon 控制台占用回环，本机踩过：server 报 listening 但 localhost 流量被截）。
-// 静态根：
-//   dist/  —— web 构建产物（npm run build），未命中文件回退 index.html（SPA）
-//   games/ —— 自包含游戏目录，按原路径伺服（/games/<type>/<slug>/...）
+// 路由：
+//   GET  /api/health                  存活检查
+//   GET  /api/games?page&pageSize&seed&type  游戏大全（分页 + seed 洗牌袋；短 max-age 可缓存）
+//   POST /api/upload                  玩家上传（zip/单 html/multipart；限速每 IP 10 次/分钟）
+//   GET  /api/uploads                 待审列表 ｜ GET /api/uploads/<id> 单查状态
+//   POST /api/uploads/<id>/approve    待审 → 上架（移入 games/ 并写清单）
+//   POST /api/uploads/<id>/reject     待审 → 驳回（body 可带 { reason }）
+//   POST /api/stats                   时长上报 { visitorId, gameId, seconds } 或 { events: [...] }
+//                                     （别名 /api/play-events 兼容 GAMES-5 前端 sendBeacon，ms 字段自动换算）
+//   GET  /api/stats/<visitorId>       玩过列表 + 累计时长
+//   GET  /games/*                     games/ 目录静态伺服（iframe 游戏入口）
+//   GET  /*                           前端静态：WEB_DIR 强制 > dist/ > web/
+//
+// 性能：keep-alive 65s、文本响应 gzip/br、静态指纹资源 immutable 长缓存、其余 ETag+304、
+//       /api/games 结果 3s 内存缓存 + public max-age=30。压测见 README（scripts/bench-api.js）。
+// 安全口径：全站不输出任何 CORS 头，且 Origin 与 Host 不一致的请求直接 403（仅同源）。
 import http from 'node:http'
-import { createReadStream } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
-import { networkInterfaces } from 'node:os'
-import { extname, join, resolve, sep } from 'node:path'
+import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { brotliCompressSync, gzipSync } from 'node:zlib'
+import { exists, readBody, safeJoin, sendJSON, serveFile, HttpError } from './lib/http-util.js'
+import { scanGames } from './lib/scan-games.js'
+import { seededShuffle } from './lib/shuffle.js'
+import { createRateLimiter } from './lib/ratelimit.js'
+import { createStats } from './lib/stats.js'
+import { createUploads } from './lib/uploads.js'
+import { crc32 } from './lib/zip.js'
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..')
+const GAMES_DIR = process.env.GAMES_DIR || join(ROOT, 'games')
+const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'server', 'data')
 const DIST_DIR = join(ROOT, 'dist')
-const GAMES_DIR = join(ROOT, 'games')
+const WEB_DIR = join(ROOT, 'web')
+const PENDING_DIR = join(GAMES_DIR, '_pending')
+const LEDGER_FILE = join(DATA_DIR, 'uploads.jsonl')
+const EVENTS_FILE = join(DATA_DIR, 'play-events.jsonl')
 const PORT = Number(process.env.PORT) || 4399
-const HOST = process.env.HOST || '0.0.0.0'
+const HOST = process.env.HOST || '127.0.0.1'
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8',
-  '.md': 'text/plain; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-  '.ttf': 'font/ttf',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.ogg': 'audio/ogg',
-  '.m4a': 'audio/mp4',
-}
+const UPLOAD_MAX_BYTES = (Number(process.env.UPLOAD_MAX_MB) || 2) * 1024 * 1024
+const UPLOAD_RATE_PER_MIN = Number(process.env.UPLOAD_RATE_PER_MIN) || 10
+const SCRIPT_HOSTS = (process.env.UPLOAD_SCRIPT_HOSTS || 'cdn.jsdelivr.net,unpkg.com,cdnjs.cloudflare.com,esm.sh')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean)
 
-// 可压缩类型：文本类压缩收益高；图片/字体已是压缩格式，跳过
-const COMPRESSIBLE = new Set([
-  'text/html', 'text/css', 'text/javascript', 'text/plain',
-  'application/json', 'application/javascript', 'image/svg+xml',
-])
-const isCompressible = (type) => COMPRESSIBLE.has(type.split(';')[0].trim())
-const typeOf = (file) => MIME[extname(file).toLowerCase()] || 'application/octet-stream'
+const JSON_BODY_LIMIT = 1024 * 1024
+const GAMES_CACHE_MS = 3000
+const GAMES_MAX_PAGE_SIZE = 100
+const VISITOR_RE = /^[A-Za-z0-9._:-]{1,64}$/
 
-// 压缩阈值：小于 1KB 时压缩头开销大于收益，直接原样返回；
-// 大于 2MB 走同步压缩会长时间阻塞事件循环，降级为流式原样返回（大文件场景后续单再引入流式压缩）
-const COMPRESS_MIN_SIZE = 1024
-const COMPRESS_MAX_SIZE = 2 * 1024 * 1024
+const stats = createStats({ dir: DATA_DIR, file: EVENTS_FILE })
+const uploadLimiter = createRateLimiter({ windowMs: 60_000, max: UPLOAD_RATE_PER_MIN })
+const uploads = createUploads({
+  pendingDir: PENDING_DIR,
+  gamesDir: GAMES_DIR,
+  dataDir: DATA_DIR,
+  ledgerFile: LEDGER_FILE,
+  scriptHosts: SCRIPT_HOSTS,
+  maxUploadBytes: UPLOAD_MAX_BYTES,
+  onPublished: invalidateGames,
+  onRejected: invalidateGames,
+})
 
-// 压缩结果内存缓存（LRU）：产物文件少且小，避免每请求重复读盘+压缩。
-// 条数/字节双上限兜底，games/ 目录增多后也不会内存失控；etag 含 size+mtime，文件变更自动失效。
-const COMPRESS_CACHE_MAX_ENTRIES = 64
-const COMPRESS_CACHE_MAX_BYTES = 8 * 1024 * 1024
-const compressCache = new Map() // key: `${file}\0${etag}\0${encoding}` → 压缩后 Buffer
-let compressCacheBytes = 0
-
-function compressCacheGet(key) {
-  const hit = compressCache.get(key)
-  if (hit) { // 触达即移到末尾（Map 按插入序迭代，首键即最旧）
-    compressCache.delete(key)
-    compressCache.set(key, hit)
+// ---- /api/games 清单缓存（上架/驳回即时失效，平时 3s 短缓存防扫描风暴） ----
+let gamesCache = { at: 0, list: null }
+async function gamesList() {
+  if (!gamesCache.list || Date.now() - gamesCache.at > GAMES_CACHE_MS) {
+    gamesCache = { at: Date.now(), list: await scanGames(GAMES_DIR) }
   }
-  return hit
+  return gamesCache.list
+}
+function invalidateGames() {
+  gamesCache = { at: 0, list: null }
 }
 
-function compressCachePut(key, body) {
-  compressCache.set(key, body)
-  compressCacheBytes += body.length
-  while (compressCache.size > COMPRESS_CACHE_MAX_ENTRIES || compressCacheBytes > COMPRESS_CACHE_MAX_BYTES) {
-    const oldest = compressCache.keys().next().value
-    if (oldest === undefined) break
-    compressCacheBytes -= compressCache.get(oldest).length
-    compressCache.delete(oldest)
-  }
-}
-
-function send(req, res, status, headers, body = null) {
-  res.writeHead(status, headers)
-  if (req.method === 'HEAD' || body === null) res.end()
-  else res.end(body)
-}
-
-function sendJson(req, res, status, obj) {
-  send(req, res, status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-  }, JSON.stringify(obj))
-}
-
-function sendText(req, res, status, text) {
-  send(req, res, status, { 'content-type': 'text/plain; charset=utf-8' }, `${text}\n`)
-}
-
-// 解析静态路径 → 绝对文件路径；防路径穿越；目录自动找 index.html。
-// 未命中：SPA 根回退到根 index.html（也不存在则 null），games 根直接 null。
-async function resolveStatic(pathname, root, allowSpaFallback) {
-  let decoded
+/** 跨域关闭：Origin 与 Host 不一致（或 Origin 解析失败）一律 403，且全站从不输出 CORS 头 */
+function crossOriginDenied(req) {
+  const origin = req.headers.origin
+  if (!origin) return false
   try {
-    decoded = decodeURIComponent(pathname)
+    const o = new URL(origin)
+    return o.host.toLowerCase() !== String(req.headers.host || '').toLowerCase()
   } catch {
-    return null // 非法百分号编码（如 /%）按未命中处理，而非 500
+    return true
   }
-  if (decoded.includes('\0')) return null // 路径含 NUL（%00）同理
-  const clean = decoded.replace(/\/+$/, '') || '/'
-  let file = resolve(root, `.${clean}`)
-  if (file !== root && !file.startsWith(root + sep)) return null // 穿越企图
-  const spaFallback = async () => {
-    if (!allowSpaFallback) return null
-    try {
-      return (await stat(join(root, 'index.html'))).isFile() ? join(root, 'index.html') : null
-    } catch {
-      return null
-    }
+}
+
+function clientIP(req) {
+  return String(req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+}
+
+// ---- API handlers ----
+
+function intParam(sp, name, { min, max, def }) {
+  const raw = sp.get(name)
+  if (raw === null || raw === '') return def
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new HttpError(400, `参数 ${name} 非法（需 ${min}~${max} 的整数）`)
   }
-  let st
+  return n
+}
+
+async function apiGames(req, res, u) {
+  const sp = u.searchParams
+  const page = intParam(sp, 'page', { min: 1, max: 1_000_000, def: 1 })
+  const pageSize = intParam(sp, 'pageSize', { min: 1, max: GAMES_MAX_PAGE_SIZE, def: 20 })
+  const seed = sp.get('seed') || ''
+  if (seed.length > 64) throw new HttpError(400, '参数 seed 过长（≤64 字符）')
+  const type = sp.get('type') || ''
+
+  let list = await gamesList()
+  if (type) list = list.filter((g) => g.type === type)
+  if (seed) list = seededShuffle(list, seed) // 洗牌袋：同 seed 稳定全排列，翻页不乱序
+  const total = list.length
+  const start = (page - 1) * pageSize
+  const body = {
+    ok: true,
+    total,
+    page,
+    pageSize,
+    pages: Math.max(1, Math.ceil(total / pageSize)),
+    games: list.slice(start, start + pageSize),
+  }
+  // 短缓存 + ETag 304：列表页高频轮询打到 CDN/浏览器，穿透到扫描的只剩 miss
+  const s = JSON.stringify(body)
+  const etag = `W/"g-${total}-${crc32(Buffer.from(s)).toString(36)}"`
+  sendJSON(req, res, 200, body, { cacheControl: 'public, max-age=30', etag })
+}
+
+async function apiUploadPost(req, res) {
+  const rl = uploadLimiter(clientIP(req))
+  if (!rl.allowed) {
+    throw new HttpError(429, `上传限速：每 IP 每分钟 ${UPLOAD_RATE_PER_MIN} 次，请 ${rl.retryAfterSec}s 后再试`, {
+      'Retry-After': String(rl.retryAfterSec),
+    })
+  }
+  const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+  const { id } = await uploads.save(req, u.searchParams)
+  sendJSON(req, res, 201, { ok: true, id, state: 'pending' })
+}
+
+async function apiStatsPost(req, res) {
+  let body
   try {
-    st = await stat(file)
+    body = JSON.parse((await readBody(req, JSON_BODY_LIMIT)).toString('utf8'))
+  } catch (e) {
+    if (e instanceof HttpError) throw e
+    throw new HttpError(400, '请求体不是合法 JSON')
+  }
+  // 单条 / 批量两种形状都收（sendBeacon 批量省请求）
+  const events = Array.isArray(body && body.events) ? body.events : [body]
+  const rows = []
+  for (const ev of events) {
+    if (!ev || typeof ev !== 'object') continue
+    if (typeof ev.gameId !== 'string' || !ev.gameId || ev.gameId.length > 128) continue
+    const visitorId = typeof ev.visitorId === 'string' && VISITOR_RE.test(ev.visitorId) ? ev.visitorId : 'anonymous'
+    let s = Number(ev.seconds)
+    if (!Number.isFinite(s) || s < 0) s = Number(ev.ms) > 0 ? Number(ev.ms) / 1000 : 0 // GAMES-5 兼容
+    rows.push({
+      at: Number(ev.at) > 0 ? Number(ev.at) : Date.now(),
+      visitorId,
+      gameId: ev.gameId,
+      s: Math.min(s, 604800), // 单条封顶一周，防脏数据撑爆聚合
+    })
+  }
+  const stored = await stats.record(rows)
+  sendJSON(req, res, 200, { ok: true, stored })
+}
+
+async function apiStatsGet(req, res, visitorIdRaw) {
+  let vid
+  try {
+    vid = decodeURIComponent(visitorIdRaw)
   } catch {
-    return spaFallback()
+    throw new HttpError(400, 'visitorId 编码非法')
   }
-  if (st.isDirectory()) {
-    file = join(file, 'index.html')
-    try {
-      st = await stat(file)
-    } catch {
-      return spaFallback()
-    }
-  }
-  return st.isFile() ? file : null
+  if (!VISITOR_RE.test(vid)) throw new HttpError(400, 'visitorId 非法（[A-Za-z0-9._:-]{1,64}）')
+  const r = await stats.summary(vid)
+  sendJSON(req, res, 200, { ok: true, ...r })
 }
 
-// If-None-Match 命中判断（容忍 W/ 前缀与多值列表）
-function etagMatches(req, etag) {
-  const inm = req.headers['if-none-match']
-  if (!inm) return false
-  if (inm.trim() === '*') return true
-  return inm.split(',').some((raw) => raw.trim().replace(/^W\//, '') === etag)
-}
+// ---- 主处理 ----
 
-// 哈希文件名的产物（Vite dist/assets/）内容寻址 → 可永久缓存；HTML 始终走 ETag 再验证
-function cacheControlFor(pathname, type) {
-  if (pathname.startsWith('/assets/')) return 'public, max-age=31536000, immutable'
-  if (type.startsWith('text/html')) return 'no-cache'
-  return 'no-cache'
-}
-
-async function serveFile(req, res, pathname, file) {
-  const st = await stat(file)
-  const type = typeOf(file)
-  const etag = `"${st.size.toString(16)}-${st.mtimeMs.toString(16)}"`
-  const cacheControl = cacheControlFor(pathname, type)
-  const baseHeaders = { etag, 'cache-control': cacheControl, vary: 'Accept-Encoding' }
-
-  if (etagMatches(req, etag)) {
-    return send(req, res, 304, baseHeaders)
-  }
-
-  let headers = { ...baseHeaders, 'content-type': type, 'last-modified': st.mtime.toUTCString() }
-
-  const acceptEncoding = req.headers['accept-encoding'] || ''
-  let encoding = null
-  if (isCompressible(type) && st.size >= COMPRESS_MIN_SIZE && st.size <= COMPRESS_MAX_SIZE && req.method !== 'HEAD') {
-    if (acceptEncoding.includes('br')) encoding = 'br'
-    else if (acceptEncoding.includes('gzip')) encoding = 'gzip'
-  }
-
-  if (encoding) {
-    const key = `${file}\0${etag}\0${encoding}`
-    let body = compressCacheGet(key)
-    if (!body) {
-      const buf = await readFile(file)
-      body = encoding === 'br' ? brotliCompressSync(buf) : gzipSync(buf)
-      compressCachePut(key, body)
-    }
-    headers['content-encoding'] = encoding
-    headers['content-length'] = body.length
-    return send(req, res, 200, headers, body)
-  }
-
-  headers['content-length'] = st.size
-  if (req.method === 'HEAD') return send(req, res, 200, headers)
-
-  const stream = createReadStream(file)
-  stream.on('error', () => {
-    if (!res.headersSent) send(req, res, 500, { 'content-type': 'text/plain; charset=utf-8' }, 'internal error')
-    else res.destroy()
-  })
-  res.writeHead(200, headers)
-  stream.pipe(res)
-}
-
-const server = http.createServer(async (req, res) => {
+async function handler(req, res) {
+  let u
   try {
-    const url = new URL(req.url, 'http://localhost')
-    const { pathname } = url
+    u = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+  } catch {
+    return sendJSON(req, res, 400, { ok: false, error: 'malformed url' })
+  }
+  const path = u.pathname
 
-    // ---- API ----
-    if (pathname === '/api/health') {
-      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(req, res, 405, { error: 'method not allowed' })
-      return send(req, res, 200, {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': 'no-store',
-      }, '{"ok":true}')
-    }
-    if (pathname.startsWith('/api/')) return sendJson(req, res, 404, { error: 'not found' })
-
-    // ---- 静态 ----
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      return sendText(req, res, 405, 'method not allowed')
+  try {
+    if (crossOriginDenied(req)) {
+      return sendJSON(req, res, 403, { ok: false, error: 'cross-origin request denied' })
     }
 
-    if (pathname.startsWith('/games/') || pathname === '/games') {
-      // 挂载前缀 /games 剥掉后再映射进 games 根目录（否则拼成 games/games/...）
-      const gamesPath = pathname.replace(/^\/games/, '') || '/'
-      const file = await resolveStatic(gamesPath, GAMES_DIR, false)
-      if (!file) return sendText(req, res, 404, `not found: ${pathname}`)
-      return await serveFile(req, res, pathname, file)
+    if (path === '/api/health') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return sendJSON(req, res, 200, { ok: true, uptime: process.uptime(), now: Date.now() })
+    }
+    if (path === '/api/games') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return await apiGames(req, res, u)
+    }
+    if (path === '/api/upload') {
+      if (req.method !== 'POST') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return await apiUploadPost(req, res)
+    }
+    if (path === '/api/stats' || path === '/api/play-events') {
+      if (req.method !== 'POST') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return await apiStatsPost(req, res) // /api/play-events 为 GAMES-5 sendBeacon 别名，同一存储
+    }
+    let m
+    if ((m = /^\/api\/stats\/([^/]+)$/.exec(path))) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return await apiStatsGet(req, res, m[1])
+    }
+    if (path === '/api/uploads') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      return sendJSON(req, res, 200, { ok: true, pending: await uploads.listPending() })
+    }
+    if ((m = /^\/api\/uploads\/([a-z0-9-]+)$/.exec(path)) && req.method === 'GET') {
+      const rec = await uploads.get(m[1])
+      if (!rec) return sendJSON(req, res, 404, { ok: false, error: 'upload not found' })
+      return sendJSON(req, res, 200, { ok: true, upload: rec })
+    }
+    if ((m = /^\/api\/uploads\/([a-z0-9-]+)\/(approve|reject)$/.exec(path)) && req.method === 'POST') {
+      let reason = ''
+      if (m[2] === 'reject') {
+        try {
+          const body = JSON.parse((await readBody(req, 4096)).toString('utf8') || '{}')
+          if (body && typeof body.reason === 'string') reason = body.reason
+        } catch {
+          /* body 可省略/reason 可选 */
+        }
+      }
+      const r = m[2] === 'approve' ? await uploads.approve(m[1]) : await uploads.reject(m[1], reason)
+      return sendJSON(req, res, 200, { ok: true, ...r })
     }
 
-    const file = await resolveStatic(pathname, DIST_DIR, true) // SPA：未命中回退 index.html
-    if (!file) return sendText(req, res, 404, 'dist 未构建：请先执行 npm run build')
-    return await serveFile(req, res, pathname, file)
+    // 游戏静态资源（iframe 入口）：games/ 原路径伺服（_pending/_shared 等内部目录不外露）
+    if (path.startsWith('/games/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
+      }
+      const rest = path.slice('/games/'.length)
+      if (rest.startsWith('_') || rest.startsWith('.')) {
+        return sendJSON(req, res, 404, { ok: false, error: 'not found' })
+      }
+      const f = safeJoin(GAMES_DIR, rest)
+      if (f && (await serveFile(req, res, f))) return
+      return sendJSON(req, res, 404, { ok: false, error: 'not found' })
+    }
+
+    // 未知 /api/* 按 JSON 404（不能落进 SPA 回退，否则前端 res.json() 拿到 html 报 SyntaxError 掩盖真因）
+    if (path.startsWith('/api/')) {
+      return sendJSON(req, res, 404, { ok: false, error: 'not found' })
+    }
+
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      const webRoot = process.env.WEB_DIR
+        ? join(ROOT, process.env.WEB_DIR)
+        : (await exists(join(DIST_DIR, 'index.html')))
+          ? DIST_DIR
+          : WEB_DIR
+      const f = safeJoin(webRoot, path)
+      if (f && (await serveFile(req, res, f))) return
+      if (!extname(path)) {
+        if (await serveFile(req, res, join(webRoot, 'index.html'))) return
+      }
+      return sendJSON(req, res, 404, { ok: false, error: 'not found' })
+    }
+
+    return sendJSON(req, res, 405, { ok: false, error: 'method not allowed' })
   } catch (err) {
-    console.error('[server] request error:', err)
-    if (!res.headersSent) sendJson(req, res, 500, { error: 'internal error' })
-    else res.destroy()
+    if (err instanceof HttpError) {
+      // 413 特殊：请求体没收完就提前应答，剩余字节会让 keep-alive 连接错位，
+      // 必须标记 Connection: close 并在响应冲刷后断开，客户端会自动换新连接重试
+      const mustClose = err.status === 413
+      sendJSON(
+        req,
+        res,
+        err.status,
+        { ok: false, error: err.message },
+        { headers: { ...(mustClose ? { Connection: 'close' } : {}), ...(err.headers || {}) } },
+      )
+      if (mustClose) res.on('finish', () => res.destroy())
+      return
+    }
+    if (err && (err.code === 'EPIPE' || err.code === 'ECONNRESET')) return // 客户端断连/中止，无需应答
+    return sendJSON(req, res, 500, { ok: false, error: String(err && err.message ? err.message : err) })
+  }
+}
+
+const server = http.createServer((req, res) => {
+  handler(req, res).catch(() => {
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' })
+    try {
+      res.end(JSON.stringify({ ok: false, error: 'internal' }))
+    } catch {
+      /* 连接已断 */
+    }
+  })
+})
+
+// 高并发：拉长 keep-alive（默认 5s 太短，浏览器复用连接会频繁被砍）
+server.keepAliveTimeout = 65_000
+server.headersTimeout = 66_000
+server.maxRequestsPerSocket = 0 // 不限（个人本机无慢速攻击面）
+
+// 非法请求（如 URL 未转义中文被 llhttp 拒收）礼貌回 400，而不是静默断连难排查
+server.on('clientError', (err, socket) => {
+  if (socket.writable && err && err.code !== 'ECONNRESET') {
+    socket.end('HTTP/1.1 400 Bad Request\r\nContent-Type: application/json; charset=utf-8\r\nConnection: close\r\nContent-Length: 45\r\n\r\n{"ok":false,"error":"malformed http request"}')
+  } else {
+    socket.destroy()
   }
 })
 
-// 高并发取向：长 keep-alive（高于常见 LB/代理 60s 空超时，避免连接被抢先掐断）
-server.keepAliveTimeout = 65_000
-server.headersTimeout = 66_000
-server.maxRequestsPerSocket = 0 // 单连接不限请求数
-server.on('clientError', (err, socket) => {
-  socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[games-server] 端口 ${PORT} 已被占用（HOST=${HOST}）：可能已有实例在跑；换端口请用 PORT=xxxx`)
+  } else {
+    console.error('[games-server] 启动失败:', err)
+  }
+  process.exit(1)
 })
 
 server.listen(PORT, HOST, () => {
-  const nets = Object.values(networkInterfaces()).flat()
-  const lan = nets.find((n) => n?.family === 'IPv4' && !n.internal)?.address
-  console.log(`[server] GAMES server listening`)
-  console.log(`[server]   local   http://localhost:${PORT}`)
-  if (lan) console.log(`[server]   network http://${lan}:${PORT}  （手机同局域网访问）`)
+  console.log(`[games-server] http://${HOST}:${PORT}  (games: ${GAMES_DIR})`)
+  console.log(`[games-server] 上传：≤${Math.floor(UPLOAD_MAX_BYTES / 1024 / 1024)}MB，每 IP ${UPLOAD_RATE_PER_MIN} 次/分钟，script 白名单: ${SCRIPT_HOSTS.join(',')}`)
 })
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    console.log(`[server] ${sig} received, closing`)
-    server.close(() => process.exit(0))
-    setTimeout(() => process.exit(0), 3_000).unref()
-  })
-}

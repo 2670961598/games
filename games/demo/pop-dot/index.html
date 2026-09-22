@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>泡泡点点</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif; }
+  header { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between;
+    padding: calc(8px + env(safe-area-inset-top)) 16px 8px; font-size: 14px; color: #8b94a7;
+    background: linear-gradient(#101522ee, transparent); z-index: 5; }
+  header b { color: #e8ecf3; font-size: 18px; }
+  #field { position: relative; height: 100%; }
+  .dot { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: #0b0e14; animation: pop .18s ease-out; }
+  @keyframes pop { from { transform: scale(.3); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+  .dot.gone { animation: vanish .25s ease-in forwards; }
+  @keyframes vanish { to { transform: scale(1.6); opacity: 0; } }
+  #over { position: fixed; inset: 0; background: #0b0e14ee; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; z-index: 10; }
+  #over h2 { font-size: 22px; }
+  #over .s { font-size: 44px; font-weight: 800; color: #6ea8ff; }
+  #over button { padding: 12px 32px; border-radius: 999px; border: 0; font-size: 16px; font-weight: 600;
+    color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+</style>
+</head>
+<body>
+<header><span>⏱ <b id="time">30</b>s</span><span>泡泡点点</span><span>💎 <b id="score">0</b></span></header>
+<div id="field"></div>
+<div id="over"><h2>时间到！</h2><div class="s" id="final">0</div><button id="again">再来一局</button></div>
+<script>
+  const field = document.getElementById('field')
+  const scoreEl = document.getElementById('score')
+  const timeEl = document.getElementById('time')
+  const overEl = document.getElementById('over')
+  const COLORS = ['#6ea8ff', '#ffd166', '#7bd88f', '#ff8fa3', '#b56cff']
+  let score = 0, timeLeft = 30, spawnTimer = null, tickTimer = null
+
+  function spawn() {
+    const size = 44 + Math.random() * 40
+    const d = document.createElement('div')
+    d.className = 'dot'
+    d.textContent = '＋'
+    d.style.width = d.style.height = size + 'px'
+    d.style.left = Math.random() * (innerWidth - size) + 'px'
+    d.style.top = Math.random() * (innerHeight - size - 60) + 70 + 'px'
+    d.style.background = COLORS[(Math.random() * COLORS.length) | 0]
+    d.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      if (!d.classList.contains('gone')) {
+        score++
+        scoreEl.textContent = score
+        d.classList.add('gone')
+        setTimeout(() => d.remove(), 240)
+      }
+    })
+    field.appendChild(d)
+    setTimeout(() => { // 没点中的泡泡自行消失
+      if (d.isConnected && !d.classList.contains('gone')) { d.classList.add('gone'); setTimeout(() => d.remove(), 240) }
+    }, 900 + Math.random() * 600)
+  }
+
+  function start() {
+    score = 0; timeLeft = 30
+    scoreEl.textContent = '0'; timeEl.textContent = '30'
+    overEl.style.display = 'none'
+    clearInterval(spawnTimer); clearInterval(tickTimer)
+    spawnTimer = setInterval(spawn, 420)
+    tickTimer = setInterval(() => {
+      timeLeft--
+      timeEl.textContent = timeLeft
+      if (timeLeft <= 0) {
+        clearInterval(spawnTimer); clearInterval(tickTimer)
+        field.querySelectorAll('.dot').forEach((d) => d.remove())
+        document.getElementById('final').textContent = score
+        overEl.style.display = 'flex'
+      }
+    }, 1000)
+  }
+
+  document.getElementById('again').addEventListener('click', start)
+  start()
+</script>
+</body>
+</html>

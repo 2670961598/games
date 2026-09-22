@@ -2,22 +2,17 @@
   "name": "games-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "GAMES 指尖游戏平台——竖屏刷玩小游戏站（前端 Vite+TS / 后端 Node 原生 http 零依赖）",
+  "description": "GAMES 指尖游戏平台——竖屏刷玩小游戏站（web/ 纯静态零构建源码 ｜ server/ Node 原生 http 零依赖）",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "scripts": {
-    "dev": "node scripts/dev.js",
-    "dev:server": "node server/index.js",
-    "dev:web": "vite",
-    "build": "vite build",
+    "build": "node scripts/build-web.js",
     "start": "node server/index.js",
-    "smoke": "node scripts/smoke-server.js",
-    "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "typescript": "^7.0.2",
-    "vite": "^8.3.0"
+    "dev": "WEB_DIR=web node server/index.js",
+    "smoke": "node scripts/smoke-api.js",
+    "smoke-feed": "node scripts/smoke-feed.js",
+    "bench": "node scripts/bench-api.js"
   }
 }
