@@ -10,6 +10,10 @@
 
 本仓由 Studio AI 团队框架（YouTrack GAMES 项目 + studio-daemon + Claude Code）全流程生产。
 
+> 架构约定：**零构建**。web/ 为原生 ES 模块（浏览器直接 import），server/ 为 Node 原生 http
+> 零运行时依赖；`npm run build` 是"拷贝 + 校验"式构建（见 scripts/build-web.js），
+> 在一个只有 Node 的检出上也能确定变绿。早先的 Vite+TS 方案已在基线对齐时移除。
+
 ## 快速开始（零依赖，只需 Node ≥ 18）
 
 ```bash
@@ -22,6 +26,9 @@ npm run smoke-feed  # 前端冒烟：洗牌袋/时长统计/清单完整性断�
 手机同局域网访问：`HOST=0.0.0.0 npm start`。
 
 开发（免构建直跑 web/ 源码）：`npm run dev`（`WEB_DIR=web` 强制前端根回退源码目录）。
+
+> 端口备注：默认端口选 4399；本机 8787 回环被 studio-daemon 控制台占用
+> （macOS 允许 0.0.0.0 与 127.0.0.1 同端口并存绑定，server 会“监听成功”但流量被截）。
 
 ## 目录结构
 
