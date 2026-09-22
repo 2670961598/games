@@ -11,6 +11,8 @@
     "build": "node scripts/build-web.js",
     "start": "node server/index.js",
     "dev": "WEB_DIR=web node server/index.js",
-    "smoke": "node scripts/smoke-feed.js"
+    "smoke": "node scripts/smoke-api.js",
+    "smoke-feed": "node scripts/smoke-feed.js",
+    "bench": "node scripts/bench-api.js"
   }
 }

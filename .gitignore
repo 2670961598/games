@@ -6,4 +6,7 @@ __pycache__/
 .DS_Store
 .env
 *.log
+
+# 运行时数据（统计事件/上传台账/待审目录）
 server/data/
+games/_pending/

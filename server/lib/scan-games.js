@@ -1,14 +1,23 @@
 // 扫描 games/<type>/<slug>/game.json → 游戏清单。
-// server（/api/games）与 scripts/smoke-feed.js 共用，保证清单口径一致。
+// /api/games 数据源。与 GAMES-5 骨架口径一致，本单在其基础上补 levels（关卡数）/ tier（数值档位）。
+// 规则：目录缺失/无 game.json/JSON 损坏/入口文件不存在 → 跳过该目录（服务器容错，不整体挂）
+//       _ 前缀目录（如 games/_pending/ 上传暂存、games/_shared/ 共享资源）与 . 前缀隐藏目录均不扫描
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
+function toLevels(v) {
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 1
+}
+
+function toTier(v) {
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, 16) : 'standard'
+}
+
 /**
- * @returns {Promise<Array<{id,slug,type,name,description,url,entryFile}>>}
+ * @returns {Promise<Array<{id,slug,type,name,description,levels,tier,url,entryFile}>>}
  *   id 默认 "<type>:<slug>"（game.json 可用 id 字段覆盖，须全局唯一）
- *   url 指向目录（server 会补 index.html），供 feed iframe 直用
- * 规则：目录缺失/无 game.json/JSON 损坏 → 跳过该目录（服务器容错，不整体挂）
- *       _ 前缀目录为共享资源（如 games/_shared/），. 前缀为隐藏目录，均不扫描
+ *   url 为入口文件直链（iframe 游戏入口）
  */
 export async function scanGames(gamesDir) {
   const out = []
@@ -47,13 +56,15 @@ export async function scanGames(gamesDir) {
       } catch {
         continue // 入口文件不存在 → 不入清单
       }
-      seenIds.add(id) // 登记必须在校验通过之后，否则坏目录会占住 id 挤掉后面的有效目录
+      seenIds.add(id) // 登记在校验通过之后，坏目录才不会占住 id 挤掉有效目录
       out.push({
         id,
         slug,
         type,
         name: typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : slug,
         description: typeof meta.description === 'string' ? meta.description : '',
+        levels: toLevels(meta.levels),
+        tier: toTier(meta.tier),
         url: `/games/${type}/${slug}/${entryFile}`,
         entryFile,
       })
