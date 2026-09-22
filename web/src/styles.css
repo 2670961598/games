@@ -1,0 +1,358 @@
+/* GAMES 竖屏刷玩 —— 全局样式（仅手机竖屏适配；宽屏给提示/缩窄） */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  background: #0b0e14;
+  color: #e8ecf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none; /* 防页面根滚动穿透 */
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* ---- 视图切换（body[data-view]） ---- */
+#app > div {
+  display: none;
+  height: 100vh;
+  height: 100dvh;
+}
+/* boot/error 屏在 #app 内，需盖过上面 #app > div 的 display:none（ID 选择器优先级更高） */
+body[data-view='boot'] #app > .boot,
+body[data-view='error'] #app > .error {
+  display: flex;
+}
+body[data-view='feed'] #view-feed,
+body[data-view='mine'] #view-mine,
+body[data-view='player'] #view-player {
+  display: block;
+}
+
+/* ---- 启动/错误页 ---- */
+.boot,
+.error {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+.boot__logo {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  background: linear-gradient(135deg, #6ea8ff, #b56cff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.boot__msg,
+.error__detail {
+  color: #8b94a7;
+  font-size: 14px;
+}
+.error__msg {
+  font-size: 18px;
+  font-weight: 600;
+}
+.error__retry {
+  margin-top: 8px;
+  padding: 10px 28px;
+  border-radius: 999px;
+  background: #3b82f6;
+  color: #fff;
+}
+
+/* ---- feed（scroll-snap 一屏一游，见 docs/explore/feed-scroll.md 方案 B） ---- */
+.feed {
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain; /* 滚动不穿透到页面根 */
+  -webkit-overflow-scrolling: touch;
+  background: #0b0e14;
+}
+
+.slot {
+  position: relative;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always; /* 一次滑一屏 */
+  overflow: hidden;
+}
+
+.slot__stage {
+  position: absolute;
+  inset: 0;
+  background: #12161f;
+}
+
+.slot__frame,
+.player__frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+}
+
+.slot__ph {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3d4657;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+}
+
+/* feed 态手势层：盖住 iframe 保住滚动；点击进入游戏（激活层模式） */
+.slot__tap {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: linear-gradient(180deg, rgba(11, 14, 20, 0.82), rgba(11, 14, 20, 0.42) 40%, rgba(11, 14, 20, 0.72));
+}
+.slot.is-active .slot__tap {
+  display: none; /* 进入游戏：撤层放行全部交互 */
+}
+.slot__name {
+  font-size: 20px;
+  font-weight: 700;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+.slot__play {
+  padding: 12px 34px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
+.slot__tip {
+  position: absolute;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  font-size: 12px;
+  color: rgba(232, 236, 243, 0.55);
+}
+
+/* 退出游戏把手（feed 内游戏激活时） */
+#exit-bar {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: none;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(11, 14, 20, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+}
+body.feed-active #exit-bar {
+  display: block;
+}
+
+/* feed 的“我的”入口 */
+#mine-btn {
+  position: fixed;
+  right: 14px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: none;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(20, 24, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+body[data-view='feed'] #mine-btn {
+  display: block;
+}
+body.feed-active #mine-btn {
+  display: none; /* 玩游戏时让路 */
+}
+
+/* ---- 我的页 ---- */
+.mine {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0b0e14;
+}
+.mine__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  border-bottom: 1px solid #1c2230;
+}
+.mine__back {
+  font-size: 14px;
+  color: #8b94a7;
+  padding: 4px 8px;
+}
+.mine__title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.mine__total {
+  padding: 26px 16px 22px;
+  text-align: center;
+  border-bottom: 1px solid #1c2230;
+}
+.mine__total-num {
+  font-size: 40px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #6ea8ff, #b56cff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mine__total-label {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #8b94a7;
+}
+.mine__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.mine__empty {
+  padding: 60px 0;
+  text-align: center;
+  color: #566076;
+  font-size: 14px;
+}
+.mine__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  border-bottom: 1px solid #1c2230;
+  text-align: left;
+}
+.mine__item-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+.mine__item-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #8b94a7;
+}
+.mine__item-arrow {
+  margin-left: auto;
+  color: #3d4657;
+  font-size: 20px;
+}
+
+/* ---- 单游戏播放器 ---- */
+.player {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.player__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(8px + env(safe-area-inset-top)) 14px 8px;
+  background: #12161f;
+  border-bottom: 1px solid #1c2230;
+}
+.player__back {
+  font-size: 14px;
+  color: #8b94a7;
+}
+.player__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.player__stage {
+  flex: 1;
+  position: relative;
+  background: #000;
+}
+
+/* ---- 宽屏提示（仅手机竖屏适配；可缩窄继续供本机开发） ---- */
+#rotate-tip {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 9, 14, 0.94);
+  backdrop-filter: blur(6px);
+}
+.rotate-tip__box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 40px;
+  text-align: center;
+}
+.rotate-tip__icon {
+  font-size: 44px;
+}
+.rotate-tip__msg {
+  font-size: 17px;
+  font-weight: 700;
+}
+.rotate-tip__sub {
+  font-size: 13px;
+  color: #8b94a7;
+}
+#rotate-ok {
+  margin-top: 10px;
+  padding: 9px 22px;
+  border-radius: 999px;
+  font-size: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #8b94a7;
+}
+
+/* 横屏或宽屏 → 提示；已选择“缩窄继续” → 收起提示并窄栏显示 */
+@media (min-aspect-ratio: 1/1) {
+  #rotate-tip {
+    display: flex;
+  }
+  body.wide-ok #rotate-tip {
+    display: none;
+  }
+  body.wide-ok #app {
+    max-width: 430px;
+    margin: 0 auto;
+    border-left: 1px solid #1c2230;
+    border-right: 1px solid #1c2230;
+  }
+}

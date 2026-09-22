@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>极速心算</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif;
+    display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; display: flex; justify-content: space-between; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    font-size: 14px; color: #8b94a7; }
+  header b { color: #e8ecf3; font-size: 18px; }
+  main { flex: 1; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+  #q { font-size: 52px; font-weight: 800; letter-spacing: .06em; }
+  #q.flash { animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  #opts { width: min(86vw, 380px); display: flex; gap: 12px; }
+  #opts button { flex: 1; padding: 18px 0; border-radius: 16px; border: 0; font-size: 24px; font-weight: 700;
+    color: #fff; background: #26304a; }
+  #opts button:active { background: #33415f; }
+  #combo { font-size: 13px; color: #8b94a7; height: 16px; }
+  #over { position: fixed; inset: 0; background: #0b0e14ee; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; z-index: 10; }
+  #over h2 { font-size: 22px; }
+  #over .s { font-size: 44px; font-weight: 800; color: #6ea8ff; }
+  #over button { padding: 12px 32px; border-radius: 999px; border: 0; font-size: 16px; font-weight: 600;
+    color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+</style>
+</head>
+<body>
+<header><span>⏱ <b id="time">30</b>s</span><span>极速心算</span><span>💎 <b id="score">0</b></span></header>
+<main>
+  <div id="q"></div>
+  <div id="opts"></div>
+  <div id="combo"></div>
+</main>
+<div id="over"><h2>时间到！</h2><div class="s" id="final">0</div><button id="again">再来一局</button></div>
+<script>
+  const qEl = document.getElementById('q')
+  const optsEl = document.getElementById('opts')
+  const comboEl = document.getElementById('combo')
+  const scoreEl = document.getElementById('score')
+  const timeEl = document.getElementById('time')
+  const overEl = document.getElementById('over')
+  let score = 0, timeLeft = 30, combo = 0, answer = 0, tickTimer = null
+
+  function next() {
+    const a = 1 + ((Math.random() * 20) | 0)
+    const b = 1 + ((Math.random() * 20) | 0)
+    answer = a + b
+    qEl.textContent = `${a} + ${b} = ?`
+    // 干扰项：±1/±2/±10，保证不重复不等于答案
+    const set = new Set([answer])
+    while (set.size < 3) {
+      const d = answer + [-2, -1, 1, 2, 10][(Math.random() * 5) | 0]
+      if (d > 0) set.add(d)
+    }
+    const arr = [...set].sort(() => Math.random() - .5)
+    optsEl.innerHTML = ''
+    for (const v of arr) {
+      const btn = document.createElement('button')
+      btn.textContent = v
+      btn.addEventListener('click', () => pick(v))
+      optsEl.appendChild(btn)
+    }
+  }
+  function pick(v) {
+    if (v === answer) {
+      score++
+      combo++
+      scoreEl.textContent = score
+      comboEl.textContent = combo >= 3 ? `连对 ×${combo} 🔥` : ''
+      next()
+    } else {
+      combo = 0
+      comboEl.textContent = ''
+      qEl.classList.remove('flash'); void qEl.offsetWidth; qEl.classList.add('flash')
+    }
+  }
+  function start() {
+    score = 0; combo = 0; timeLeft = 30
+    scoreEl.textContent = '0'; timeEl.textContent = '30'; comboEl.textContent = ''
+    overEl.style.display = 'none'
+    next()
+    clearInterval(tickTimer)
+    tickTimer = setInterval(() => {
+      timeLeft--
+      timeEl.textContent = timeLeft
+      if (timeLeft <= 0) {
+        clearInterval(tickTimer)
+        document.getElementById('final').textContent = score
+        overEl.style.display = 'flex'
+      }
+    }, 1000)
+  }
+  document.getElementById('again').addEventListener('click', start)
+  start()
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>颜色打击</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif;
+    display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; display: flex; justify-content: space-between; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    font-size: 14px; color: #8b94a7; }
+  header b { color: #e8ecf3; font-size: 18px; }
+  main { flex: 1; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; }
+  #swatch { width: min(46vw, 200px); aspect-ratio: 1; border-radius: 50%; box-shadow: 0 10px 40px #0006; transition: background .15s; }
+  #opts { width: min(86vw, 380px); display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  #opts button { padding: 18px 0; border-radius: 16px; border: 0; font-size: 20px; font-weight: 700; background: #26304a; color: #fff; }
+  #opts button:active { background: #33415f; }
+  #opts button.flash-bad { animation: bad .25s; }
+  @keyframes bad { 50% { background: #a33; } }
+  #hint { font-size: 13px; color: #8b94a7; }
+  #over { position: fixed; inset: 0; background: #0b0e14ee; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; z-index: 10; }
+  #over h2 { font-size: 22px; }
+  #over .s { font-size: 44px; font-weight: 800; color: #6ea8ff; }
+  #over button { padding: 12px 32px; border-radius: 999px; border: 0; font-size: 16px; font-weight: 600;
+    color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+</style>
+</head>
+<body>
+<header><span>⏱ <b id="time">30</b>s</span><span>颜色打击</span><span>💎 <b id="score">0</b></span></header>
+<main>
+  <div id="swatch"></div>
+  <div id="hint">点出圆圈的颜色名</div>
+  <div id="opts"></div>
+</main>
+<div id="over"><h2>时间到！</h2><div class="s" id="final">0</div><button id="again">再来一局</button></div>
+<script>
+  const COLORS = [
+    { name: '红', css: '#e05555' },
+    { name: '黄', css: '#ffd166' },
+    { name: '绿', css: '#7bd88f' },
+    { name: '蓝', css: '#6ea8ff' },
+    { name: '紫', css: '#b56cff' },
+  ]
+  const swatch = document.getElementById('swatch')
+  const optsEl = document.getElementById('opts')
+  const scoreEl = document.getElementById('score')
+  const timeEl = document.getElementById('time')
+  const overEl = document.getElementById('over')
+  let score = 0, timeLeft = 30, tickTimer = null, answer = null
+
+  function next() {
+    answer = COLORS[(Math.random() * COLORS.length) | 0]
+    swatch.style.background = answer.css
+    // 四个选项：含答案 + 随机 3 个干扰，顺序打乱
+    const pool = COLORS.filter((c) => c !== answer).sort(() => Math.random() - .5).slice(0, 3)
+    const opts = [...pool, answer].sort(() => Math.random() - .5)
+    optsEl.innerHTML = ''
+    for (const c of opts) {
+      const btn = document.createElement('button')
+      btn.textContent = c.name
+      btn.addEventListener('click', () => pick(c, btn))
+      optsEl.appendChild(btn)
+    }
+  }
+  function pick(c, btn) {
+    if (c === answer) {
+      score++
+      scoreEl.textContent = score
+      next()
+    } else {
+      btn.classList.remove('flash-bad'); void btn.offsetWidth; btn.classList.add('flash-bad')
+    }
+  }
+  function start() {
+    score = 0; timeLeft = 30
+    scoreEl.textContent = '0'; timeEl.textContent = '30'
+    overEl.style.display = 'none'
+    next()
+    clearInterval(tickTimer)
+    tickTimer = setInterval(() => {
+      timeLeft--
+      timeEl.textContent = timeLeft
+      if (timeLeft <= 0) {
+        clearInterval(tickTimer)
+        document.getElementById('final').textContent = score
+        overEl.style.display = 'flex'
+      }
+    }, 1000)
+  }
+  document.getElementById('again').addEventListener('click', start)
+  start()
+</script>
+</body>
+</html>
