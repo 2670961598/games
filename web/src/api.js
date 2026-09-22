@@ -29,23 +29,33 @@ export async function collectGames(fetchPage) {
   return all
 }
 
+/**
+ * 单页拉取（GAMES-12 游戏大全用）：type 走服务端过滤，pageSize 用大页减少翻页轮次。
+ * 返回服务端原始响应体 { ok, total, page, pageSize, pages, games }。
+ */
+export async function fetchGamesPage(page, { type = '', pageSize = GAMES_PAGE_SIZE, timeout = 8000 } = {}) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeout)
+  try {
+    const qs = new URLSearchParams()
+    qs.set('page', String(page))
+    qs.set('pageSize', String(pageSize))
+    if (type) qs.set('type', type)
+    const res = await fetch(`/api/games?${qs}`, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+    })
+    if (!res.ok) throw new Error(`/api/games HTTP ${res.status}`)
+    const body = await res.json()
+    if (!body || body.ok !== true || !Array.isArray(body.games)) throw new Error('/api/games 响应形状异常')
+    return body
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function fetchGames({ timeout = 8000 } = {}) {
-  return collectGames(async (page) => {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeout)
-    try {
-      const res = await fetch(`/api/games?page=${page}&pageSize=${GAMES_PAGE_SIZE}`, {
-        signal: ctrl.signal,
-        cache: 'no-store',
-      })
-      if (!res.ok) throw new Error(`/api/games HTTP ${res.status}`)
-      const body = await res.json()
-      if (!body || body.ok !== true || !Array.isArray(body.games)) throw new Error('/api/games 响应形状异常')
-      return body
-    } finally {
-      clearTimeout(timer)
-    }
-  })
+  return collectGames((page) => fetchGamesPage(page, { timeout }))
 }
 
 /**
