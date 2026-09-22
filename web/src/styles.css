@@ -37,6 +37,7 @@ body[data-view='error'] #app > .error {
 }
 body[data-view='feed'] #view-feed,
 body[data-view='mine'] #view-mine,
+body[data-view='browse'] #view-browse,
 body[data-view='player'] #view-player {
   display: block;
 }
@@ -196,6 +197,146 @@ body[data-view='feed'] #mine-btn {
 }
 body.feed-active #mine-btn {
   display: none; /* 玩游戏时让路 */
+}
+
+/* feed 的“游戏大全”入口（左下，与“我的”对称） */
+#catalog-btn {
+  position: fixed;
+  left: 14px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: none;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(20, 24, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+body[data-view='feed'] #catalog-btn {
+  display: block;
+}
+body.feed-active #catalog-btn {
+  display: none; /* 玩游戏时让路 */
+}
+
+/* ---- 游戏大全（#/catalog） ---- */
+.browse {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0b0e14;
+}
+.browse__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  border-bottom: 1px solid #1c2230;
+}
+.browse__back {
+  font-size: 14px;
+  color: #8b94a7;
+  padding: 4px 8px;
+}
+.browse__title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.browse__filters {
+  border-bottom: 1px solid #1c2230;
+}
+.browse__filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 8px 16px;
+}
+.browse__filter-row + .browse__filter-row {
+  border-top: 1px dashed #161c29;
+}
+.browse__filter-label {
+  flex: none;
+  font-size: 12px;
+  color: #566076;
+}
+.browse__chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-right: 16px;
+}
+.browse__chips::-webkit-scrollbar {
+  display: none;
+}
+.chip {
+  flex: none;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #a7b0c3;
+  background: #151a26;
+  border: 1px solid #232b3d;
+  white-space: nowrap;
+}
+.chip--on {
+  color: #fff;
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+.browse__count {
+  flex: none;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: #566076;
+}
+.browse__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px;
+}
+.browse__empty {
+  padding: 60px 0;
+  text-align: center;
+  color: #566076;
+  font-size: 14px;
+}
+.browse__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  border-bottom: 1px solid #1c2230;
+  text-align: left;
+}
+.browse__item-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.browse__item-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #8b94a7;
+}
+.browse__item-arrow {
+  margin-left: auto;
+  color: #566076;
+  font-size: 16px;
+}
+.browse__more {
+  flex: none;
+  margin: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 12px 0;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #a7b0c3;
+  background: #151a26;
+  border: 1px solid #232b3d;
+}
+.browse__more:disabled {
+  color: #566076;
 }
 
 /* ---- 我的页 ---- */
