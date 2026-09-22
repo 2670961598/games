@@ -1,11 +1,12 @@
-// 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/上传/播放器四视图 → 路由 → 计时上报管线。
-import { fetchGames, reportEvents, beaconEvents } from './api.js'
+// 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/上传/大全/播放器五视图 → 路由 → 计时上报管线。
+import { fetchGames, fetchGamesPage, reportEvents, beaconEvents } from './api.js'
 import { store, visitorId } from './store.js'
 import { newBag, reconcile, draw } from './shuffleBag.js'
 import { emptyStats, applyEnter, applyDuration, STATS_VERSION } from './stats.js'
 import { createFeed } from './feed.js'
 import { createMine } from './mine.js'
 import { createUpload } from './upload.js'
+import { createBrowse } from './browse.js'
 import { createPlayer } from './player.js'
 
 const FLUSH_MS = 15000 // 上报间隔
@@ -24,6 +25,7 @@ let activeRef = null
 let feed = null
 let mine = null
 let upload = null
+let browse = null
 let player = null
 let currentView = 'boot'
 
@@ -153,6 +155,9 @@ function showView(name) {
   } else if (name === 'upload') {
     setActiveRef(null)
     upload.activate() // 重读台账 + 立即探一轮 + 起轮询
+  } else if (name === 'browse') {
+    setActiveRef(null)
+    browse.refresh()
   } else if (name === 'player') {
     setActiveRef(player.getActive())
   }
@@ -171,11 +176,12 @@ function parseHash() {
   }
   if (h === '#/mine') return { view: 'mine' }
   if (h === '#/upload') return { view: 'upload' }
+  if (h === '#/catalog') return { view: 'browse' }
   return { view: 'feed' }
 }
 
 function route() {
-  if (!feed || !mine || !upload || !player) return // boot 未完成（含加载失败重试中）忽略路由
+  if (!feed || !mine || !upload || !browse || !player) return // boot 未完成（含加载失败重试中）忽略路由
   const { view, id } = parseHash()
   if (view === 'player') {
     setActiveRef(null) // 先结算上一个 tracker（feed 当前屏或播放器里的旧游戏）
@@ -236,7 +242,7 @@ async function boot() {
 
   pendingEvents = Array.isArray(store.get('events', [])) ? store.get('events', []) : []
 
-  // 四视图
+  // 五视图
   const app = document.getElementById('app')
   app.innerHTML = ''
   const viewFeed = document.createElement('div')
@@ -245,9 +251,11 @@ async function boot() {
   viewMine.id = 'view-mine'
   const viewUpload = document.createElement('div')
   viewUpload.id = 'view-upload'
+  const viewBrowse = document.createElement('div')
+  viewBrowse.id = 'view-browse'
   const viewPlayer = document.createElement('div')
   viewPlayer.id = 'view-player'
-  app.append(viewFeed, viewMine, viewUpload, viewPlayer)
+  app.append(viewFeed, viewMine, viewUpload, viewBrowse, viewPlayer)
 
   feed = createFeed({
     catalogById,
@@ -270,6 +278,14 @@ async function boot() {
     onOpenGame: openUploadedGame,
   })
   viewUpload.appendChild(upload.el)
+
+  browse = createBrowse({
+    fetchCatalogPage: (page, type) => fetchGamesPage(page, { type }),
+    onOpenGame: (id) => {
+      location.hash = `#/play/${encodeURIComponent(id)}`
+    },
+  })
+  viewBrowse.appendChild(browse.el)
 
   player = createPlayer({
     onClose: () => {
@@ -296,6 +312,9 @@ function wireGlobal() {
   })
   document.getElementById('mine-btn').addEventListener('click', () => {
     location.hash = '#/mine'
+  })
+  document.getElementById('catalog-btn').addEventListener('click', () => {
+    location.hash = '#/catalog'
   })
   document.getElementById('rotate-ok').addEventListener('click', () => {
     document.body.classList.add('wide-ok')

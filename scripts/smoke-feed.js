@@ -1,14 +1,16 @@
 // GAMES-5 冒烟：node 环境纯逻辑断言（零依赖，冻结验收执行）。
 // 覆盖：洗牌袋（100 款不重复刷完一轮 / 多轮 / 目录增删 reconcile）、
 //       时长累加（可见计时-暂停恢复）、统计聚合（我的页口径）、games/ 清单完整性、
-//       /api/games 分页拼全量（GAMES-6 后端契约：默认 pageSize=20，袋子需全量）。
+//       /api/games 分页拼全量（GAMES-6 后端契约：默认 pageSize=20，袋子需全量）、
+//       游戏大全（GAMES-12：24 类型清单映射 / type×tier 过滤 / 逻辑页拼装 / type 服务端透传）。
 import { readFile, stat } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BAG_VERSION, newBag, draw, reconcile } from '../web/src/shuffleBag.js'
 import { DurationTracker } from '../web/src/duration.js'
 import { emptyStats, applyEnter, applyDuration, aggregatePlayed, formatDuration } from '../web/src/stats.js'
-import { collectGames } from '../web/src/api.js'
+import { collectGames, fetchGamesPage } from '../web/src/api.js'
+import { TYPE_CATALOG, TIER_GROUPS, typeName, tierName, filterGames, collectBrowsePage } from '../web/src/browse.js'
 import { scanGames } from '../server/lib/scan-games.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -319,6 +321,131 @@ section('collectGames：分页 /api/games 拼全量清单（袋子不缺款）')
   // 病态 server（忽略 page 永远回同一页、total 虚高）：不重复灌袋、页数封顶内退出
   const dup = await collectGames(async () => ({ ok: true, total: 250, games: mk(100, 0) }))
   check('病态分页不重复灌袋（恰 100 款唯一）', dup.length === 100 && new Set(dup.map((g) => g.id)).size === 100)
+}
+
+// ---------- 7. 游戏大全（GAMES-12）：清单映射 / 过滤纯逻辑 / 分页消费 ----------
+
+section('游戏大全：24 类型清单映射（game-design-spec §6）')
+{
+  check('TYPE_CATALOG 共 24 类', TYPE_CATALOG.length === 24, `实际 ${TYPE_CATALOG.length}`)
+  check('类型 slug 唯一', new Set(TYPE_CATALOG.map((t) => t.slug)).size === 24)
+  check('类型名非空且唯一', new Set(TYPE_CATALOG.map((t) => t.name)).size === 24 && TYPE_CATALOG.every((t) => t.name.length > 0))
+  check('类型主交互全在 §5.4 词表内', TYPE_CATALOG.every((t) => ['tap', 'tap-zone', 'swipe-lr', 'swipe-any', 'drag'].includes(t.controls)))
+
+  // spec §6 速查表逐项按序对照（slug 漂移 = 照录错误，当场红）
+  const SPEC_TYPES = [
+    'tap-burst', 'tap-jump', 'lane-runner', 'stacker', 'match3', 'slide-merge', 'snake',
+    'breakout', 'paddle-pong', 'bullet-shmup', 'bullet-dodge', 'drop-catcher', 'mole-whack',
+    'memory-flip', 'simon-sequence', 'color-reaction', 'fruit-slice', 'water-sort',
+    'block-drop', 'block-fit', 'chain-shot', 'maze-dash', 'mini-td', 'rhythm-tap',
+  ]
+  check('24 类型与 spec §6 清单一致（按序）', TYPE_CATALOG.every((t, i) => t.slug === SPEC_TYPES[i]))
+
+  check('映射：tap-burst → 狂点爆发', typeName('tap-burst') === '狂点爆发')
+  check('映射：water-sort → 水排序', typeName('water-sort') === '水排序')
+  check('映射：rhythm-tap → 节奏点击', typeName('rhythm-tap') === '节奏点击')
+  check('清单外类型原样回退（demo 占位）', typeName('demo') === 'demo')
+
+  check(
+    '五档分组与 spec §3.1 一致（难度递增序）',
+    TIER_GROUPS.map((t) => `${t.key}:${t.name}`).join(',') === 'relaxed:轻松,simple:简单,normal:标准,hard:困难,master:大师',
+  )
+  check('档位映射：master → 大师；清单外档位原样回退', tierName('master') === '大师' && tierName('standard') === 'standard')
+}
+
+section('游戏大全：filterGames 过滤纯逻辑（type × tier 组合）')
+{
+  const games = [
+    { id: 'stacker:a', type: 'stacker', tier: 'relaxed' },
+    { id: 'stacker:b', type: 'stacker', tier: 'master' },
+    { id: 'snake:a', type: 'snake', tier: 'normal' },
+    { id: 'demo:x', type: 'demo', tier: 'standard' },
+  ]
+  check('空条件全通过（含缺省参数）', filterGames(games, {}).length === 4 && filterGames(games).length === 4)
+  check('type 精确过滤', filterGames(games, { type: 'stacker' }).map((g) => g.id).join() === 'stacker:a,stacker:b')
+  check('tier 精确过滤', filterGames(games, { tier: 'master' }).map((g) => g.id).join() === 'stacker:b')
+  check('type+tier 组合收窄', filterGames(games, { type: 'stacker', tier: 'master' }).map((g) => g.id).join() === 'stacker:b')
+  check('无匹配为空', filterGames(games, { type: 'demo', tier: 'master' }).length === 0)
+  check('非数组输入安全', filterGames(null, { type: 'stacker' }).length === 0)
+}
+
+section('游戏大全：collectBrowsePage 消费 /api/games 分页（tier 逻辑页拼装）')
+{
+  const mk = (n, off, tierOf) => Array.from({ length: n }, (_, i) => ({ id: `g${off + i}`, type: 'stacker', tier: tierOf(off + i) }))
+  const evenTier = (i) => (i % 3 === 2 ? 'master' : 'normal') // 每 3 款 1 款 master
+
+  // A. 无 tier：服务端序直通切片，不必多拉
+  let calls = []
+  const a1 = await collectBrowsePage(async (sp) => {
+    calls.push(sp)
+    return { ok: true, total: 45, pageSize: 20, games: sp === 3 ? mk(5, 40, evenTier) : mk(20, (sp - 1) * 20, evenTier) }
+  }, { page: 1, pageSize: 20 })
+  check('无 tier 第 1 逻辑页取 20 条', a1.games.length === 20 && a1.games[0].id === 'g0')
+  check('无 tier 透传服务端 total', a1.total === 45)
+  check('凑满即收手（只拉 1 个服务端页）', calls.join() === '1')
+  check('未翻完不判尽', a1.exhausted === false)
+
+  calls = []
+  const a3 = await collectBrowsePage(async (sp) => {
+    calls.push(sp)
+    return { ok: true, total: 45, pageSize: 20, games: sp === 3 ? mk(5, 40, evenTier) : mk(20, (sp - 1) * 20, evenTier) }
+  }, { page: 3, pageSize: 20 })
+  check('无 tier 末逻辑页取剩余 5 条', a3.games.length === 5 && a3.games[0].id === 'g40')
+  check('无 tier 翻到流尽判 exhausted', a3.exhausted === true)
+  check('第 3 逻辑页恰好拉 3 个服务端页', calls.join() === '1,2,3')
+
+  // B. tier 过滤：跨服务端页凑满逻辑页，不出现"整页被滤空"
+  calls = []
+  const b = await collectBrowsePage(async (sp) => {
+    calls.push(sp)
+    return { ok: true, total: 60, pageSize: 20, games: mk(20, (sp - 1) * 20, evenTier) }
+  }, { page: 1, pageSize: 20, tier: 'master' })
+  check('tier=master 跨页攒满 20 条（60 款中 20 款 master）', b.games.length === 20 && b.games.every((g) => g.tier === 'master'))
+  check('tier 过滤跨满全部 3 个服务端页', calls.join() === '1,2,3')
+  check('tier 过滤后流尽判定正确（20 <= 20）', b.exhausted === true)
+
+  // C. 无 total 单页全量形状（GAMES-5 最小 server 兼容）
+  const c = await collectBrowsePage(async () => ({ ok: true, games: mk(5, 0, evenTier) }), { page: 1 })
+  check('无 total 单页全量：返回 5 条', c.games.length === 5)
+  check('无 total 单页全量：total 为 null 且判尽', c.total === null && c.exhausted === true)
+
+  // D. 病态 server（永远回同一页、total 虚高）：零新 id 判流尽，不重复灌入
+  calls = []
+  const d = await collectBrowsePage(async (sp) => {
+    calls.push(sp)
+    return { ok: true, total: 500, pageSize: 20, games: mk(20, 0, evenTier) }
+  }, { page: 2, pageSize: 20 })
+  check('病态重复回页：零新 id 即判流尽（恰 2 次请求）', calls.join() === '1,2')
+  check('病态重复回页：第 2 逻辑页为空且判尽', d.games.length === 0 && d.exhausted === true)
+
+  // E. 服务端 type 过滤（整页同 type 被 tier 滤空后，下一页仍有货不被误判流尽）
+  const e = await collectBrowsePage(async (sp) => ({
+    ok: true,
+    total: 40,
+    pageSize: 20,
+    games: sp === 1 ? mk(20, 0, () => 'normal') : mk(20, 20, () => 'master'),
+  }), { page: 1, pageSize: 20, tier: 'master' })
+  check('整页滤空不误判流尽（第 2 页攒满 master）', e.games.length === 20 && e.games.every((g) => g.tier === 'master') && e.exhausted === true)
+}
+
+section('游戏大全：fetchGamesPage 把 type 过滤交给服务端（/api/games?type=）')
+{
+  const realFetch = globalThis.fetch
+  const urls = []
+  globalThis.fetch = async (url) => {
+    urls.push(String(url))
+    return { ok: true, json: async () => ({ ok: true, total: 1, pageSize: 100, games: [{ id: 'stacker:a', type: 'stacker', tier: 'normal', name: '静心叠塔' }] }) }
+  }
+  try {
+    const body = await fetchGamesPage(2, { type: 'stacker' })
+    check('返回服务端响应体（透传 games/total）', body.ok === true && body.total === 1 && body.games[0].id === 'stacker:a')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  const u = urls[0] || ''
+  check('请求打到 /api/games 且带 page=2', u.startsWith('/api/games?') && u.includes('page=2'))
+  check('type=stacker 走服务端过滤', u.includes('type=stacker'))
+  check('大页拉取 pageSize=100', u.includes('pageSize=100'))
 }
 
 // ---------- 汇总 ----------

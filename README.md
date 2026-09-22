@@ -20,7 +20,7 @@
 npm run build       # 构建 web/ → dist/（拷贝+校验，无需 npm install）
 npm start           # 启动 server → http://127.0.0.1:4399
 npm run smoke       # 后端冒烟：API/上传/统计管线断言（隔离临时目录，不碰真实数据）
-npm run smoke-feed  # 前端冒烟：洗牌袋/时长统计/清单完整性断言
+npm run smoke-feed  # 前端冒烟：洗牌袋/时长统计/清单完整性/游戏大全（分页+过滤）断言
 ```
 
 手机同局域网访问：`HOST=0.0.0.0 npm start`。
@@ -34,7 +34,7 @@ npm run smoke-feed  # 前端冒烟：洗牌袋/时长统计/清单完整性断�
 
 ```
 web/            前端（原生 ES 模块，无框架无构建依赖）
-  src/            feed / 我的页 / 播放器 / 洗牌袋 / 时长统计 / 上报
+  src/            feed / 我的页 / 游戏大全 / 播放器 / 洗牌袋 / 时长统计 / 上报
 server/         后端（Node 原生 http，零运行时依赖）
   index.js        静态托管 + 游戏/统计/上传 API（/api/games /api/play-events 等，见下）
   lib/            scan-games（清单扫描，含 levels/tier）/ stats / uploads / shuffle / 限流 / zip
@@ -50,6 +50,7 @@ games/          自包含游戏目录：games/<type>/<slug>/{index.html,game.jso
 - **洗牌袋**：访客级（localStorage 持久化袋状态），随机不放回，袋空重装；目录增删自动 reconcile 且不破坏"一轮不重复"
 - **时长统计**：游戏可见计时、切走/隐藏暂停（drain 增量落账，无双计），localStorage 持久化 + 批量上报 `/api/play-events`（后端不可达时仅本地）
 - **游戏来源**：`/api/games` 动态扫描 `games/` 目录（新增游戏目录重启即上架）；前端显式大页拉取全量清单（服务端默认 `pageSize=20`，超 20 款时按 `total` 自动翻页拼全）
+- **游戏大全**（`#/catalog`，feed 左下入口）：按页消费 `/api/games`（type 交服务端过滤；tier 档位为客户端二次过滤，跨服务端页攒满逻辑页避免整页滤空）；24 类型与五档选项以 `docs/game-design-spec.md` §6/§3.1 为唯一事实源（`web/src/browse.js` 的 `TYPE_CATALOG`/`TIER_GROUPS`）
 
 ## 后端（server/，零运行时依赖，Node ≥ 18）
 
