@@ -1,12 +1,14 @@
 // GAMES-5 冒烟：node 环境纯逻辑断言（零依赖，冻结验收执行）。
 // 覆盖：洗牌袋（100 款不重复刷完一轮 / 多轮 / 目录增删 reconcile）、
-//       时长累加（可见计时-暂停恢复）、统计聚合（我的页口径）、games/ 清单完整性。
+//       时长累加（可见计时-暂停恢复）、统计聚合（我的页口径）、games/ 清单完整性、
+//       /api/games 分页拼全量（GAMES-6 后端契约：默认 pageSize=20，袋子需全量）。
 import { readFile, stat } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BAG_VERSION, newBag, draw, reconcile } from '../web/src/shuffleBag.js'
 import { DurationTracker } from '../web/src/duration.js'
 import { emptyStats, applyEnter, applyDuration, aggregatePlayed, formatDuration } from '../web/src/stats.js'
+import { collectGames } from '../web/src/api.js'
 import { scanGames } from '../server/lib/scan-games.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -278,6 +280,45 @@ section('games/ 清单：≥5 款占位游戏、game.json 与入口齐全')
     const html = ok ? await readFile(entry, 'utf8') : ''
     check(`入口是 HTML: ${g.slug}`, /<html[\s>]/i.test(html))
   }
+}
+
+// ---------- 6. /api/games 分页拼全量（GAMES-6 后端契约适配） ----------
+
+section('collectGames：分页 /api/games 拼全量清单（袋子不缺款）')
+{
+  const mk = (n, off) => Array.from({ length: n }, (_, i) => ({ id: `demo:g${off + i}` }))
+
+  // 最小 server 形状（无 total、单页全量）：一次即收手，不多余请求
+  let calls = 0
+  const single = await collectGames(async () => {
+    calls++
+    return { ok: true, games: mk(5, 0) }
+  })
+  check('无 total 单页全量：拼出全部 5 款', single.length === 5)
+  check('无 total 单页全量：仅请求 1 页', calls === 1)
+
+  // 拿满 total 即收手：total=200，两页各满 100，第 2 页后不再请求
+  calls = 0
+  const full = await collectGames(async (page) => {
+    calls++
+    return { ok: true, total: 200, games: mk(100, (page - 1) * 100) }
+  })
+  check('拿满 total 拼全 200 款', full.length === 200)
+  check('拿满 total 即收手（恰好 2 页）', calls === 2)
+  check('拼全结果无重复 id', new Set(full.map((g) => g.id)).size === full.length)
+
+  // 末页不满页提前收手：total 虚高 250，实给 100+100+45，45<100 即停不等缺额
+  calls = 0
+  const short = await collectGames(async (page) => {
+    calls++
+    return { ok: true, total: 250, games: page === 3 ? mk(45, 200) : mk(100, (page - 1) * 100) }
+  })
+  check('末页不满页：拼得 245 款', short.length === 245)
+  check('末页不满页：提前收手（恰好 3 页）', calls === 3)
+
+  // 病态 server（忽略 page 永远回同一页、total 虚高）：不重复灌袋、页数封顶内退出
+  const dup = await collectGames(async () => ({ ok: true, total: 250, games: mk(100, 0) }))
+  check('病态分页不重复灌袋（恰 100 款唯一）', dup.length === 100 && new Set(dup.map((g) => g.id)).size === 100)
 }
 
 // ---------- 汇总 ----------
