@@ -79,3 +79,57 @@ export function beaconEvents(events) {
     return false
   }
 }
+
+// ---- 玩家上传（GAMES-11；后端管线 GAMES-6）----
+
+/**
+ * multipart 表单上传：FormData 需含 file 字段（zip / 单 html）+ 可选元数据字段
+ * （name/slug/levels/tier/description；空值勿 append，后端跳过空字段、不覆盖 zip 内 game.json 同名字段）。
+ * 用 XHR 而非 fetch：上传字节进度只有 xhr.upload.onprogress 提供。
+ * 成功 resolve { id, state }；失败 reject Error（message 直取服务端口径，可直接展示给用户）。
+ */
+export function uploadGame(form, { onProgress, timeout = 60_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/upload')
+    xhr.timeout = timeout
+    xhr.responseType = 'json'
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total)
+    }
+    xhr.onload = () => {
+      const body = xhr.response
+      if (xhr.status === 201 && body && body.ok === true && typeof body.id === 'string') {
+        resolve({ id: body.id, state: body.state })
+      } else {
+        reject(new Error((body && body.error) || `/api/upload HTTP ${xhr.status}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('网络错误：上传中断或服务不可达，请稍后重试'))
+    xhr.ontimeout = () => reject(new Error('上传超时，请检查网络后重试'))
+    xhr.send(form)
+  })
+}
+
+/**
+ * 单查上传状态 GET /api/uploads/<id>。resolve 服务端记录
+ * （state: pending/published/rejected/lost；rejected 带 reason，published 带 type/slug）。
+ * 404（待审目录与台账均无此 id，如数据被清理）→ resolve null；其它失败 reject。
+ */
+export async function fetchUpload(id, { timeout = 8000 } = {}) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeout)
+  try {
+    const res = await fetch(`/api/uploads/${encodeURIComponent(id)}`, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+    })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`/api/uploads/${id} HTTP ${res.status}`)
+    const body = await res.json()
+    if (!body || body.ok !== true || !body.upload) throw new Error('/api/uploads/<id> 响应形状异常')
+    return body.upload
+  } finally {
+    clearTimeout(timer)
+  }
+}

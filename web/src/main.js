@@ -1,10 +1,11 @@
-// 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/播放器三视图 → 路由 → 计时上报管线。
+// 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/上传/播放器四视图 → 路由 → 计时上报管线。
 import { fetchGames, reportEvents, beaconEvents } from './api.js'
 import { store, visitorId } from './store.js'
 import { newBag, reconcile, draw } from './shuffleBag.js'
 import { emptyStats, applyEnter, applyDuration, STATS_VERSION } from './stats.js'
 import { createFeed } from './feed.js'
 import { createMine } from './mine.js'
+import { createUpload } from './upload.js'
 import { createPlayer } from './player.js'
 
 const FLUSH_MS = 15000 // 上报间隔
@@ -22,6 +23,7 @@ let activeRef = null
 
 let feed = null
 let mine = null
+let upload = null
 let player = null
 let currentView = 'boot'
 
@@ -97,6 +99,29 @@ function enterGame(gameId) {
 
 // ---- feed 袋子 ----
 
+/**
+ * 打开「我上传的游戏」：刚上架的游戏不在本会话清单里 → 重拉目录并 reconcile 袋，再路由进播放器。
+ * catalogById 原地清空重填（不换 Map）：feed/player 持有旧引用，换新实例会让他们看不见新游戏。
+ * 返回 false = 重拉后仍未见该 id（同步延迟/已下架），由调用方提示。
+ */
+async function openUploadedGame(gameId) {
+  if (!catalogById.has(gameId)) {
+    try {
+      const fresh = await fetchGames()
+      catalog = fresh
+      catalogById.clear()
+      for (const g of fresh) catalogById.set(g.id, g)
+      bag = reconcile(bag, fresh.map((g) => g.id))
+      store.set('bag', bag)
+    } catch {
+      /* 重拉失败：走未命中分支 */
+    }
+  }
+  if (!catalogById.has(gameId)) return false
+  location.hash = `#/play/${encodeURIComponent(gameId)}`
+  return true
+}
+
 function drawNext() {
   if (catalog.length === 0) return null
   const r = draw(bag, catalog.map((g) => g.id))
@@ -117,6 +142,7 @@ function showView(name) {
     feed.setRunning(false)
     feed.deactivateAll()
   }
+  if (prev === 'upload') upload.deactivate() // 停审核状态轮询
   if (prev === 'player') setActiveRef(null)
 
   if (name === 'feed') {
@@ -124,6 +150,9 @@ function showView(name) {
   } else if (name === 'mine') {
     setActiveRef(null)
     mine.refresh()
+  } else if (name === 'upload') {
+    setActiveRef(null)
+    upload.activate() // 重读台账 + 立即探一轮 + 起轮询
   } else if (name === 'player') {
     setActiveRef(player.getActive())
   }
@@ -141,11 +170,12 @@ function parseHash() {
     return catalogById.has(id) ? { view: 'player', id } : { view: 'mine' }
   }
   if (h === '#/mine') return { view: 'mine' }
+  if (h === '#/upload') return { view: 'upload' }
   return { view: 'feed' }
 }
 
 function route() {
-  if (!feed || !mine || !player) return // boot 未完成（含加载失败重试中）忽略路由
+  if (!feed || !mine || !upload || !player) return // boot 未完成（含加载失败重试中）忽略路由
   const { view, id } = parseHash()
   if (view === 'player') {
     setActiveRef(null) // 先结算上一个 tracker（feed 当前屏或播放器里的旧游戏）
@@ -206,16 +236,18 @@ async function boot() {
 
   pendingEvents = Array.isArray(store.get('events', [])) ? store.get('events', []) : []
 
-  // 三视图
+  // 四视图
   const app = document.getElementById('app')
   app.innerHTML = ''
   const viewFeed = document.createElement('div')
   viewFeed.id = 'view-feed'
   const viewMine = document.createElement('div')
   viewMine.id = 'view-mine'
+  const viewUpload = document.createElement('div')
+  viewUpload.id = 'view-upload'
   const viewPlayer = document.createElement('div')
   viewPlayer.id = 'view-player'
-  app.append(viewFeed, viewMine, viewPlayer)
+  app.append(viewFeed, viewMine, viewUpload, viewPlayer)
 
   feed = createFeed({
     catalogById,
@@ -233,6 +265,11 @@ async function boot() {
     },
   })
   viewMine.appendChild(mine.el)
+
+  upload = createUpload({
+    onOpenGame: openUploadedGame,
+  })
+  viewUpload.appendChild(upload.el)
 
   player = createPlayer({
     onClose: () => {
