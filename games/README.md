@@ -7,7 +7,7 @@ games/
   puzzle/
     match3-demo/
       index.html      # 入口，所有 JS/CSS 内联或相对路径引用，无构建步骤
-      game.json       # 元数据：name/type/description/controls 等（feed 接入时消费）
+      game.json       # 元数据：name/title/description/controls 等（平台字段口径见 docs/game-design-spec.md §32 仲裁附录）
 ```
 
 - 伺服：server 按原路径静态伺服（`/games/puzzle/match3-demo/` → 目录内 index.html）。

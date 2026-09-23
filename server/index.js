@@ -65,15 +65,24 @@ const uploads = createUploads({
 })
 
 // ---- /api/games 清单缓存（上架/驳回即时失效，平时 3s 短缓存防扫描风暴） ----
-let gamesCache = { at: 0, list: null }
+// scan 返回 { games, invalid }：非法 game.json 目录跳过并计入扫描报告（GAMES-13），
+// 集合有变化时聚合告警一次（同样的 invalid 不因 3s 缓存反复过期而刷屏）
+let gamesCache = { at: 0, games: null, invalidSig: '' }
 async function gamesList() {
-  if (!gamesCache.list || Date.now() - gamesCache.at > GAMES_CACHE_MS) {
-    gamesCache = { at: Date.now(), list: await scanGames(GAMES_DIR) }
+  if (!gamesCache.games || Date.now() - gamesCache.at > GAMES_CACHE_MS) {
+    const { games, invalid } = await scanGames(GAMES_DIR)
+    const sig = invalid.map((x) => `${x.type}/${x.slug}：${x.reason}`).join(' | ')
+    gamesCache = { at: Date.now(), games, invalidSig: gamesCache.invalidSig }
+    if (invalid.length && sig !== gamesCache.invalidSig) {
+      console.warn(`[games-server] 扫描跳过 ${invalid.length} 个非法 game.json：${sig}`)
+    }
+    gamesCache.invalidSig = sig
   }
-  return gamesCache.list
+  return gamesCache.games
 }
 function invalidateGames() {
-  gamesCache = { at: 0, list: null }
+  // 只废清单不重置 invalidSig：上架/驳回失效后重扫，同样的非法集合不重复告警
+  gamesCache = { at: 0, games: null, invalidSig: gamesCache.invalidSig }
 }
 
 /** 跨域关闭：Origin 与 Host 不一致（或 Origin 解析失败）一律 403，且全站从不输出 CORS 头 */

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { HttpError, exists, safeJoin } from './http-util.js'
 import { looksLikeZip, readZip } from './zip.js'
+import { toTier } from './scan-games.js'
 
 const MULTIPART_SLACK = 128 * 1024 // multipart 边界/头部的开销余量（请求体上限 = 文件上限 + 此值）
 
@@ -30,7 +31,7 @@ function readRawMeta(src) {
   return out
 }
 
-/** 归一化元数据：越界值收敛到默认 */
+/** 归一化元数据：越界值收敛到默认（tier 按 D7 收口五枚举：缺省/非法收敛 normal，存量 standard 迁移 normal） */
 function normalizeMeta(raw) {
   const levels = Number(raw.levels)
   return {
@@ -38,7 +39,7 @@ function normalizeMeta(raw) {
     slug: slugify(raw.slug, ''),
     name: typeof raw.name === 'string' ? raw.name.slice(0, 64) : '',
     levels: Number.isFinite(levels) && levels >= 1 ? Math.min(9999, Math.floor(levels)) : 1,
-    tier: typeof raw.tier === 'string' ? raw.tier.slice(0, 16) : 'standard',
+    tier: toTier(raw.tier) ?? 'normal',
     description: typeof raw.description === 'string' ? raw.description.slice(0, 256) : '',
   }
 }
@@ -48,6 +49,36 @@ async function writeFileAtomic(target, content) {
   const tmp = `${target}.tmp-${randomUUID().slice(0, 8)}`
   await writeFile(tmp, content)
   await rename(tmp, target)
+}
+
+// 危险 API 静态黑名单（GAMES-17 / v1 §28）：alert/prompt 打断 iframe 沉浸，
+// 顶层跳转（top/parent.location、target="_top"）会把宿主页导航走——社区包必须在入口就拦下。
+// 正则刻意宽松（不剥注释/字符串）：静态检查是第一道闸，绕过（拼串/eval）留给人工审核兜底。
+const DANGEROUS_API_RULES = [
+  { re: /\balert\s*\(/, label: 'alert(', why: '弹窗打断游戏沉浸' },
+  { re: /\bprompt\s*\(/, label: 'prompt(', why: '输入弹窗打断游戏沉浸' },
+  { re: /\btop\s*\.\s*location\b/, label: 'top.location', why: '顶层跳转会劫持宿主页面' },
+  { re: /\bparent\s*\.\s*location\b/, label: 'parent.location', why: '父窗口跳转会劫持宿主页面' },
+  { re: /\btarget\s*=\s*["']?_top\b/i, label: 'target="_top"', why: '顶层打开链接会脱离 iframe 宿主' },
+]
+
+/** 危险 API 静态扫描：html 与打包 js 逐条过黑名单，命中即 400 并给可读原因（上传者可据此改包重传） */
+export function scanDangerousApi(name, text) {
+  for (const rule of DANGEROUS_API_RULES) {
+    if (rule.re.test(text)) {
+      throw new HttpError(400, `危险 API 检查未通过：${name} 含 ${rule.label}（${rule.why}），请移除后重新上传`)
+    }
+  }
+}
+
+/**
+ * iframe 可加载验证（静态取舍，GAMES-17 / v1 §31）：headless 浏览器对本仓过重（零依赖约束），
+ * 先断言入口 html 含 <script> 可执行入口——没有任何脚本的纯静态页无法作为游戏在 iframe 里运行。
+ */
+export function assertExecutableEntry(name, text) {
+  if (!/<script\b/i.test(text)) {
+    throw new HttpError(400, `入口检查未通过：${name} 不含 <script> 可执行入口（纯静态页无法作为游戏运行）`)
+  }
 }
 
 /**
@@ -193,10 +224,17 @@ export function createUploads({
       files = [{ path: 'index.html', data: file.data }]
       entryFile = 'index.html'
     }
-    // 每个 html 都过结构检查（多页游戏包不能只查入口）
+    // 每个 html 都过结构检查（多页游戏包不能只查入口）；危险 API 扫 html 全量 + 打包 js
+    //（只扫入口会被 <script src="x.js"> 转嫁绕过）；入口另加可执行断言（iframe 加载验证的静态替代）
     for (const f of files) {
-      if (/\.html?$/i.test(f.path)) validateHtml(f.path, f.data.toString('utf8'), scriptHosts)
+      if (/\.(html?|js|mjs)$/i.test(f.path)) {
+        const text = f.data.toString('utf8')
+        if (/\.html?$/i.test(f.path)) validateHtml(f.path, text, scriptHosts)
+        scanDangerousApi(f.path, text)
+      }
     }
+    const entry = files.find((f) => f.path === entryFile)
+    if (entry && /\.html?$/i.test(entry.path)) assertExecutableEntry(entryFile, entry.data.toString('utf8'))
 
     // 落盘待审目录 games/_pending/<id>/
     const id = 'up-' + randomUUID().slice(0, 8)

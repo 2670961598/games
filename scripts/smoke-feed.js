@@ -268,7 +268,7 @@ section('全流程：100 款刷完一轮 + 时长记账一致性')
 
 section('games/ 清单：≥5 款占位游戏、game.json 与入口齐全')
 {
-  const games = await scanGames(join(ROOT, 'games'))
+  const { games } = await scanGames(join(ROOT, 'games'))
   check('至少 5 款游戏', games.length >= 5, `实际 ${games.length}`)
   check('id 全局唯一', new Set(games.map((g) => g.id)).size === games.length)
   check('slug 目录唯一', new Set(games.map((g) => `${g.type}/${g.slug}`)).size === games.length)
