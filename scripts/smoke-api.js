@@ -2,7 +2,8 @@
 // GAMES-6 冻结验收：node scripts/smoke-api.js
 // 用临时目录（GAMES_DIR/DATA_DIR 环境变量重定向）+ 随机端口起真实 server 进程，
 // 断言：/api/health、/api/games 200 且结构正确、上传测试 html 走通 待审→上架→出现在 /api/games，
-// 外加 seed 洗牌/分页/zip/multipart/驳回/校验拒绝/统计/跨域关闭/限速/压缩/缓存。
+// 外加 seed 洗牌/分页/zip/multipart/驳回/校验拒绝（含 GAMES-17 危险 API 静态检查 + 可执行入口断言）
+// /统计/跨域关闭/限速/压缩/缓存。
 // 全程不触碰仓库真实数据；finally 清理临时目录与子进程。绿 = exit 0。
 import http from 'node:http'
 import { spawn } from 'node:child_process'
@@ -54,11 +55,13 @@ const json = (r) => {
 
 // ---- 测试素材 ----
 
-/** 上传用测试 html（pad 过 512B，顺带覆盖静态压缩路径） */
-function gameHtml(title, scriptSrc) {
+/** 上传用测试 html（pad 过 512B，顺带覆盖静态压缩路径）。恒带内联入口脚本——GAMES-17 起
+ *  入口 html 必须含 <script> 可执行入口；inline 参数用于注入危险 API 负例代码 */
+function gameHtml(title, scriptSrc, inline) {
   const pad = `<!-- ${'smoke-padding-'.repeat(48)} -->`
   const script = scriptSrc ? `<script src="${scriptSrc}"></script>` : ''
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1><canvas id="c"></canvas>${script}${pad}</body></html>`
+  const code = `<script>${inline || '/* smoke entry */'}</script>`
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1><canvas id="c"></canvas>${script}${code}${pad}</body></html>`
 }
 
 /** 构造 stored/deflate 混合 zip（不依赖系统 zip 命令，跨环境可重复） */
@@ -137,9 +140,9 @@ const tmp = await mkdtemp(join(tmpdir(), 'games-smoke-'))
 const gamesDir = join(tmp, 'games')
 const dataDir = join(tmp, 'data')
 const child = spawn(process.execPath, [join(ROOT, 'server', 'index.js')], {
-  // UPLOAD_RATE_PER_MIN=15：冒烟全程（含负例）要打 ~11 次上传，默认 10 会在中途误触限速；
-  // 限速断言改为「16 连发 > 15」必然触发，两种窗口状态下都成立
-  env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GAMES_DIR: gamesDir, DATA_DIR: dataDir, UPLOAD_RATE_PER_MIN: '15' },
+  // UPLOAD_RATE_PER_MIN=30：冒烟全程（含 GAMES-17 新增负例）要打 ~20 次上传，默认 10 会在中途误触限速；
+  // 限速断言改为「33 连发 > 30」必然触发，两种窗口状态下都成立
+  env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GAMES_DIR: gamesDir, DATA_DIR: dataDir, UPLOAD_RATE_PER_MIN: '30' },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 let serverLog = ''
@@ -397,6 +400,35 @@ try {
     ok(r.status === 413, '超大小上限 → 413', `status=${r.status}`)
   }
 
+  // ===== 9b. 危险 API 静态检查 + 可执行入口断言（GAMES-17 / v2 G9） =====
+  {
+    // 单据验收主断言：含 alert( 的游戏 html 上传必须被驳回且原因可读
+    let r = await req('POST', '/api/upload', { headers: { 'Content-Type': 'text/html' }, body: gameHtml('alert-game', null, 'alert("you win")') })
+    ok(r.status === 400 && /alert\(/.test(json(r)?.error || ''), '含 alert( 的游戏 html → 400 驳回并给原因', r.body.toString().slice(0, 200))
+    r = await req('POST', '/api/upload', { headers: { 'Content-Type': 'text/html' }, body: gameHtml('prompt-game', null, 'const n = prompt("name?")') })
+    ok(r.status === 400 && /prompt\(/.test(json(r)?.error || ''), '含 prompt( → 400')
+    r = await req('POST', '/api/upload', { headers: { 'Content-Type': 'text/html' }, body: gameHtml('topnav', null, "top.location='https://evil.example'") })
+    ok(r.status === 400 && /top\.location/.test(json(r)?.error || ''), '含 top.location 顶层跳转 → 400')
+    r = await req('POST', '/api/upload', {
+      headers: { 'Content-Type': 'text/html' },
+      body: '<!doctype html><html><body><a href="/x" target="_top">全屏</a></body></html>',
+    })
+    ok(r.status === 400 && /_top/.test(json(r)?.error || ''), '含 target="_top" → 400')
+    // 转嫁绕过防护：入口干净但打包 js 藏危险 API，zip 整包也得拦
+    const evilJsZip = makeZip([
+      { name: 'index.html', data: gameHtml('zip-js-传导') },
+      { name: 'evil.js', data: 'function boom(){ alert(1) }' },
+    ])
+    r = await req('POST', '/api/upload', { headers: { 'Content-Type': 'application/zip' }, body: evilJsZip })
+    ok(r.status === 400 && /evil\.js/.test(json(r)?.error || ''), 'zip 内 js 含 alert( → 400（防 script src 转嫁）', r.body.toString().slice(0, 200))
+    // iframe 可加载验证（静态取舍）：入口无任何 <script> 的纯静态页不可作为游戏
+    r = await req('POST', '/api/upload', {
+      headers: { 'Content-Type': 'text/html' },
+      body: '<!doctype html><html><head><title>static</title></head><body><h1>纯静态页</h1></body></html>',
+    })
+    ok(r.status === 400 && /可执行入口/.test(json(r)?.error || ''), '入口无 <script> → 400（可加载验证静态替代）')
+  }
+
   // ===== 10. 统计：上报与查询 =====
   {
     let r = await req('POST', '/api/stats', {
@@ -444,12 +476,12 @@ try {
     ok(r.status === 405, '不支持的方法 → 405')
   }
 
-  // ===== 13. 上传限速（本实例限 15/分钟；16 连发必触发，无论窗口是否已轮转） =====
+  // ===== 13. 上传限速（本实例限 30/分钟；33 连发必触发，无论窗口是否已轮转） =====
   {
     let got429 = 0
     let retryAfterOk = true
     let accepted = 0
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 33; i++) {
       const r = await req('POST', '/api/upload?type=community', {
         headers: { 'Content-Type': 'text/html' },
         body: gameHtml(`burst ${i}`),
@@ -459,7 +491,7 @@ try {
         if (!r.headers['retry-after'] || Number(r.headers['retry-after']) < 1) retryAfterOk = false
       } else if (r.status === 201) accepted++
     }
-    ok(got429 >= 1 && retryAfterOk, `限速生效：16 连发得 ${got429} 个 429 且带 Retry-After（${accepted} 个被受理）`)
+    ok(got429 >= 1 && retryAfterOk, `限速生效：33 连发得 ${got429} 个 429 且带 Retry-After（${accepted} 个被受理）`)
   }
 
   // ===== 14. 终态健康 =====
