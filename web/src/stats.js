@@ -37,6 +37,47 @@ export function applyDuration(stats, gameId, ms, at = Date.now()) {
 }
 
 /**
+ * boot 合并（GAMES-15 跨设备历史，D10 口径裁定）：按游戏 id **并集 + 字段级单调合并**。
+ *   local  = 本地累计（含未送达上报的离线游玩）
+ *   remote = GET /api/stats/<visitorId> 响应体 { games: [{ gameId, seconds, plays, lastAt }] }
+ * 两侧是对**同一事件流的重叠聚合**（服务端只收到本地已送达的部分），不是不相交集合：
+ *   - 求和 → 正常路径（本地 ⊇ 服务端）整段翻倍，不可取；
+ *   - 服务端为准 → 丢掉未上报的离线部分，健康路径反而退数据；
+ *   - 时间戳优先 → 跨设备时另一设备较早的累计整段被丢。
+ * 故逐游戏取字段最大值（单调、幂等）：totalMs/lastPlayed → max；
+ * count 保留本地"进入次数"口径（服务端 plays 是上报次数，含 15s 周期分段，口径不可比），
+ * 仅远端才有的游戏用 plays 近似。顶层 totalMs 合并后按 Σ 各游戏重算（维持不变量）。
+ * 病态远端条目（非法 id / 非数秒数）逐条跳过，不拖垮整次合并。
+ */
+export function mergeStats(local, remote) {
+  const games = {}
+  for (const [id, g] of Object.entries(local.games || {})) {
+    games[id] = { count: g.count, totalMs: g.totalMs, lastPlayed: g.lastPlayed }
+  }
+  const remoteGames = Array.isArray(remote && remote.games) ? remote.games : []
+  for (const rg of remoteGames) {
+    if (!rg || typeof rg.gameId !== 'string' || !rg.gameId) continue
+    const ms = Math.round(Number(rg.seconds) * 1000)
+    if (!Number.isFinite(ms) || ms < 0) continue
+    const lastAt = Number(rg.lastAt) || 0
+    const g = games[rg.gameId]
+    if (g) {
+      g.totalMs = Math.max(g.totalMs, ms)
+      g.lastPlayed = Math.max(g.lastPlayed, lastAt)
+    } else if (ms > 0 || lastAt > 0) {
+      const plays = Number(rg.plays)
+      games[rg.gameId] = {
+        count: Number.isFinite(plays) && plays >= 1 ? Math.floor(plays) : 1,
+        totalMs: ms,
+        lastPlayed: lastAt,
+      }
+    }
+  }
+  const totalMs = Object.values(games).reduce((t, g) => t + g.totalMs, 0)
+  return { v: STATS_VERSION, games, totalMs }
+}
+
+/**
  * 我的页列表：stats ∩ 当前目录 → 按最近游玩倒序。
  * 目录里已下架的游戏不入列（数据保留在 stats 中，重新上架自动回来）。
  */
