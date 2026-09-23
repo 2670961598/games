@@ -4,6 +4,7 @@
 // 断言：/api/health、/api/games 200 且结构正确、上传测试 html 走通 待审→上架→出现在 /api/games，
 // 外加 seed 洗牌/分页/zip/multipart/驳回/校验拒绝（含 GAMES-17 危险 API 静态检查 + 可执行入口断言）
 // /统计/跨域关闭/限速/压缩/缓存。
+// GAMES-14 追加：上报幂等——同事件重发 N 次计数不变（10b），重启后回播种子仍去重（15）。
 // 全程不触碰仓库真实数据；finally 清理临时目录与子进程。绿 = exit 0。
 import http from 'node:http'
 import { spawn } from 'node:child_process'
@@ -139,31 +140,50 @@ function unbrotli(b) {
 const tmp = await mkdtemp(join(tmpdir(), 'games-smoke-'))
 const gamesDir = join(tmp, 'games')
 const dataDir = join(tmp, 'data')
-const child = spawn(process.execPath, [join(ROOT, 'server', 'index.js')], {
-  // UPLOAD_RATE_PER_MIN=30：冒烟全程（含 GAMES-17 新增负例）要打 ~20 次上传，默认 10 会在中途误触限速；
-  // 限速断言改为「33 连发 > 30」必然触发，两种窗口状态下都成立
-  env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GAMES_DIR: gamesDir, DATA_DIR: dataDir, UPLOAD_RATE_PER_MIN: '30' },
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
 let serverLog = ''
 let childDead = false
-child.stdout.on('data', (d) => (serverLog += d))
-child.stderr.on('data', (d) => (serverLog += d))
-child.on('exit', () => (childDead = true))
+let child = null
 
-try {
-  // 等服务就绪
-  let up = false
-  for (let i = 0; i < 100 && !up; i++) {
-    if (childDead) break
+/** 起真实 server 进程（第 15 段重启复用：同 DATA_DIR 二次起，验证幂等窗口跨重启回播） */
+function startServer() {
+  const c = spawn(process.execPath, [join(ROOT, 'server', 'index.js')], {
+    // UPLOAD_RATE_PER_MIN=30：冒烟全程（含 GAMES-17 新增负例）要打 ~20 次上传，默认 10 会在中途误触限速；
+    // 限速断言为「33 连发 > 30」必然触发，两种窗口状态下都成立
+    env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', GAMES_DIR: gamesDir, DATA_DIR: dataDir, UPLOAD_RATE_PER_MIN: '30' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  c.stdout.on('data', (d) => (serverLog += d))
+  c.stderr.on('data', (d) => (serverLog += d))
+  childDead = false
+  c.on('exit', () => (childDead = true))
+  return c
+}
+
+/** 停当前 server：SIGTERM 优雅退，2s 不退 SIGKILL 兜底（与 finally 清理同款） */
+async function stopServer() {
+  child.kill('SIGTERM')
+  await Promise.race([new Promise((r) => child.on('exit', r)), sleep(2000).then(() => child.kill('SIGKILL'))])
+}
+
+/** 等服务就绪（≤15s）；false = 超时或子进程已死 */
+async function waitUp() {
+  for (let i = 0; i < 100; i++) {
+    if (childDead) return false
     try {
       const r = await req('GET', '/api/health')
-      up = r.status === 200
+      if (r.status === 200) return true
     } catch {
       /* 未就绪继续等 */
     }
-    if (!up) await sleep(150)
+    await sleep(150)
   }
+  return false
+}
+
+child = startServer()
+
+try {
+  const up = await waitUp()
   ok(up, `server 启动就绪（${BASE}）`, childDead ? '子进程已退出：\n' + serverLog : '')
 
   // ===== 1. health =====
@@ -495,6 +515,61 @@ try {
     ok(r.status === 400, '坏 JSON → 400')
   }
 
+  // ===== 10b. 上报幂等（GAMES-14）：同一事件重发 N 次 stats 计数不变 =====
+  {
+    const at = 1750000000000
+    // (cid,seq) 序号窗：同事件重发 5 次，仅首次计入
+    const ev = { visitorId: 'smoke-visitor-2', gameId: 'community:smoke-a', seconds: 40, at, cid: 'smoke-client-2', seq: 1 }
+    const results = []
+    for (let i = 0; i < 5; i++) {
+      const r = await req('POST', '/api/stats', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) })
+      results.push(json(r))
+    }
+    ok(results[0]?.stored === 1 && results[0]?.dropped === 0, 'cid+seq 事件首次上报 → stored=1 dropped=0')
+    ok(results.slice(1).every((b) => b?.stored === 0 && b?.dropped === 1), '同事件再发 4 次 → stored=0 dropped=1（丢弃计数）')
+
+    // 批内同键两条：只计一条
+    let r = await req('POST', '/api/play-events', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: [
+        { visitorId: 'smoke-visitor-2', gameId: 'community:smoke-b', ms: 3000, at: at + 1, cid: 'smoke-client-2', seq: 2 },
+        { visitorId: 'smoke-visitor-2', gameId: 'community:smoke-b', ms: 3000, at: at + 1, cid: 'smoke-client-2', seq: 2 },
+      ] }),
+    })
+    ok(r.status === 200 && json(r)?.stored === 1 && json(r)?.dropped === 1, '批内同键两条 → stored=1 dropped=1')
+
+    // 序号推进不误杀：同 cid 不同 seq 的新事件照常入库
+    r = await req('POST', '/api/play-events', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: [
+        { visitorId: 'smoke-visitor-4', gameId: 'community:smoke-a', seconds: 11, at: at + 2, cid: 'smoke-client-4', seq: 1 },
+        { visitorId: 'smoke-visitor-4', gameId: 'community:smoke-a', seconds: 22, at: at + 3, cid: 'smoke-client-4', seq: 2 },
+      ] }),
+    })
+    ok(r.status === 200 && json(r)?.stored === 2 && json(r)?.dropped === 0, '同 cid 序号推进的两条新事件 → stored=2（不误杀）')
+
+    // 兜底指纹：无 cid/seq 的旧形状事件按 (visitorId,at,gameId) 去重
+    const legacy = { visitorId: 'smoke-visitor-3', gameId: 'community:smoke-b', seconds: 7, at: at + 1000 }
+    const legacyResults = []
+    for (let i = 0; i < 3; i++) {
+      const x = await req('POST', '/api/stats', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(legacy) })
+      legacyResults.push(json(x))
+    }
+    ok(legacyResults[0]?.stored === 1 && legacyResults.slice(1).every((b) => b?.stored === 0 && b?.dropped === 1), '旧形状 (visitorId,at,gameId) 重发 3 次 → 仅首条计入')
+
+    // 计数不变（单据验收断言）：重发全程结束后，各访客计数与单次上报一致
+    let b2 = json(await req('GET', '/api/stats/smoke-visitor-2'))
+    let ga = b2?.games?.find((g) => g.gameId === 'community:smoke-a')
+    let gb = b2?.games?.find((g) => g.gameId === 'community:smoke-b')
+    ok(ga?.plays === 1 && ga?.seconds === 40 && gb?.plays === 1 && gb?.seconds === 3, 'visitor-2：smoke-a 1 次 40s、smoke-b 1 次 3s（重发未重复计时）', JSON.stringify(b2))
+    b2 = json(await req('GET', '/api/stats/smoke-visitor-3'))
+    gb = b2?.games?.find((g) => g.gameId === 'community:smoke-b')
+    ok(b2?.totalSeconds === 7 && gb?.plays === 1 && gb?.seconds === 7, 'visitor-3：兜底路径重发后仍 1 次 7s')
+    b2 = json(await req('GET', '/api/stats/smoke-visitor-4'))
+    ga = b2?.games?.find((g) => g.gameId === 'community:smoke-a')
+    ok(ga?.plays === 2 && ga?.seconds === 33, 'visitor-4：序号推进两事件 2 次 33s')
+  }
+
   // ===== 11. 跨域关闭（仅同源） =====
   {
     let r = await req('GET', '/api/games', { headers: { Origin: 'http://evil.example' } })
@@ -535,6 +610,22 @@ try {
   {
     const r = await req('GET', '/api/health')
     ok(r.status === 200 && json(r)?.ok === true, '全链路后 server 仍健康')
+  }
+
+  // ===== 15. 上报幂等跨重启（去重窗口从落盘回播种子） =====
+  {
+    await stopServer()
+    child = startServer()
+    ok(await waitUp(), 'server 同 DATA_DIR 重启就绪', childDead ? '子进程已退出：\n' + serverLog : '')
+    // 重发 10b 已计过的同 (cid,seq) 事件：回播种子应认出并丢弃
+    let r = await req('POST', '/api/stats', {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorId: 'smoke-visitor-2', gameId: 'community:smoke-a', seconds: 40, at: 1750000000000, cid: 'smoke-client-2', seq: 1 }),
+    })
+    ok(r.status === 200 && json(r)?.stored === 0 && json(r)?.dropped === 1, '重启后重发同 (cid,seq) → 仍去重（stored=0 dropped=1）')
+    r = await req('GET', '/api/stats/smoke-visitor-2')
+    const ga = json(r)?.games?.find((g) => g.gameId === 'community:smoke-a')
+    ok(ga?.plays === 1 && ga?.seconds === 40, '全程 6 次送达同事件后 smoke-a 计数仍 1 次/40s')
   }
 
   console.log(`\n结果：${passed} 通过，${failed} 失败`)

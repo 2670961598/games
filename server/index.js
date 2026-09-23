@@ -9,7 +9,8 @@
 //   POST /api/uploads/<id>/approve    待审 → 上架（移入 games/ 并写清单）
 //   POST /api/uploads/<id>/reject     待审 → 驳回（body 可带 { reason }）
 //   POST /api/stats                   时长上报 { visitorId, gameId, seconds } 或 { events: [...] }
-//                                     （别名 /api/play-events 兼容 GAMES-5 前端 sendBeacon，ms 字段自动换算）
+//                                     （别名 /api/play-events 兼容 GAMES-5 前端 sendBeacon，ms 字段自动换算；
+//                                     GAMES-14 幂等：事件可带 cid+seq，重发按序号窗/(visitorId,at,gameId) 去重丢弃）
 //   GET  /api/stats/<visitorId>       玩过列表 + 累计时长
 //   GET  /games/*                     games/ 目录静态伺服（iframe 游戏入口）
 //   GET  /*                           前端静态：WEB_DIR 强制 > dist/ > web/
@@ -18,6 +19,7 @@
 //       /api/games 结果 3s 内存缓存 + public max-age=30。压测见 README（scripts/bench-api.js）。
 // 安全口径：全站不输出任何 CORS 头，且 Origin 与 Host 不一致的请求直接 403（仅同源）。
 import http from 'node:http'
+import { readFile } from 'node:fs/promises'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exists, readBody, safeJoin, sendJSON, serveFile, HttpError } from './lib/http-util.js'
@@ -25,6 +27,7 @@ import { scanGames } from './lib/scan-games.js'
 import { seededShuffle } from './lib/shuffle.js'
 import { createRateLimiter } from './lib/ratelimit.js'
 import { createStats } from './lib/stats.js'
+import { createDedup, CID_RE } from './lib/dedup.js'
 import { createUploads } from './lib/uploads.js'
 import { crc32 } from './lib/zip.js'
 
@@ -52,6 +55,8 @@ const GAMES_MAX_PAGE_SIZE = 100
 const VISITOR_RE = /^[A-Za-z0-9._:-]{1,64}$/
 
 const stats = createStats({ dir: DATA_DIR, file: EVENTS_FILE })
+// 上报幂等窗口（GAMES-14）：重发事件在此被丢弃，不进 stats；启动时从落盘回播种子（见 listen 前）
+const dedup = createDedup()
 const uploadLimiter = createRateLimiter({ windowMs: 60_000, max: UPLOAD_RATE_PER_MIN })
 const uploads = createUploads({
   pendingDir: PENDING_DIR,
@@ -169,15 +174,23 @@ async function apiStatsPost(req, res) {
     const visitorId = typeof ev.visitorId === 'string' && VISITOR_RE.test(ev.visitorId) ? ev.visitorId : 'anonymous'
     let s = Number(ev.seconds)
     if (!Number.isFinite(s) || s < 0) s = Number(ev.ms) > 0 ? Number(ev.ms) / 1000 : 0 // GAMES-5 兼容
-    rows.push({
+    const row = {
       at: Number(ev.at) > 0 ? Number(ev.at) : Date.now(),
       visitorId,
       gameId: ev.gameId,
       s: Math.min(s, 604800), // 单条封顶一周，防脏数据撑爆聚合
-    })
+    }
+    // GAMES-14 幂等：客户端事件身份（cid+seq，成对携带才有效）随行落盘，重启回播后仍可去重
+    const cid = typeof ev.cid === 'string' && CID_RE.test(ev.cid) ? ev.cid : ''
+    if (cid && Number.isInteger(ev.seq) && ev.seq >= 0 && ev.seq <= Number.MAX_SAFE_INTEGER) {
+      row.cid = cid
+      row.seq = ev.seq
+    }
+    rows.push(row)
   }
-  const stored = await stats.record(rows)
-  sendJSON(req, res, 200, { ok: true, stored })
+  const { fresh, dropped } = dedup.check(rows) // 重发丢弃，不重复计时
+  const stored = await stats.record(fresh)
+  sendJSON(req, res, 200, { ok: true, stored, dropped })
 }
 
 async function apiStatsGet(req, res, visitorIdRaw) {
@@ -339,6 +352,26 @@ server.on('error', (err) => {
   }
   process.exit(1)
 })
+
+// 幂等窗口回播（GAMES-14）：listen 前从落盘末尾重建去重键，服务重启后重放同事件仍能去重。
+// 个人本机规模（MB 级文件）全量读毫秒级；无文件/损坏行 = 首启或脏数据，窗口留空/跳过。
+try {
+  dedup.seed(
+    (await readFile(EVENTS_FILE, 'utf8'))
+      .split('\n')
+      .filter((l) => l.trim())
+      .map((l) => {
+        try {
+          return JSON.parse(l)
+        } catch {
+          return null // 损坏行跳过，与 stats.summary 同口径
+        }
+      })
+      .filter(Boolean),
+  )
+} catch {
+  /* 无落盘文件 = 首启 */
+}
 
 server.listen(PORT, HOST, () => {
   console.log(`[games-server] http://${HOST}:${PORT}  (games: ${GAMES_DIR})`)

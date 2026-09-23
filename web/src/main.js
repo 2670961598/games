@@ -35,11 +35,19 @@ function persistStats() {
   store.set('stats', stats)
 }
 
+// 事件序号（GAMES-14 幂等）：客户端内单调递增，持久化防重载后复用；服务端按 (cid,seq) 去重
+let eventSeq = Number(store.get('seq', 0)) || 0
+function nextSeq() {
+  eventSeq += 1
+  store.set('seq', eventSeq)
+  return eventSeq
+}
+
 function recordDuration(gameId, ms) {
   if (!Number.isFinite(ms) || ms <= 0) return
   stats = applyDuration(stats, gameId, ms, Date.now())
   persistStats()
-  pendingEvents.push({ gameId, ms, at: Date.now() })
+  pendingEvents.push({ gameId, ms, at: Date.now(), cid: visitorId(), seq: nextSeq() })
   if (pendingEvents.length > QUEUE_CAP) pendingEvents = pendingEvents.slice(-QUEUE_CAP)
   store.set('events', pendingEvents)
 }
@@ -55,7 +63,7 @@ function eventsWithVisitor() {
   return pendingEvents.map((e) => ({ ...e, visitorId: vid }))
 }
 
-let flushing = false // 上报互斥：慢请求期间周期触发不得重发同批事件（服务端无幂等去重）
+let flushing = false // 上报互斥：慢请求期间周期触发不得重发同批（服务端已幂等去重，重发只浪费带宽）
 async function flushEvents() {
   if (pendingEvents.length === 0 || flushing) return
   flushing = true
