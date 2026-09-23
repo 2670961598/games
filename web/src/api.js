@@ -90,6 +90,28 @@ export function beaconEvents(events) {
   }
 }
 
+/**
+ * 拉取服务端历史（GAMES-15 boot 合并）：GET /api/stats/<visitorId>。
+ * 返回服务端聚合体 { ok, visitorId, totalSeconds, games: [{ gameId, seconds, plays, firstAt, lastAt }] }。
+ * 失败抛错，由调用方决定降级（main.js：静默维持本地口径）。
+ */
+export async function fetchStats(visitorId, { timeout = 8000 } = {}) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeout)
+  try {
+    const res = await fetch(`/api/stats/${encodeURIComponent(visitorId)}`, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+    })
+    if (!res.ok) throw new Error(`/api/stats/${visitorId} HTTP ${res.status}`)
+    const body = await res.json()
+    if (!body || body.ok !== true || !Array.isArray(body.games)) throw new Error('/api/stats 响应形状异常')
+    return body
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ---- 玩家上传（GAMES-11；后端管线 GAMES-6）----
 
 /**
