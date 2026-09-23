@@ -1,32 +1,94 @@
-// 扫描 games/<type>/<slug>/game.json → 游戏清单。
-// /api/games 数据源。与 GAMES-5 骨架口径一致，本单在其基础上补 levels（关卡数）/ tier（数值档位）。
-// 规则：目录缺失/无 game.json/JSON 损坏/入口文件不存在 → 跳过该目录（服务器容错，不整体挂）
-//       _ 前缀目录（如 games/_pending/ 上传暂存、games/_shared/ 共享资源）与 . 前缀隐藏目录均不扫描
+// 扫描 games/<type>/<slug>/game.json → 游戏清单 + 非法项报告（/api/games 数据源）。
+// 字段口径 = 策划案 v2 §3.3 仲裁（决策 D7，GAMES-13 落地）：平台线实况为准 + tier 收口五枚举，
+// 逐键裁定见 docs/game-design-spec.md §32 附录；生产线仍按 spec §2.1 全量严口径（DoD 不放宽）。
+// 规则：缺 game.json/JSON 损坏/非对象/字段非法/入口文件不存在 → 跳过该目录并计入 invalid 报告
+//       （服务器容错不整体挂，报告供运维排查与冒烟断言）；scanGames() 返回 { games, invalid }。
+//       _ 前缀目录（如 games/_pending/ 上传暂存、games/_shared/ 共享资源）与 . 前缀隐藏目录均不扫描。
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
-function toLevels(v) {
-  const n = Number(v)
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 1
-}
+/** tier 五枚举（spec §2.1；平台线唯一合法值集，D7 收口） */
+export const TIERS = ['relaxed', 'simple', 'normal', 'hard', 'master']
 
-function toTier(v) {
-  return typeof v === 'string' && v.trim() ? v.trim().slice(0, 16) : 'standard'
+/**
+ * tier 收口（D7）：五枚举合法；缺省 → normal；存量 standard → normal（迁移）；
+ * 其余值返回 null（非法）——scan 侧据此跳过，上传管线 normalizeMeta 据此收敛为 normal
+ */
+export function toTier(v) {
+  if (v === undefined || v === null || v === '') return 'normal'
+  const t = typeof v === 'string' ? v.trim().toLowerCase() : ''
+  if (t === 'standard') return 'normal'
+  return TIERS.includes(t) ? t : null
 }
 
 /**
- * @returns {Promise<Array<{id,slug,type,name,description,levels,tier,url,entryFile}>>}
- *   id 默认 "<type>:<slug>"（game.json 可用 id 字段覆盖，须全局唯一）
- *   url 为入口文件直链（iframe 游戏入口）
+ * levels 平台值域（§3.3 仲裁）：1–9999 取整——玩家上传无权强制生产线的 10–120，平台不设此门槛；
+ * 缺省 → 1；非数字/越界返回 null（非法）
+ */
+export function toLevels(v) {
+  if (v === undefined || v === null || v === '') return 1
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 1 || v > 9999) return null
+  return Math.floor(v)
+}
+
+/** spec §2.1 其余字段：M4 前不校验，透传进清单（feed 可消费 avgDurationSec/assets.thumb） */
+const SPEC_PASSTHROUGH = ['version', 'specVersion', 'orientation', 'controls', 'avgDurationSec', 'scoring', 'assets', 'typeExtra']
+
+/** 入口须为目录内相对路径：绝对路径或含 .. 段 = 非法（防清单 url 指到游戏目录外） */
+function safeEntry(entry) {
+  return !entry.startsWith('/') && !entry.split('/').some((seg) => seg === '..')
+}
+
+/**
+ * 校验单个 game.json（已解析）。返回 { game } 或 { reason }（非法原因）。
+ * 名称双读（D7）：title 优先、name 兜底、slug 保底，输出键统一 name（/api/games 契约不变）；
+ * id 禁用 json 覆盖：一律 "<type>:<slug>" 目录推导（与上架管线 approve 的 delete gm.id 一致）。
+ */
+function readGame(meta, type, slug) {
+  if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) {
+    return { reason: 'game.json 不是 JSON 对象' }
+  }
+  for (const k of ['title', 'name', 'description', 'entry']) {
+    if (meta[k] !== undefined && typeof meta[k] !== 'string') return { reason: `字段 ${k} 须为字符串` }
+  }
+  const tier = toTier(meta.tier)
+  if (tier === null) return { reason: `tier "${String(meta.tier).slice(0, 16)}" 不在五枚举 ${TIERS.join('/')}` }
+  const levels = toLevels(meta.levels)
+  if (levels === null) return { reason: `levels "${String(meta.levels).slice(0, 16)}" 非法（平台值域 1-9999 整数）` }
+  const entryFile = typeof meta.entry === 'string' && meta.entry ? meta.entry : 'index.html'
+  if (!safeEntry(entryFile)) return { reason: `entry "${entryFile.slice(0, 32)}" 不得为绝对路径或含 ..` }
+  const title = typeof meta.title === 'string' ? meta.title.trim() : ''
+  const name = typeof meta.name === 'string' ? meta.name.trim() : ''
+  const game = {
+    id: `${type}:${slug}`, // 目录推导，唯一由 (type, slug) 决定 → 无需查重
+    slug,
+    type,
+    name: title || name || slug,
+    description: typeof meta.description === 'string' ? meta.description : '',
+    levels,
+    tier,
+    url: `/games/${type}/${slug}/${entryFile}`,
+    entryFile,
+  }
+  for (const k of SPEC_PASSTHROUGH) {
+    if (meta[k] !== undefined) game[k] = meta[k]
+  }
+  return { game }
+}
+
+/**
+ * @returns {Promise<{games: Array<{id,slug,type,name,description,levels,tier,url,entryFile}>,
+ *                    invalid: Array<{type,slug,reason}>}>}
+ *   games 按注入 id 排序；invalid 为扫描报告（跳过的目录与原因），供日志/冒烟断言
  */
 export async function scanGames(gamesDir) {
-  const out = []
-  const seenIds = new Set()
+  const games = []
+  const invalid = []
   let types = []
   try {
     types = await readdir(gamesDir, { withFileTypes: true })
   } catch {
-    return out // games/ 不存在 → 空清单
+    return { games, invalid } // games/ 不存在 → 空清单
   }
   for (const t of types) {
     if (!t.isDirectory() || t.name.startsWith('_') || t.name.startsWith('.')) continue
@@ -38,38 +100,31 @@ export async function scanGames(gamesDir) {
     }
     for (const s of slugs) {
       if (!s.isDirectory() || s.name.startsWith('.')) continue
-      const dir = join(gamesDir, t.name, s.name)
-      let meta = null
+      const type = t.name
+      const slug = s.name
+      const dir = join(gamesDir, type, slug)
+      let meta
       try {
         meta = JSON.parse(await readFile(join(dir, 'game.json'), 'utf8'))
       } catch {
-        continue // 无 game.json 或损坏 → 不入清单
+        invalid.push({ type, slug, reason: '缺 game.json 或 JSON 解析失败' })
+        continue
       }
-      const type = t.name
-      const slug = s.name
-      const id = typeof meta.id === 'string' && meta.id.trim() ? meta.id.trim() : `${type}:${slug}`
-      if (seenIds.has(id)) continue // id 冲突：后者跳过，保证清单唯一
-      const entryFile = typeof meta.entry === 'string' && meta.entry ? meta.entry : 'index.html'
+      const r = readGame(meta, type, slug)
+      if (r.reason) {
+        invalid.push({ type, slug, reason: r.reason })
+        continue
+      }
       try {
-        const st = await stat(join(dir, entryFile))
-        if (!st.isFile()) continue
+        const st = await stat(join(dir, r.game.entryFile))
+        if (!st.isFile()) throw new Error('not a file')
       } catch {
-        continue // 入口文件不存在 → 不入清单
+        invalid.push({ type, slug, reason: `入口文件 ${r.game.entryFile} 不存在` })
+        continue
       }
-      seenIds.add(id) // 登记在校验通过之后，坏目录才不会占住 id 挤掉有效目录
-      out.push({
-        id,
-        slug,
-        type,
-        name: typeof meta.name === 'string' && meta.name.trim() ? meta.name.trim() : slug,
-        description: typeof meta.description === 'string' ? meta.description : '',
-        levels: toLevels(meta.levels),
-        tier: toTier(meta.tier),
-        url: `/games/${type}/${slug}/${entryFile}`,
-        entryFile,
-      })
+      games.push(r.game)
     }
   }
-  out.sort((a, b) => a.id.localeCompare(b.id))
-  return out
+  games.sort((a, b) => a.id.localeCompare(b.id))
+  return { games, invalid }
 }

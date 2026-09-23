@@ -6,7 +6,7 @@
 // 全程不触碰仓库真实数据；finally 清理临时目录与子进程。绿 = exit 0。
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -245,9 +245,9 @@ try {
     const a = b.games.find((g) => g.slug === 'smoke-a')
     const bb = b.games.find((g) => g.slug === 'smoke-b')
     const c = b.games.find((g) => g.slug === 'smoke-c')
-    ok(a?.id === 'community:smoke-a' && a?.levels === 8 && a?.tier === 's' && a?.name === 'SmokeA', 'A 元数据回读（query 参数 → game.json → 清单）')
-    ok(bb?.name === 'Zip Game B' && bb?.url?.endsWith('/index.html'), 'B 元数据回读（随包 game.json 的 name/entry 生效）')
-    ok(c?.levels === 3 && c?.tier === 'a' && c?.name === 'SmokeC', 'C 元数据回读（multipart 字段生效）')
+    ok(a?.id === 'community:smoke-a' && a?.levels === 8 && a?.tier === 'normal' && a?.name === 'SmokeA', 'A 元数据回读（query → game.json → 清单；tier=s 收口 normal，GAMES-13 D7）')
+    ok(bb?.name === 'Zip Game B' && bb?.url?.endsWith('/index.html') && bb?.tier === 'normal', 'B 元数据回读（随包 game.json 的 name/entry 生效；tier 缺省 normal）')
+    ok(c?.levels === 3 && c?.tier === 'normal' && c?.name === 'SmokeC', 'C 元数据回读（multipart 字段生效；tier=a 收口 normal）')
   }
 
   // ===== 5. 分页 + seed 洗牌袋 =====
@@ -373,6 +373,43 @@ try {
       }
     }
     ok(junk.length === 0, `上架目录无杂物（${junk.join(',')}）`)
+  }
+
+  // ===== 8c. 非法 game.json 不入清单（GAMES-13：schema 仲裁 D7 + scan 校验） =====
+  {
+    // 手摆目录 = 模拟官方线/手写 game.json（不经上传管线的收口，非法值直达 scan）
+    const bads = [
+      ['bad-tier', { name: 'BadTier', tier: 'epic' }],
+      ['bad-levels', { name: 'BadLevels', levels: 'many' }],
+      ['bad-name', { name: 42 }],
+      ['bad-entry', { name: 'BadEntry', entry: '../../etc/passwd' }],
+    ]
+    for (const [slug, meta] of bads) {
+      await mkdir(join(gamesDir, 'community', slug), { recursive: true })
+      await writeFile(join(gamesDir, 'community', slug, 'game.json'), JSON.stringify(meta))
+      await writeFile(join(gamesDir, 'community', slug, 'index.html'), gameHtml('Bad ' + slug))
+    }
+    await mkdir(join(gamesDir, 'community', 'bad-json'), { recursive: true })
+    await writeFile(join(gamesDir, 'community', 'bad-json', 'game.json'), '{oops')
+    await writeFile(join(gamesDir, 'community', 'bad-json', 'index.html'), gameHtml('BadJson'))
+    // 合法对照：title 双读（D7）+ 存量 standard→normal 迁移 + spec 字段透传（M4 前不校验）
+    await mkdir(join(gamesDir, 'community', 'ok-title'), { recursive: true })
+    await writeFile(join(gamesDir, 'community', 'ok-title', 'game.json'), JSON.stringify({ title: '标题优先', tier: 'standard', avgDurationSec: 150 }))
+    await writeFile(join(gamesDir, 'community', 'ok-title', 'index.html'), gameHtml('Ok Title'))
+
+    await sleep(3200) // 等 3s 清单缓存过期，下一次 /api/games 触发重扫
+    const r = await req('GET', '/api/games?pageSize=100')
+    const b = json(r)
+    const slugs = new Set((b?.games || []).map((g) => g.slug))
+    ok(b?.total === 7, `非法目录不入清单：total 6→7（仅合法对照入列，实际 ${b?.total}）`)
+    ok(['bad-tier', 'bad-levels', 'bad-name', 'bad-entry', 'bad-json'].every((s) => !slugs.has(s)), '五个非法 game.json 目录均被 /api/games 排除')
+    const okt = (b?.games || []).find((g) => g.slug === 'ok-title')
+    ok(okt?.name === '标题优先' && okt?.tier === 'normal', 'title 双读（title 优先 name 兜底）+ 存量 standard→normal 迁移')
+    ok(okt?.avgDurationSec === 150, 'spec 字段透传（avgDurationSec 进清单）')
+    ok(
+      /扫描跳过 5 个非法 game\.json/.test(serverLog) && [...bads.map(([s]) => s), 'bad-json'].every((s) => serverLog.includes(`community/${s}`)),
+      '非法项计入扫描报告（server 日志聚合告警含全部目录）',
+    )
   }
 
   // ===== 9. 上传校验拒绝（负例） =====
