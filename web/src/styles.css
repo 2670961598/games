@@ -498,8 +498,11 @@ body.feed-active #catalog-btn {
   }
 }
 
-/* ---- 我的页：上传入口（GAMES-11） ---- */
+/* ---- 我的页：上传入口（GAMES-11）+ 审核后台入口（GAMES-16） ---- */
 .mine__uploads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 14px 16px 0;
 }
 .mine__upload {
@@ -770,4 +773,198 @@ textarea.up-input {
   text-align: center;
   color: #566076;
   font-size: 13px;
+}
+
+/* ---- 审核后台视图（GAMES-16）：待审队列 + approve/reject + 本会话已审 ---- */
+body[data-view='review'] #view-review {
+  display: block;
+}
+.review {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0b0e14;
+}
+.review__body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.rv-result {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-radius: 10px;
+  word-break: break-all;
+}
+.rv-result--ok {
+  color: #7fd18c;
+  background: rgba(80, 200, 120, 0.08);
+  border: 1px solid rgba(80, 200, 120, 0.25);
+}
+.rv-result--err {
+  color: #ff8f8f;
+  background: rgba(255, 99, 99, 0.08);
+  border: 1px solid rgba(255, 99, 99, 0.25);
+}
+.rv-list-head {
+  margin: 12px 2px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #8b94a7;
+}
+.rv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rv-card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: #12161f;
+  border: 1px solid #1c2230;
+  border-radius: 12px;
+}
+.rv-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.rv-card--published {
+  border-color: rgba(80, 200, 120, 0.35);
+}
+.rv-card--rejected {
+  border-color: rgba(255, 99, 99, 0.35);
+}
+.rv-card__main {
+  flex: 1;
+  min-width: 0;
+}
+.rv-card__name {
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-all;
+}
+.rv-card__meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #8b94a7;
+  word-break: break-all;
+}
+.rv-card__desc {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #c3cad8;
+  word-break: break-all;
+}
+.rv-card__reason {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #ff8f8f;
+  background: rgba(255, 99, 99, 0.08);
+  border-radius: 8px;
+  word-break: break-all;
+}
+.rv-badge {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.rv-badge--pending {
+  color: #ffcf6e;
+  background: rgba(255, 190, 80, 0.12);
+}
+.rv-badge--published {
+  color: #7fd18c;
+  background: rgba(80, 200, 120, 0.12);
+}
+.rv-badge--rejected {
+  color: #ff8f8f;
+  background: rgba(255, 99, 99, 0.12);
+}
+.rv-reason {
+  margin-top: 10px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 作者 display 会压过 UA 的 [hidden]{display:none}（同库 .up-progress 同病，见 REPORT）——显式收回 */
+.rv-reason[hidden] {
+  display: none;
+}
+.rv-input {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: #e8ecf3;
+  background: #0b0e14;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  outline: none;
+}
+.rv-input:focus {
+  border-color: #3b82f6;
+}
+.rv-input::placeholder {
+  color: #566076;
+}
+.rv-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.rv-reason .rv-actions {
+  margin-top: 0;
+}
+.rv-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.rv-btn:disabled {
+  opacity: 0.55;
+}
+.rv-btn--approve {
+  color: #fff;
+  background: linear-gradient(135deg, #22a05a, #2fb86e);
+}
+.rv-btn--reject {
+  color: #fff;
+  background: #c94f4f;
+}
+.rv-btn--rejectghost {
+  color: #ff8f8f;
+  border-color: rgba(255, 99, 99, 0.4);
+}
+.rv-btn--ghost {
+  color: #9fb2d8;
+  border-color: #2c3547;
+}
+a.rv-btn {
+  display: inline-block;
+  text-decoration: none;
+}
+.rv-empty {
+  padding: 30px 0;
+  text-align: center;
+  color: #566076;
+  font-size: 13px;
+}
+.rv-rules {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #566076;
 }

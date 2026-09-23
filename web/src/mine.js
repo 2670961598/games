@@ -1,5 +1,6 @@
 // 我的页：GAMES-5 需求 3（玩过的游戏去重列表、每款累计时长、总时长、点击再进）。
 // GAMES-11：顶部加「上传我的游戏」入口（→ #/upload），带待审计数角标（读上传台账）。
+// GAMES-16：其下加「审核后台」入口（→ #/review，待审队列 approve/reject）。
 import { aggregatePlayed, formatDuration } from './stats.js'
 import { store } from './store.js'
 
@@ -26,6 +27,14 @@ export function createMine({ getSnapshot, onOpenGame }) {
         <span class="mine__upload-badge" id="mine-upload-badge" hidden></span>
         <div class="mine__item-arrow">›</div>
       </button>
+      <button class="mine__upload" type="button" id="mine-review">
+        <div class="mine__upload-icon">✓</div>
+        <div class="mine__upload-text">
+          <div class="mine__upload-title">审核后台</div>
+          <div class="mine__upload-sub">待审上传 · 通过上架 / 驳回</div>
+        </div>
+        <div class="mine__item-arrow">›</div>
+      </button>
     </div>
     <div class="mine__list" id="mine-list"></div>`
 
@@ -34,6 +43,9 @@ export function createMine({ getSnapshot, onOpenGame }) {
   })
   root.querySelector('#mine-upload').addEventListener('click', () => {
     location.hash = '#/upload'
+  })
+  root.querySelector('#mine-review').addEventListener('click', () => {
+    location.hash = '#/review'
   })
 
   function refresh() {
