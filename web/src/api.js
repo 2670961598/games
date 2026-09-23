@@ -167,3 +167,44 @@ export async function fetchUpload(id, { timeout = 8000 } = {}) {
     clearTimeout(timer)
   }
 }
+
+// ---- 审核后台（GAMES-16；approve/reject 均为后端既有接口，GAMES-6 管线）----
+
+/** 请求 JSON helper：非 2xx 抛错（message 直取服务端 error 口径，UI 原样展示） */
+async function apiJSON(path, { method = 'GET', body = null, timeout = 8000 } = {}) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeout)
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: body !== null ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== null ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && data.error) || `/api/uploads HTTP ${res.status}`)
+    }
+    return data
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** 待审列表 GET /api/uploads。resolve pending 数组（每项含 game.json 元信息 + entryFile/id 等） */
+export async function fetchPendingUploads({ timeout = 8000 } = {}) {
+  const body = await apiJSON('/api/uploads', { timeout })
+  if (!Array.isArray(body.pending)) throw new Error('/api/uploads 响应形状异常（缺 pending 数组）')
+  return body.pending
+}
+
+/** 通过上架 POST /api/uploads/<id>/approve。resolve { id, state, game:{id,type,slug,url} } */
+export function approveUpload(id, { timeout = 8000 } = {}) {
+  return apiJSON(`/api/uploads/${encodeURIComponent(id)}/approve`, { method: 'POST', timeout })
+}
+
+/** 驳回 POST /api/uploads/<id>/reject，body { reason }。resolve { id, state } */
+export function rejectUpload(id, reason, { timeout = 8000 } = {}) {
+  return apiJSON(`/api/uploads/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason }, timeout })
+}

@@ -3,6 +3,7 @@
 //       时长累加（可见计时-暂停恢复）、统计聚合（我的页口径）、games/ 清单完整性、
 //       /api/games 分页拼全量（GAMES-6 后端契约：默认 pageSize=20，袋子需全量）、
 //       游戏大全（GAMES-12：24 类型清单映射 / type×tier 过滤 / 逻辑页拼装 / type 服务端透传）、
+//       审核后台（GAMES-16：approve/reject 调用既有 /api/uploads 接口的请求契约）、
 //       跨设备历史合并（GAMES-15：mergeStats 并集口径 / fetchStats boot 通道）。
 import { readFile, stat } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
@@ -10,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { BAG_VERSION, newBag, draw, reconcile } from '../web/src/shuffleBag.js'
 import { DurationTracker } from '../web/src/duration.js'
 import { emptyStats, applyEnter, applyDuration, aggregatePlayed, formatDuration, mergeStats } from '../web/src/stats.js'
-import { collectGames, fetchGamesPage, fetchStats } from '../web/src/api.js'
+import { collectGames, fetchGamesPage, fetchPendingUploads, approveUpload, rejectUpload, fetchStats } from '../web/src/api.js'
 import { TYPE_CATALOG, TIER_GROUPS, typeName, tierName, filterGames, collectBrowsePage } from '../web/src/browse.js'
 import { scanGames } from '../server/lib/scan-games.js'
 
@@ -447,6 +448,61 @@ section('游戏大全：fetchGamesPage 把 type 过滤交给服务端（/api/gam
   check('请求打到 /api/games 且带 page=2', u.startsWith('/api/games?') && u.includes('page=2'))
   check('type=stacker 走服务端过滤', u.includes('type=stacker'))
   check('大页拉取 pageSize=100', u.includes('pageSize=100'))
+}
+
+section('审核后台：approve/reject 调既有 /api/uploads 接口（GAMES-16）')
+{
+  const realFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), opts })
+    if (String(url) === '/api/uploads' && (!opts.method || opts.method === 'GET')) {
+      return { ok: true, json: async () => ({ ok: true, pending: [{ id: 'up-aaa', state: 'pending', name: 'A', type: 'community', slug: 'a' }] }) }
+    }
+    if (String(url).endsWith('/approve')) {
+      return { ok: true, json: async () => ({ ok: true, id: 'up-aaa', state: 'published', game: { id: 'community:a', type: 'community', slug: 'a', url: '/games/community/a/index.html' } }) }
+    }
+    if (String(url).endsWith('/reject')) {
+      return { ok: true, json: async () => ({ ok: true, id: 'up-bbb', state: 'rejected' }) }
+    }
+    return { ok: false, status: 404, json: async () => ({ ok: false, error: 'upload not found' }) }
+  }
+  try {
+    const pending = await fetchPendingUploads()
+    check('fetchPendingUploads → GET /api/uploads 返回 pending 数组', Array.isArray(pending) && pending[0]?.id === 'up-aaa')
+    const r1 = await approveUpload('up-aaa')
+    check('approveUpload → POST …/approve 透传 game 入口', r1.state === 'published' && r1.game.url === '/games/community/a/index.html')
+    const r2 = await rejectUpload('up-bbb', '测试驳回')
+    check('rejectUpload → POST …/reject 回 rejected', r2.state === 'rejected')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  const [c1, c2, c3] = calls
+  check('待审列表请求打到 GET /api/uploads', c1.url === '/api/uploads' && (!c1.opts.method || c1.opts.method === 'GET'))
+  check('approve 打到 POST /api/uploads/<id>/approve', c2.url === '/api/uploads/up-aaa/approve' && c2.opts.method === 'POST')
+  check('reject 打到 POST /api/uploads/<id>/reject 且 body 带 reason', c3.url === '/api/uploads/up-bbb/reject' && c3.opts.method === 'POST' && JSON.parse(c3.opts.body).reason === '测试驳回' && /application\/json/.test(c3.opts.headers['Content-Type']))
+
+  // 非 2xx：服务端 error 口径原样抛出（404/409 状态机信息直达 UI）
+  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({ ok: false, error: '上传 up-x 不存在（可能已流转或被清理）' }) })
+  try {
+    let msg = ''
+    try {
+      await approveUpload('up-x')
+    } catch (e) {
+      msg = e.message
+    }
+    check('4xx 应答 error 文案原样抛出（状态机口径透传）', msg.includes('不存在'))
+    let shapeMsg = ''
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true }) }) // 缺 pending 数组
+    try {
+      await fetchPendingUploads()
+    } catch (e) {
+      shapeMsg = e.message
+    }
+    check('响应缺 pending 数组 → 形状异常报错', /形状异常/.test(shapeMsg))
+  } finally {
+    globalThis.fetch = realFetch
+  }
 }
 
 // ---------- 8. 跨设备历史合并（GAMES-15）：mergeStats 并集口径 + fetchStats boot 通道 ----------

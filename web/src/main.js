@@ -1,4 +1,4 @@
-// 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/上传/大全/播放器五视图 → 路由 → 计时上报管线。
+// 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/上传/大全/审核/播放器六视图 → 路由 → 计时上报管线。
 import { fetchGames, fetchGamesPage, reportEvents, beaconEvents, fetchStats } from './api.js'
 import { store, visitorId } from './store.js'
 import { newBag, reconcile, draw } from './shuffleBag.js'
@@ -7,6 +7,7 @@ import { createFeed } from './feed.js'
 import { createMine } from './mine.js'
 import { createUpload } from './upload.js'
 import { createBrowse } from './browse.js'
+import { createReview } from './review.js'
 import { createPlayer } from './player.js'
 
 const FLUSH_MS = 15000 // 上报间隔
@@ -26,6 +27,7 @@ let feed = null
 let mine = null
 let upload = null
 let browse = null
+let review = null
 let player = null
 let currentView = 'boot'
 
@@ -169,6 +171,7 @@ function showView(name) {
     feed.deactivateAll()
   }
   if (prev === 'upload') upload.deactivate() // 停审核状态轮询
+  if (prev === 'review') review.deactivate() // 停待审队列轮询
   if (prev === 'player') setActiveRef(null)
 
   if (name === 'feed') {
@@ -179,6 +182,9 @@ function showView(name) {
   } else if (name === 'upload') {
     setActiveRef(null)
     upload.activate() // 重读台账 + 立即探一轮 + 起轮询
+  } else if (name === 'review') {
+    setActiveRef(null)
+    review.activate() // 立即拉待审队列 + 起轮询
   } else if (name === 'browse') {
     setActiveRef(null)
     browse.refresh()
@@ -200,12 +206,13 @@ function parseHash() {
   }
   if (h === '#/mine') return { view: 'mine' }
   if (h === '#/upload') return { view: 'upload' }
+  if (h === '#/review') return { view: 'review' }
   if (h === '#/catalog') return { view: 'browse' }
   return { view: 'feed' }
 }
 
 function route() {
-  if (!feed || !mine || !upload || !browse || !player) return // boot 未完成（含加载失败重试中）忽略路由
+  if (!feed || !mine || !upload || !browse || !review || !player) return // boot 未完成（含加载失败重试中）忽略路由
   const { view, id } = parseHash()
   if (view === 'player') {
     setActiveRef(null) // 先结算上一个 tracker（feed 当前屏或播放器里的旧游戏）
@@ -266,7 +273,7 @@ async function boot() {
 
   pendingEvents = Array.isArray(store.get('events', [])) ? store.get('events', []) : []
 
-  // 五视图
+  // 六视图
   const app = document.getElementById('app')
   app.innerHTML = ''
   const viewFeed = document.createElement('div')
@@ -277,9 +284,11 @@ async function boot() {
   viewUpload.id = 'view-upload'
   const viewBrowse = document.createElement('div')
   viewBrowse.id = 'view-browse'
+  const viewReview = document.createElement('div')
+  viewReview.id = 'view-review'
   const viewPlayer = document.createElement('div')
   viewPlayer.id = 'view-player'
-  app.append(viewFeed, viewMine, viewUpload, viewBrowse, viewPlayer)
+  app.append(viewFeed, viewMine, viewUpload, viewBrowse, viewReview, viewPlayer)
 
   feed = createFeed({
     catalogById,
@@ -310,6 +319,11 @@ async function boot() {
     },
   })
   viewBrowse.appendChild(browse.el)
+
+  review = createReview({
+    onOpenGame: openUploadedGame, // 已审「去玩」与上传页同机制：重拉目录 + reconcile 袋再进播放器
+  })
+  viewReview.appendChild(review.el)
 
   player = createPlayer({
     onClose: () => {
