@@ -1,8 +1,9 @@
 # GAMES 批量生产设计规范 —— 游戏类型 × 关卡 × 数值档位
 
-> specVersion: 1.0.0 ｜ 单据: GAMES-7 ｜ 父 Epic: GAMES-1 ｜ 轨道: L2
+> specVersion: 1.1.0 ｜ 单据: GAMES-7（v1.0.0）/ GAMES-13（v1.1.0 附录） ｜ 父 Epic: GAMES-1 ｜ 轨道: L2
 > 适用对象：`games/<type>/<slug>/` 下全部游戏（目标 100+，每类型 ≥5 款）。
 > 本文档是类型清单、game.json schema、数值档位、难度曲线的唯一事实源；与实现冲突时以本文为准，修订须开新需求单（升 specVersion）。
+> **平台线例外（GAMES-13 仲裁）**：scan 扫描 / 上传管线按 §32 仲裁附录的"实况为准 + 最小收口"口径执行；本文 §2.1 全量严口径是生产线投产 DoD，不作为平台扫描门槛。
 
 ## 1. 总则
 
@@ -23,7 +24,7 @@
 | type | string | 是 | 必须是 §7–§30 类型清单之一（slug 列） | `stacker` |
 | tier | string | 是 | `relaxed\|simple\|normal\|hard\|master` 五枚举之一 | `normal` |
 | levels | int | 是 | 10–120；各类型缺省值见类型节 | `30` |
-| specVersion | string | 是 | 本规范版本，当前 `1.0.0` | `1.0.0` |
+| specVersion | string | 是 | 本规范版本，当前 `1.1.0` | `1.1.0` |
 | version | string | 是 | 游戏自身 semver | `1.0.0` |
 | orientation | string | 是 | 固定 `portrait` | `portrait` |
 | entry | string | 是 | 固定 `index.html` | `index.html` |
@@ -1053,4 +1054,33 @@ const rng = mulberry32(seed);
 
 **投放规模核算**：24 类型 × 5 档 = 120 款 ≥ 100 目标（README）；每类型投放顺序建议 normal → relaxed/simple → hard → master（先定基准手感再调两端）。
 
+## 32. 附录：game.json 平台线仲裁记录（v2 §3.3 / 决策 D7，GAMES-13 落地）
+
+**仲裁结论：实况为准 + 最小收口**。本文 §2.1 仍是**生产线**唯一事实源与投产 DoD（§31 清单第 1 项不变）；
+**平台线**（server/lib/scan-games.js 清单扫描 + uploads.js 上传管线）按策划案 v2 §3.3 仲裁表执行，理由：
+
+1. main 上真实生效的一直是 scan 实读口径——§2.1 此前无任何校验器执行，必填缺漏不报错、越界静默收敛；强切 spec 口径 = 存量 demo 5 款与已上架玩家上传须全部返工重新投产。
+2. 玩家上传线天然宽松（normalizeMeta 收敛值域：levels 1–9999、name ≤64）——玩家无权也不该被强制生产线的 10–120 关 / ≤12 字标题，在 scan 处收紧会把审核管线推成大面积拒绝。
+3. 生产线的严格性不因此放松：schema 合规由生产自检 + QA 复测把关（§31），平台 scan 只拦"结构性坏数据"，不做生产线 DoD 执行者。
+
+**逐键裁定**（平台线；与 §2.1 冲突处以本表为准）：
+
+| 键 | §2.1（生产线） | 平台线裁定（本仲裁） |
+|---|---|---|
+| 名称 | `title` 必填 | **双读**：title 优先、name 兜底、slug 保底；清单输出键统一为 `name`（/api/games 契约不变） |
+| type | json 字段，24 枚举 | **目录名为准**（json 内 type 不读） |
+| slug | json 字段，格式正则 | **目录名为准**（生产线格式约束仍见 §2.1） |
+| tier | 五枚举必填 | **收口五枚举** relaxed\|simple\|normal\|hard\|master；缺省→normal；存量 `standard`→normal 迁移；其余值：scan 判非法跳过，上传管线收敛 normal |
+| levels | int 10–120 | 平台放宽 **1–9999** 取整；非数字/越界=非法；缺省 1 |
+| id | 无（type:slug 推导） | **禁用 json id 覆盖**，一律 `<type>:<slug>` 目录推导（与上架管线 approve 删 id 一致） |
+| entry | 必填固定 index.html | 可选缺省 index.html；非字符串/绝对路径/含 `..` = 非法；入口文件须存在 |
+| description | 无此键 | 平台合法字段（字符串；上传侧截断 ≤256） |
+| version / specVersion / orientation / controls / avgDurationSec / scoring / assets / typeExtra | 必填/可选 | **M4 前不校验**，scan 透传进清单（feed 可消费 avgDurationSec / assets.thumb；controls 形状分歧 #42 随 M4 一并裁） |
+
+**非法处理（GAMES-13 scan 校验）**：缺 game.json / JSON 解析失败 / 非 JSON 对象 / 上表字段非法 / 入口文件不存在
+→ 跳过该目录并计入扫描报告：`scanGames()` 返回 `{ games, invalid }`（invalid 项含 type/slug/reason），
+server 在 invalid 集合变化时打一条聚合告警日志；`node scripts/smoke-api.js` 含冻结断言（非法目录不入 /api/games）。
+上传管线入口（normalizeMeta）同步收口 tier，保证"审核通过 ⇒ 必然入清单"不被新校验打破。
+
 **修订记录**：v1.0.0（GAMES-7，2026-09-22）首版冻结：公共 schema、五档体系、曲线三式、24 类型全量数值表。
+v1.1.0（GAMES-13，2026-09-23）新增 §32 平台线仲裁附录（v2 §3.3/D7）：实况为准 + tier 收口五枚举（standard→normal 迁移）、levels 平台 1–9999、禁用 json id、title/name 双读、spec 字段透传；§2.1 键名冻结不变。

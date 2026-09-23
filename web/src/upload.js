@@ -57,10 +57,11 @@ export function createUpload({ onOpenGame }) {
           <input class="up-input" id="up-levels" type="number" inputmode="numeric" min="1" max="9999" placeholder="关卡数">
           <select class="up-input" id="up-tier">
             <option value="">难度档位</option>
-            <option value="standard">standard</option>
-            <option value="s">s</option>
-            <option value="a">a</option>
-            <option value="b">b</option>
+            <option value="relaxed">轻松 relaxed</option>
+            <option value="simple">简单 simple</option>
+            <option value="normal">标准 normal</option>
+            <option value="hard">困难 hard</option>
+            <option value="master">大师 master</option>
           </select>
         </div>
         <textarea class="up-input" id="up-desc" rows="2" maxlength="256" placeholder="简介（可选，≤256 字）"></textarea>
