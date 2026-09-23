@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { HttpError, exists, safeJoin } from './http-util.js'
 import { looksLikeZip, readZip } from './zip.js'
+import { toTier } from './scan-games.js'
 
 const MULTIPART_SLACK = 128 * 1024 // multipart 边界/头部的开销余量（请求体上限 = 文件上限 + 此值）
 
@@ -30,7 +31,7 @@ function readRawMeta(src) {
   return out
 }
 
-/** 归一化元数据：越界值收敛到默认 */
+/** 归一化元数据：越界值收敛到默认（tier 按 D7 收口五枚举：缺省/非法收敛 normal，存量 standard 迁移 normal） */
 function normalizeMeta(raw) {
   const levels = Number(raw.levels)
   return {
@@ -38,7 +39,7 @@ function normalizeMeta(raw) {
     slug: slugify(raw.slug, ''),
     name: typeof raw.name === 'string' ? raw.name.slice(0, 64) : '',
     levels: Number.isFinite(levels) && levels >= 1 ? Math.min(9999, Math.floor(levels)) : 1,
-    tier: typeof raw.tier === 'string' ? raw.tier.slice(0, 16) : 'standard',
+    tier: toTier(raw.tier) ?? 'normal',
     description: typeof raw.description === 'string' ? raw.description.slice(0, 256) : '',
   }
 }
