@@ -62,6 +62,8 @@ export async function fetchGames({ timeout = 8000 } = {}) {
  * 上报游玩时长事件。支持两种通道：
  *   reportEvents()      —— fetch POST（在线时用，可感知成败）
  *   beaconEvents()      —— navigator.sendBeacon（页面卸载时用，尽力而为）
+ * 事件形状 { gameId, ms, at, cid, seq }：cid+seq 为客户端事件身份（GAMES-14），
+ * 服务端据此幂等去重——fetch 与 beacon 竞态/离线重试导致的重发不会重复计时。
  * 返回 true 表示已送达/已受理。
  */
 export async function reportEvents(events, { timeout = 8000 } = {}) {
