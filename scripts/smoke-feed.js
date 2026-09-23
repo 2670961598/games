@@ -3,14 +3,15 @@
 //       时长累加（可见计时-暂停恢复）、统计聚合（我的页口径）、games/ 清单完整性、
 //       /api/games 分页拼全量（GAMES-6 后端契约：默认 pageSize=20，袋子需全量）、
 //       游戏大全（GAMES-12：24 类型清单映射 / type×tier 过滤 / 逻辑页拼装 / type 服务端透传）、
-//       审核后台（GAMES-16：approve/reject 调用既有 /api/uploads 接口的请求契约）。
+//       审核后台（GAMES-16：approve/reject 调用既有 /api/uploads 接口的请求契约）、
+//       跨设备历史合并（GAMES-15：mergeStats 并集口径 / fetchStats boot 通道）。
 import { readFile, stat } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BAG_VERSION, newBag, draw, reconcile } from '../web/src/shuffleBag.js'
 import { DurationTracker } from '../web/src/duration.js'
-import { emptyStats, applyEnter, applyDuration, aggregatePlayed, formatDuration } from '../web/src/stats.js'
-import { collectGames, fetchGamesPage, fetchPendingUploads, approveUpload, rejectUpload } from '../web/src/api.js'
+import { emptyStats, applyEnter, applyDuration, aggregatePlayed, formatDuration, mergeStats } from '../web/src/stats.js'
+import { collectGames, fetchGamesPage, fetchPendingUploads, approveUpload, rejectUpload, fetchStats } from '../web/src/api.js'
 import { TYPE_CATALOG, TIER_GROUPS, typeName, tierName, filterGames, collectBrowsePage } from '../web/src/browse.js'
 import { scanGames } from '../server/lib/scan-games.js'
 
@@ -502,6 +503,158 @@ section('审核后台：approve/reject 调既有 /api/uploads 接口（GAMES-16�
   } finally {
     globalThis.fetch = realFetch
   }
+}
+
+// ---------- 8. 跨设备历史合并（GAMES-15）：mergeStats 并集口径 + fetchStats boot 通道 ----------
+
+section('统计合并：健康路径 no-op（本地 ⊇ 服务端，不改口径不双计）')
+{
+  // 正常单设备：本地含未上报离线游玩（45s），服务端只收到已送达的同一份（45s）
+  const local = { v: 1, games: { 'demo:a': { count: 3, totalMs: 45000, lastPlayed: 1700000060000 } }, totalMs: 45000 }
+  const remote = {
+    ok: true,
+    visitorId: 'v-test',
+    totalSeconds: 45,
+    games: [{ gameId: 'demo:a', seconds: 45, plays: 7, firstAt: 1700000000000, lastAt: 1700000060000 }],
+  }
+  const merged = mergeStats(local, remote)
+  check('同一份历史合并不双计（45s 仍 45s）', merged.games['demo:a'].totalMs === 45000, `实际 ${merged.games['demo:a'].totalMs}`)
+  check('count 保留本地进入次数口径（不被上报次数 7 污染）', merged.games['demo:a'].count === 3)
+  check('lastPlayed 不变', merged.games['demo:a'].lastPlayed === 1700000060000)
+  check('总时长不变', merged.totalMs === 45000)
+  check('合并幂等：再合一次结果不变', JSON.stringify(mergeStats(merged, remote)) === JSON.stringify(merged))
+}
+
+section('统计合并：新设备恢复（本地空 → 服务端历史完整落地）')
+{
+  const remote = {
+    ok: true,
+    visitorId: 'v-test',
+    totalSeconds: 42.5,
+    games: [
+      { gameId: 'demo:a', seconds: 30.5, plays: 2, firstAt: 1000, lastAt: 1000 },
+      { gameId: 'demo:b', seconds: 12, plays: 1, firstAt: 1500, lastAt: 2000 },
+    ],
+  }
+  const merged = mergeStats(emptyStats(), remote)
+  check('远端游戏全量出现（并集）', Object.keys(merged.games).length === 2)
+  check('秒数换算毫秒（30.5s → 30500ms）', merged.games['demo:a'].totalMs === 30500, `实际 ${merged.games['demo:a'].totalMs}`)
+  check('仅远端游戏 count 取 plays 近似（2 次）', merged.games['demo:a'].count === 2)
+  check('lastPlayed 取服务端 lastAt', merged.games['demo:b'].lastPlayed === 2000)
+  check('总时长 = 各游戏之和（42500ms）', merged.totalMs === 42500, `实际 ${merged.totalMs}`)
+  const rows = aggregatePlayed(merged, [
+    { id: 'demo:a', name: 'A', type: 'demo' },
+    { id: 'demo:b', name: 'B', type: 'demo' },
+    { id: 'demo:c', name: 'C', type: 'demo' },
+  ])
+  check('恢复的历史进我的页列表（按最近倒序 b→a）', rows.length === 2 && rows[0].id === 'demo:b' && rows[1].id === 'demo:a')
+}
+
+section('统计合并：跨设备并集 + 字段级取最大')
+{
+  // 设备甲玩了 a（10 分钟，较新）与 c；设备乙玩了 a（5 分钟，较旧）与 b（1 分钟，最新）
+  const local = {
+    v: 1,
+    games: {
+      'demo:a': { count: 5, totalMs: 600000, lastPlayed: 900 },
+      'demo:c': { count: 1, totalMs: 1000, lastPlayed: 50 },
+    },
+    totalMs: 601000,
+  }
+  const remote = {
+    ok: true,
+    visitorId: 'v-test',
+    totalSeconds: 360,
+    games: [
+      { gameId: 'demo:a', seconds: 300, plays: 9, firstAt: 100, lastAt: 800 },
+      { gameId: 'demo:b', seconds: 60, plays: 4, firstAt: 700, lastAt: 950 },
+    ],
+  }
+  const merged = mergeStats(local, remote)
+  check('并集：a/b/c 三款都在', ['demo:a', 'demo:b', 'demo:c'].every((id) => merged.games[id]))
+  check('a 本地更大：时长取本地（600000）', merged.games['demo:a'].totalMs === 600000)
+  check('a count 仍本地进入次数（5，不取 plays 9）', merged.games['demo:a'].count === 5)
+  check('a lastPlayed 取较新（900）', merged.games['demo:a'].lastPlayed === 900)
+  check('b 仅远端：时长/次数/时间全落地（60000/4/950）', merged.games['demo:b'].totalMs === 60000 && merged.games['demo:b'].count === 4 && merged.games['demo:b'].lastPlayed === 950)
+  check('c 仅本地：原样保留', merged.games['demo:c'].totalMs === 1000 && merged.games['demo:c'].count === 1)
+  check('总时长 = 合并后各游戏之和（661000）', merged.totalMs === 661000, `实际 ${merged.totalMs}`)
+  check('不变量：totalMs 恒等于 Σ 各游戏 totalMs', Object.values(merged.games).reduce((t, g) => t + g.totalMs, 0) === merged.totalMs)
+}
+
+section('统计合并：病态远端输入逐条跳过（不拖垮合并）')
+{
+  const local = emptyStats()
+  const t0 = 1700000000000
+  const applied = applyDuration(applyEnter(local, 'demo:a', t0), 'demo:a', 2500, t0)
+  const bad = {
+    ok: true,
+    visitorId: 'v-test',
+    games: [
+      null,
+      { gameId: '', seconds: 10, plays: 1, lastAt: 1 }, // 空 id
+      { gameId: 42, seconds: 10, plays: 1, lastAt: 1 }, // id 非字符串
+      { seconds: 10, plays: 1, lastAt: 1 }, // 缺 id
+      { gameId: 'demo:x', seconds: NaN, plays: 1, lastAt: 1 }, // 秒数非数
+      { gameId: 'demo:y', seconds: -3, plays: 1, lastAt: 1 }, // 负秒数
+      { gameId: 'demo:a', seconds: 2.5, plays: 99, lastAt: t0 }, // 合法：并入已有 a
+    ],
+  }
+  const merged = mergeStats(applied, bad)
+  check('非法条目全跳过，仅合法 1 条生效', Object.keys(merged.games).length === 1)
+  check('a 时长取 max（等值不叠成 5000）', merged.games['demo:a'].totalMs === 2500, `实际 ${merged.games['demo:a'].totalMs}`)
+  check('remote 为 null/缺 games：返回本地原样', JSON.stringify(mergeStats(applied, null)) === JSON.stringify(applied) && JSON.stringify(mergeStats(applied, {})) === JSON.stringify(applied))
+}
+
+section('统计合并：fetchStats 通道（GET /api/stats/<visitorId>）')
+{
+  const realFetch = globalThis.fetch
+  let stub = null
+  globalThis.fetch = async (url, opts) => {
+    stub = { url: String(url), opts }
+    return { ok: true, json: async () => ({ ok: true, visitorId: 'v-test', totalSeconds: 1, games: [{ gameId: 'demo:a', seconds: 1, plays: 1, firstAt: 1, lastAt: 1 }] }) }
+  }
+  try {
+    const body = await fetchStats('v-abc123')
+    check('返回服务端聚合体（透传 games）', body.ok === true && Array.isArray(body.games) && body.games[0].gameId === 'demo:a')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  check('请求打到 /api/stats/<visitorId>', stub && stub.url === '/api/stats/v-abc123')
+  check('禁用缓存（no-store，boot 合并不吃缓存）', stub && stub.opts && stub.opts.cache === 'no-store')
+
+  let encoded = ''
+  globalThis.fetch = async (url) => {
+    encoded = String(url)
+    return { ok: true, json: async () => ({ ok: true, games: [] }) }
+  }
+  try {
+    await fetchStats('v/a b')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  check('visitorId 做 URL 编码（/ 与空格转义）', encoded === '/api/stats/v%2Fa%20b')
+
+  let threw = false
+  globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) })
+  try {
+    await fetchStats('v-x')
+  } catch {
+    threw = true
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  check('HTTP 非 2xx 抛错（调用方降级为本地口径）', threw === true)
+
+  threw = false
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: false }) })
+  try {
+    await fetchStats('v-x')
+  } catch {
+    threw = true
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  check('响应形状异常抛错', threw === true)
 }
 
 // ---------- 汇总 ----------

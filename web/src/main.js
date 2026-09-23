@@ -1,8 +1,8 @@
 // 应用装配：目录拉取 → 袋/统计初始化 → feed/我的/上传/大全/审核/播放器六视图 → 路由 → 计时上报管线。
-import { fetchGames, fetchGamesPage, reportEvents, beaconEvents } from './api.js'
+import { fetchGames, fetchGamesPage, reportEvents, beaconEvents, fetchStats } from './api.js'
 import { store, visitorId } from './store.js'
 import { newBag, reconcile, draw } from './shuffleBag.js'
-import { emptyStats, applyEnter, applyDuration, STATS_VERSION } from './stats.js'
+import { emptyStats, applyEnter, applyDuration, mergeStats, STATS_VERSION } from './stats.js'
 import { createFeed } from './feed.js'
 import { createMine } from './mine.js'
 import { createUpload } from './upload.js'
@@ -99,6 +99,22 @@ function setActiveRef(ref) {
 function enterGame(gameId) {
   stats = applyEnter(stats, gameId, Date.now())
   persistStats()
+}
+
+/**
+ * boot 时把服务端历史并入本地（GAMES-15 跨设备恢复，合并口径见 stats.js mergeStats 注释）。
+ * 后台执行不阻塞首屏；失败静默——服务端不可达时我的页维持本地口径，下次 boot 再试。
+ * 期间产生的新游玩在 await 返回后一并参与合并（字段级取 max，与到达顺序无关）。
+ */
+async function syncRemoteStats() {
+  try {
+    const remote = await fetchStats(visitorId())
+    stats = mergeStats(stats, remote)
+    persistStats()
+    if (mine && currentView === 'mine') mine.refresh() // 我的页已打开时把合并结果刷上屏
+  } catch {
+    /* 离线/后端未就绪：本地口径兜底 */
+  }
 }
 
 // ---- feed 袋子 ----
@@ -313,6 +329,7 @@ async function boot() {
   wireGlobal() // 全局按钮/周期上报/生命周期/路由等一次性接线（boot 重入安全）
   currentView = 'boot' // 让首个 route() 必定走 showView 切换路径
   route()
+  syncRemoteStats() // 后台并入服务端历史，不阻塞首屏（GAMES-15）
 }
 
 /** 一次性全局接线：boot 重入（错误重试）不重复挂监听 */
