@@ -1,0 +1,30 @@
+{
+  "slug": "bullet-shmup-raid-03",
+  "title": "弹幕突围 03",
+  "type": "bullet-shmup",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag"
+  },
+  "avgDurationSec": 165,
+  "scoring": {
+    "win": "清空 waves(L) 波",
+    "lose": "lives 耗尽",
+    "s2": "12×enemies(L)",
+    "s3": "15×enemies(L)"
+  },
+  "description": "竖版自动射击，拖动机体躲避弹幕清空敌波（简单档）",
+  "typeExtra": {
+    "wavesCap": 9,
+    "enemyHP": 2,
+    "bulletSpeed": 170,
+    "density": 2,
+    "lives": 4,
+    "playerFireMs": 150
+  }
+}

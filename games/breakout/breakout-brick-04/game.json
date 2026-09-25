@@ -1,0 +1,29 @@
+{
+  "slug": "breakout-brick-04",
+  "title": "弹珠清砖 04",
+  "type": "breakout",
+  "tier": "hard",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag"
+  },
+  "avgDurationSec": 180,
+  "scoring": {
+    "win": "砖阵清空",
+    "lose": "balls 耗尽",
+    "s2": "12×bricks(L)",
+    "s3": "15×bricks(L)"
+  },
+  "description": "拖板反弹弹珠清砖阵，清空即胜，弹珠落尽即败（困难档）",
+  "typeExtra": {
+    "ballSpeed": 325,
+    "paddleW": 77,
+    "rowsCap": 9,
+    "brickHP": 2,
+    "balls": 3
+  }
+}
