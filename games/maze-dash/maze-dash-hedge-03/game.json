@@ -1,0 +1,29 @@
+{
+  "slug": "maze-dash-hedge-03",
+  "title": "迷宫冲刺 03",
+  "type": "maze-dash",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "集齐钥匙到达出口",
+    "lose": "超时",
+    "s2": "12×time(L)",
+    "s3": "15×time(L)"
+  },
+  "description": "程序生成完美迷宫，滑动定向冲刺到岔口，限时集齐钥匙抵达出口，后段带迷雾（简单档）",
+  "typeExtra": {
+    "sizeN": 11,
+    "timeFactor": 2,
+    "speed": 4,
+    "keysCap": 2,
+    "fogR": 0
+  }
+}

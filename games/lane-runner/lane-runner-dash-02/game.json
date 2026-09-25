@@ -1,0 +1,30 @@
+{
+  "slug": "lane-runner-dash-02",
+  "title": "三轨狂飙 02",
+  "type": "lane-runner",
+  "tier": "relaxed",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-lr",
+    "secondary": "swipe-any"
+  },
+  "avgDurationSec": 240,
+  "scoring": {
+    "win": "抵达终点 distance(L)",
+    "lose": "hearts 耗尽",
+    "s2": "coinTarget(L)×24",
+    "s3": "coinTarget(L)×30"
+  },
+  "description": "三车道向前狂飙，左右滑换道、上滑跳越障碍吃金币，跑到终点即胜（轻松档）",
+  "typeExtra": {
+    "speed": 210,
+    "obsRate": 0.21,
+    "hearts": 5,
+    "coinRate": 0.1,
+    "distanceBase": 1800
+  }
+}
