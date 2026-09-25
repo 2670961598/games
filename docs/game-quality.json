@@ -1,0 +1,169 @@
+{
+ "_meta": {
+  "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail + 数据；iterations 记迭代轮数",
+  "更新人": "PM（每波交付后回填）",
+  "SOP": "docs/quality-pipeline.md v2"
+ },
+ "games": {
+  "block-drop:block-drop-cascade-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  }
+ }
+}
