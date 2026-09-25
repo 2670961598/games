@@ -1,0 +1,30 @@
+{
+  "slug": "mole-whack-garden-03",
+  "title": "地鼠快打 03",
+  "type": "mole-whack",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 270,
+  "scoring": {
+    "win": "时限内命中 ≥ hitTarget(L)",
+    "lose": "时限到未达标或 lives 耗尽",
+    "s2": "hitTarget(L)×12",
+    "s3": "hitTarget(L)×15"
+  },
+  "description": "九窝地鼠冒头窗内点中得分，炸弹点了扣分耗命，30 秒内打够目标数（简单档）",
+  "typeExtra": {
+    "hitTarget": 18,
+    "timeSec": 30,
+    "popupMs": 1080,
+    "concurrent": 2,
+    "bombRate": 0.13,
+    "lives": 4
+  }
+}

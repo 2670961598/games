@@ -1,0 +1,29 @@
+{
+  "slug": "memory-flip-pair-04",
+  "title": "翻牌配对 04",
+  "type": "memory-flip",
+  "tier": "hard",
+  "levels": 24,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 210,
+  "scoring": {
+    "win": "步数内配平全部对",
+    "lose": "步数耗尽",
+    "s2": "pairs(L)×36",
+    "s3": "pairs(L)×45"
+  },
+  "description": "入场预览后扣牌，两两翻开配对，误试步数上限内配平全部（困难档）",
+  "typeExtra": {
+    "pairsBase": 10,
+    "pairsCap": 14,
+    "gridW": 5,
+    "peekMs": 1200,
+    "moveFactor": 2
+  }
+}

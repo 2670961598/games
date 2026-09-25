@@ -1,0 +1,29 @@
+{
+  "slug": "tap-burst-pop-05",
+  "title": "狂点爆发 05",
+  "type": "tap-burst",
+  "tier": "master",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 240,
+  "scoring": {
+    "win": "时限内有效点击 ≥ target(L)",
+    "lose": "时限到未达标",
+    "s2": "target(L)×12",
+    "s3": "target(L)×15"
+  },
+  "description": "限时点够冒出的目标圆点，连击加分，小心红色陷阱叉点（大师档）",
+  "typeExtra": {
+    "targetBase": 30,
+    "timeSec": 14,
+    "sizePx": 50,
+    "spawnPerSec": 2.4,
+    "decoyRate": 0.12
+  }
+}

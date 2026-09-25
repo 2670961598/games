@@ -1,0 +1,29 @@
+{
+  "slug": "memory-flip-pair-05",
+  "title": "翻牌配对 05",
+  "type": "memory-flip",
+  "tier": "master",
+  "levels": 24,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 210,
+  "scoring": {
+    "win": "步数内配平全部对",
+    "lose": "步数耗尽",
+    "s2": "pairs(L)×36",
+    "s3": "pairs(L)×45"
+  },
+  "description": "入场预览后扣牌，两两翻开配对，误试步数上限内配平全部（大师档）",
+  "typeExtra": {
+    "pairsBase": 12,
+    "pairsCap": 16,
+    "gridW": 6,
+    "peekMs": 950,
+    "moveFactor": 1.6
+  }
+}

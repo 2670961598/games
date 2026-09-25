@@ -1,0 +1,29 @@
+{
+  "slug": "color-reaction-stroop-02",
+  "title": "色词反应 02",
+  "type": "color-reaction",
+  "tier": "relaxed",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap-zone"
+  },
+  "avgDurationSec": 240,
+  "scoring": {
+    "win": "完成 rounds(L) 且 maxMiss 未耗尽",
+    "lose": "miss 耗尽",
+    "s2": "rounds(L)×12",
+    "s3": "rounds(L)×15"
+  },
+  "description": "大号颜色词配随机墨色，判断墨色与词义是否一致，点左（一致）或右（不一致）限时作答（轻松档）",
+  "typeExtra": {
+    "roundsBase": 15,
+    "perRoundMs": 2100,
+    "agreeRate": 0.5,
+    "maxMiss": 5,
+    "trapSwitch": false
+  }
+}
