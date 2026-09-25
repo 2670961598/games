@@ -16,6 +16,9 @@ const LaneRunnerEngine = (function () {
   const OB_LOW = 42, OB_TALL = 88;   // 矮障碍（可跳过）/ 高障碍（必须换道）
   const TALL_RATE = 0.35;   // 障碍中高障碍占比（seed 掷点）
   const STEP = 1 / 120;
+  /* 判定路径零依赖（GAMES-22 Phaser 化：判定路径不得引用 common.js 的 G；
+     render() 仍保留 G.* —— 仅旧 canvas 壳/QA 桩调用，Phaser 场景不走 render） */
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
   return function (game) {
     const { cfg, rng, area } = game;
@@ -65,7 +68,7 @@ const LaneRunnerEngine = (function () {
     function swipe(dx, dy) {
       if (done) return;
       if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
-      if (Math.abs(dx) >= Math.abs(dy)) { const nl = G.clamp(lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== lane) { lane = nl; } }
+      if (Math.abs(dx) >= Math.abs(dy)) { const nl = clamp(lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== lane) { lane = nl; } }
       else if (dy < 0 && jumpY <= 0) { vy = 560; }         // 上滑跳（§9）
     }
 
@@ -75,7 +78,7 @@ const LaneRunnerEngine = (function () {
       if (invuln > 0) invuln -= STEP;
       /* 换道平滑 */
       const tx = laneX(lane);
-      px += G.clamp(tx - px, -900 * STEP, 900 * STEP);
+      px += clamp(tx - px, -900 * STEP, 900 * STEP);
       /* 跳跃物理 */
       if (jumpY > 0 || vy > 0) { vy -= 1500 * STEP; jumpY += vy * STEP; if (jumpY <= 0) { jumpY = 0; vy = 0; } }
       /* 判定：与玩家 z 邻近分段交互 */

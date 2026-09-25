@@ -14,5 +14,8 @@
     "smoke": "node scripts/smoke-api.js",
     "smoke-feed": "node scripts/smoke-feed.js",
     "bench": "node scripts/bench-api.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }
