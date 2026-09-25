@@ -1,0 +1,29 @@
+{
+  "slug": "tap-burst-pop-02",
+  "title": "狂点爆发 02",
+  "type": "tap-burst",
+  "tier": "relaxed",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 240,
+  "scoring": {
+    "win": "时限内有效点击 ≥ target(L)",
+    "lose": "时限到未达标",
+    "s2": "target(L)×12",
+    "s3": "target(L)×15"
+  },
+  "description": "限时点够冒出的目标圆点，连击加分，小心红色陷阱叉点（轻松档）",
+  "typeExtra": {
+    "targetBase": 15,
+    "timeSec": 28,
+    "sizePx": 100,
+    "spawnPerSec": 1.1,
+    "decoyRate": 0.06
+  }
+}

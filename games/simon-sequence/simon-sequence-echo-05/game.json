@@ -1,0 +1,30 @@
+{
+  "slug": "simon-sequence-echo-05",
+  "title": "序列记忆 05",
+  "type": "simon-sequence",
+  "tier": "master",
+  "levels": 20,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 180,
+  "scoring": {
+    "win": "复述长度达到 targetLen(L)",
+    "lose": "答错且 retries 耗尽",
+    "s2": "targetLen(L)×12",
+    "s3": "targetLen(L)×15"
+  },
+  "description": "色块面板按序点亮，依序复述；序列答对逐级加长，答错耗尽重试即败（大师档）",
+  "typeExtra": {
+    "pads": 9,
+    "flashMs": 380,
+    "gapMs": 250,
+    "startLen": 3,
+    "targetLenCap": 21,
+    "retries": 0
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "slug": "tap-jump-flap-02",
+  "title": "飞翔跳跃 02",
+  "type": "tap-jump",
+  "tier": "relaxed",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 300,
+  "scoring": {
+    "win": "过障数达到 target(L)",
+    "lose": "触管/触地（lives=1）",
+    "s2": "target(L)×12",
+    "s3": "target(L)×15"
+  },
+  "description": "点按让小鸟上浮穿过管道，过障数达标即胜，触管触地即败、瞬时重开（轻松档）",
+  "typeExtra": {
+    "gravity": 1260,
+    "tapImpulse": -364,
+    "pipeSpeed": 112,
+    "gapPx": 245,
+    "pipeInterval": 300
+  }
+}
