@@ -1,0 +1,29 @@
+{
+  "slug": "paddle-pong-rally-03",
+  "title": "挡板救球 03",
+  "type": "paddle-pong",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "存活 goal(L) 秒",
+    "lose": "missMax 耗尽",
+    "s2": "goal(L)×12",
+    "s3": "goal(L)×15"
+  },
+  "description": "底部挡板连续接住反弹下落球，坚持到目标时间（简单档）",
+  "typeExtra": {
+    "goalSec": 54,
+    "ballSpeed": 187,
+    "maxBalls": 3,
+    "paddleW": 132,
+    "missMax": 4
+  }
+}

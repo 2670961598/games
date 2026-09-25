@@ -1,0 +1,30 @@
+{
+  "slug": "drop-catcher-harvest-02",
+  "title": "篮接天降 02",
+  "type": "drop-catcher",
+  "tier": "relaxed",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag"
+  },
+  "avgDurationSec": 165,
+  "scoring": {
+    "win": "接满 catchTarget(L)",
+    "lose": "lives 耗尽",
+    "s2": "catchTarget(L)×12",
+    "s3": "catchTarget(L)×15"
+  },
+  "description": "顶部掉落好物与坏物，拖篮子接好物、躲坏物，接满目标数（轻松档）",
+  "typeExtra": {
+    "catchTarget": 15,
+    "fallSpeed": 168,
+    "spawnRate": 1.1,
+    "badRate": 0.14,
+    "basketW": 154,
+    "lives": 5
+  }
+}

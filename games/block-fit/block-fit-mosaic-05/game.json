@@ -1,0 +1,29 @@
+{
+  "slug": "block-fit-mosaic-05",
+  "title": "方块拼填 05",
+  "type": "block-fit",
+  "tier": "master",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag"
+  },
+  "avgDurationSec": 210,
+  "scoring": {
+    "win": "score ≥ target(L)",
+    "lose": "三块均无处可放且 refresh 耗尽",
+    "s2": "target(L)×1.2",
+    "s3": "target(L)×1.5"
+  },
+  "description": "10×10 无重力棋盘拖放形状块，放满整行整列即消除，达标分即胜（大师档）",
+  "typeExtra": {
+    "targetScore": 2900,
+    "pentRate": 0.2,
+    "obstacleStart": 4,
+    "piecesPerRound": 3,
+    "refresh": 0
+  }
+}

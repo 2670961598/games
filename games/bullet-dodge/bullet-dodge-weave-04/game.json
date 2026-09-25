@@ -1,0 +1,30 @@
+{
+  "slug": "bullet-dodge-weave-04",
+  "title": "弹雨穿行 04",
+  "type": "bullet-dodge",
+  "tier": "hard",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "hold"
+  },
+  "avgDurationSec": 120,
+  "scoring": {
+    "win": "存活 goal(L) 秒",
+    "lose": "中弹（一命制）",
+    "s2": "goal(L)×12",
+    "s3": "goal(L)×15"
+  },
+  "description": "无攻击纯躲避，拖小点在弹雨中存活到目标时间，长按触发时缓（困难档）",
+  "typeExtra": {
+    "goalSec": 24,
+    "spawnRate": 2.25,
+    "projSpeed": 225,
+    "playerR": 12,
+    "slowCharges": 1
+  }
+}
