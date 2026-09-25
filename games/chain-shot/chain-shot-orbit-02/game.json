@@ -1,0 +1,29 @@
+{
+  "slug": "chain-shot-orbit-02",
+  "title": "珠链环消 02",
+  "type": "chain-shot",
+  "tier": "relaxed",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 165,
+  "scoring": {
+    "win": "清空珠链",
+    "lose": "珠链首珠到达洞口",
+    "s2": "balls(L)×12",
+    "s3": "balls(L)×15"
+  },
+  "description": "射珠入链同色三连消除，清空珠链；首珠入洞即败（轻松档）",
+  "typeExtra": {
+    "chainSpeed": 21,
+    "colors": 3,
+    "totalBalls": 30,
+    "swap": 999,
+    "trackLen": 1200
+  }
+}

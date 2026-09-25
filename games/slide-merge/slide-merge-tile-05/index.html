@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>数字滑合 05</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0b0e14; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+/* 本款数值（与同目录 game.json 同源生成——GAMES-21 build.mjs；引擎零网络请求，离线可玩） */
+const CONFIG = {
+  "slug": "slide-merge-tile-05",
+  "title": "数字滑合 05",
+  "type": "slide-merge",
+  "tier": "master",
+  "levels": 25,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "盘面出现 ≥ target(L) 的块",
+    "lose": "无可合并且 rescue 耗尽",
+    "s2": "target(L)×2",
+    "s3": "target(L)×3"
+  },
+  "description": "2048 式四向滑动合并，合成当关目标数字块即胜（大师档）",
+  "typeExtra": {
+    "gridLen": 4,
+    "targetCap": 4096,
+    "spawn4Rate": 0.18,
+    "rescue": 1
+  }
+};
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * GAMES 公共框架（spec §4.4/§5）——所有类型引擎共享，由 build.mjs 内联进各 index.html。
+ * 职责：PRNG（§5.6 逐字实现）、宿主钩子+telemetry 兜底（§5.3）、localStorage 三键（§5.2）、
+ *       WebAudio 程序合成音效、375×667 画布外壳（DPR 缩放/安全区）、关卡流程与星级（§3.2）、
+ *       事件词表（boot/start/levelEnd/end）、选关/结算/暂停 UI。
+ * 确定性铁律：判定路径零 Math.random；每关 rng = mulberry32(fnv1a32(`${slug}#${level}`))。
+ * ===================================================================== */
+const G = (function () {
+
+  /* ---------- §5.6 PRNG 参考实现（全引擎统一，冻结） ---------- */
+  function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  /* ---------- 通用工具 ---------- */
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const TIER_CN = { relaxed: '轻松', simple: '简单', normal: '标准', hard: '困难', master: '大师' };
+  /** 滑动定向（§12：位移 ≥24px 定向，主轴优先）。不足阈值返回 null。 */
+  function swipeDir(dx, dy) {
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return null;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'r' : 'l') : (dy > 0 ? 'd' : 'u');
+  }
+  function roundRect(g, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
+
+  /* ---------- §5.3 宿主钩子 + telemetry 兜底 ---------- */
+  function makeReporter(slug, store) {
+    return function report(event, payload) {
+      try { (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) ? window.__GAMES_HOOK__.report(event, payload) : store.telemetryPush({ t: Date.now(), event, payload }); }
+      catch (e) { /* 宿主钩子异常不影响游戏 */ }
+    };
+  }
+
+  /* ---------- §5.2 localStorage 三键（节流/flush/损坏静默重置） ---------- */
+  function makeStore(slug) {
+    const P = `games:${slug}:progress`, S = `games:${slug}:settings`, T = `games:${slug}:telemetry`;
+    const LS = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+    function readJson(k, dflt) {
+      if (!LS) return dflt;
+      try { const v = JSON.parse(LS.getItem(k)); return (v && typeof v === 'object') ? v : dflt; } catch (e) { return dflt; } /* 损坏静默重置 */
+    }
+    const st = {
+      progress: null, settings: null,
+      _pending: {}, _lastWrite: 0,
+      load(levels) {
+        st.progress = Object.assign({ unlocked: 1, best: 0, stars: new Array(levels).fill(0), updated: 0 }, readJson(P, {}));
+        if (!Array.isArray(st.progress.stars)) st.progress.stars = new Array(levels).fill(0);
+        st.settings = Object.assign({ sound: true }, readJson(S, {}));
+      },
+      telemetryPush(item) {
+        if (!LS) return;
+        const ring = readJson(T, { items: [] }).items || [];
+        ring.push(item); if (ring.length > 50) ring.splice(0, ring.length - 50);
+        try { LS.setItem(T, JSON.stringify({ items: ring })); } catch (e) { /* 满/禁则弃 */ }
+      },
+      mark(kind) { st._pending[kind] = true; st.flushIfDue(); },
+      flushIfDue() {
+        const now = Date.now();
+        if (now - st._lastWrite < 1000) return;              // 写入节流 ≤1 次/秒
+        st._lastWrite = now;
+        if (!LS) { st._pending = {}; return; }
+        try {
+          if (st._pending.progress) { st.progress.updated = now; LS.setItem(P, JSON.stringify(st.progress)); }
+          if (st._pending.settings) LS.setItem(S, JSON.stringify(st.settings));
+        } catch (e) { /* 配额满等静默 */ }
+        st._pending = {};
+      },
+      flushNow() { st._lastWrite = 0; st.flushIfDue(); }
+    };
+    return st;
+  }
+
+  /* ---------- WebAudio 程序合成音效（装饰，可关） ---------- */
+  function makeSound(store) {
+    let ac = null;
+    function ctx() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } } return ac; }
+    function tone(f0, f1, dur, type, vol) {
+      const a = ctx(); if (!a) return;
+      const o = a.createOscillator(), gn = a.createGain(), t = a.currentTime;
+      o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(gn).connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+    }
+    return function snd(name) {
+      if (!store.settings.sound) return;
+      if (name === 'tap') tone(660, 440, 0.08, 'square', 0.04);
+      else if (name === 'pop') tone(520, 900, 0.1, 'triangle', 0.08);
+      else if (name === 'ok') { tone(523, 523, 0.12, 'sine', 0.08); setTimeout(() => tone(784, 784, 0.16, 'sine', 0.08), 110); }
+      else if (name === 'bad') tone(220, 110, 0.3, 'sawtooth', 0.06);
+      else if (name === 'star') tone(1046, 1568, 0.18, 'sine', 0.07);
+    };
+  }
+
+  /* ---------- 画布外壳 + 关卡流程（boot 入口） ----------
+   * engineFactory(game) → { startLevel, update(dt), render(g), onDown, onMove, onUp, hudParts? }
+   *   game.cfg / game.W / game.H / game.area（顶栏下方的游戏区矩形）
+   *   game.rng（每关重置的 PRNG）/ game.level
+   *   game.setHud([{t,v}...])（顶栏状态，≤3 组）/ game.toast(text)
+   *   game.win(score, {s2,s3} 或 {stars}) / game.lose(score)
+   * 框架负责：选关/顶栏/结算浮层/星级与进度/事件上报/音效开关。 */
+  function boot(cfg, engineFactory) {
+    const W = 375, H = 667, TOP = 48;
+    const cvs = document.getElementById('cv'), g = cvs.getContext('2d');
+    let scale = 1;
+    function fit() {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const s = Math.min(vw / W, vh / H), dpr = clamp(window.devicePixelRatio || 1, 1, 3);
+      cvs.style.width = (W * s) + 'px'; cvs.style.height = (H * s) + 'px';
+      cvs.width = Math.round(W * s * dpr); cvs.height = Math.round(H * s * dpr);
+      scale = s * dpr;
+    }
+    function toXY(e) { const r = cvs.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
+
+    const store = makeStore(cfg.slug); store.load(cfg.levels);
+    const report = makeReporter(cfg.slug, store);
+    const snd = makeSound(store);
+
+    /* --- 会话与关卡状态 --- */
+    let screen = 'home';            // home | play
+    let engine = null, curLevel = 1, hudParts = [], toast = { text: '', t: 0 };
+    let result = null;              // {level,win,score,stars,next:boolean,all:boolean}
+    let session = null;             // {score, t0} → end 事件
+    let homeScroll = 0, gridMode = false, dragFrom = null;
+    let animT = 0;
+
+    report('boot', { slug: cfg.slug, version: cfg.version, specVersion: cfg.specVersion });
+
+    /* --- UI 帮助 --- */
+    function btn(r, label, cb) { // 命中检测+绘制合一（当前帧绘制时命中测试由 down 处理器完成）
+      g.fillStyle = '#3b4a6b'; roundRect(g, r.x, r.y, r.w, r.h, r.h / 2); g.fill();
+      g.fillStyle = '#e8ecf3'; g.font = FONT(16, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1);
+      hitButtons.push({ r, cb });
+    }
+    let hitButtons = [];
+    function drawStars(x, y, n, size) {
+      for (let i = 0; i < 3; i++) {
+        g.fillStyle = i < n ? '#ffd166' : '#3a4358'; g.font = FONT(size, 700); g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.fillText('★', x + i * (size + 2), y);
+      }
+    }
+    function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : '' + Math.floor(n); }
+
+    /* --- 关卡流程（事件词表 §5.3） --- */
+    function startLevel(L) {
+      curLevel = L; screen = 'play'; result = null; hudParts = []; levelT0 = performance.now();
+      if (!session) session = { score: 0, t0: performance.now() };
+      engine = engineFactory({
+        W, H, cfg, level: L,
+        area: { x: 0, y: TOP, w: W, h: H - TOP },
+        rng: mulberry32(fnv1a32(`${cfg.slug}#${L}`)),
+        setHud: (p) => { hudParts = p.slice(0, 3); },
+        toast: (t) => { toast = { text: t, t: 1.4 }; },
+        win: (score, opt) => finish(true, score, opt),
+        lose: (score) => finish(false, score, {}),
+      });
+      engine.startLevel();
+      report('start', { level: L });
+      snd('tap');
+    }
+    function finish(win, score, opt) {
+      if (result) return;                                     // 双保险：结算后不再重复判局
+      let stars = 0;
+      if (win) stars = opt.stars != null ? opt.stars : 1 + (score >= opt.s2 ? 1 : 0) + (score >= opt.s3 ? 1 : 0);
+      const durMs = Math.round(performance.now() - levelT0);
+      session.score += score;
+      const all = win && curLevel >= cfg.levels;
+      result = { level: curLevel, win, score, stars, all, t: 0 };
+      if (win) {                                              // 进度只升不降（§3.2）
+        const p = store.progress;
+        p.unlocked = Math.max(p.unlocked, Math.min(cfg.levels, curLevel + 1));
+        p.best = Math.max(p.best, curLevel);
+        p.stars[curLevel - 1] = Math.max(p.stars[curLevel - 1] || 0, stars);
+        store.mark('progress');
+      }
+      report('levelEnd', { level: curLevel, win, score, stars, durMs });
+      if (all) { report('end', { reason: 'allClear', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) }); session = null; }
+      snd(win ? 'ok' : 'bad');
+    }
+    let levelT0 = performance.now();
+
+    function goHome() {
+      if (screen === 'play' && session) {                     // 退出会话 → quit
+        report('end', { reason: 'quit', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) });
+        session = null;
+      }
+      screen = 'home'; result = null; engine = null; store.flushNow();
+    }
+
+    /* --- 输入路由 --- */
+    cvs.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); cvs.setPointerCapture && cvs.setPointerCapture(e.pointerId);
+      const p = toXY(e);
+      if (screen === 'play' && !result && engine) { engine.onDown(p.x, p.y); }
+      dragFrom = { ...p, scroll: homeScroll, moved: false };
+    });
+    cvs.addEventListener('pointermove', (e) => {
+      const p = toXY(e);
+      if (screen === 'play' && !result && engine) engine.onMove(p.x, p.y);
+      if (dragFrom && screen === 'home' && gridMode) {
+        const dy = p.y - dragFrom.y;
+        if (Math.abs(dy) > 6) { dragFrom.moved = true; homeScroll = clamp(dragFrom.scroll + dy, 0, 1e5); }
+      }
+    });
+    const upHandler = (e) => {
+      const p = toXY(e);
+      const wasDrag = dragFrom && dragFrom.moved; dragFrom = null;
+      if (wasDrag) return;
+      /* 结算浮层按钮 */
+      if (result) { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
+      if (screen === 'home') { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
+      if (engine) engine.onUp(p.x, p.y);
+    };
+    cvs.addEventListener('pointerup', upHandler);
+    cvs.addEventListener('pointercancel', upHandler);
+    function hit(r, p) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+
+    /* --- 崩溃恢复：页面隐藏/关闭前 flush（§5.2） --- */
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') store.flushNow(); });
+    window.addEventListener('pagehide', () => store.flushNow());
+    window.addEventListener('beforeunload', () => store.flushNow());
+
+    /* --- 主循环 --- */
+    let last = performance.now();
+    function frame(t) {
+      const dt = clamp((t - last) / 1000, 0, 0.05); last = t; animT += dt;
+      store.flushIfDue();
+      hitButtons = [];
+      g.setTransform(scale, 0, 0, scale, 0, 0);
+      g.fillStyle = '#101522'; g.fillRect(0, 0, W, H);
+      if (screen === 'home') drawHome();
+      else drawPlay(dt);
+      requestAnimationFrame(frame);
+    }
+
+    function drawHome() {
+      const p = store.progress;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#e8ecf3'; g.font = FONT(30, 800); g.fillText(cfg.title, W / 2, 92);
+      g.fillStyle = '#8b94a7'; g.font = FONT(14, 400);
+      g.fillText(`${TIER_CN[cfg.tier] || cfg.tier} · ${cfg.levels} 关 · ${cfg.controls.primary}`, W / 2, 124);
+      const next = Math.min(p.unlocked, cfg.levels);
+      if (!gridMode) {
+        btn({ x: 57, y: 210, w: 261, h: 64 }, p.best ? `继续 · 第 ${next} 关` : `开始 · 第 1 关`, () => startLevel(next));
+        btn({ x: 57, y: 290, w: 261, h: 52 }, '选关', () => { gridMode = true; homeScroll = 0; });
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400);
+        g.fillText(`最高通关 ${p.best} / ${cfg.levels}`, W / 2, 372);
+      } else {
+        g.save(); g.beginPath(); g.rect(0, 150, W, H - 210); g.clip();
+        g.translate(0, -homeScroll);
+        const cols = 5, cw = 58, ch = 46, x0 = (W - cols * cw - (cols - 1) * 8) / 2;
+        for (let i = 0; i < cfg.levels; i++) {
+          const L = i + 1, r = { x: x0 + (i % cols) * (cw + 8), y: 160 + Math.floor(i / cols) * (ch + 14), w: cw, h: ch };
+          const un = L <= p.unlocked;
+          g.fillStyle = un ? '#2c3a5c' : '#1a2133'; roundRect(g, r.x, r.y, r.w, r.h, 10); g.fill();
+          if (L === p.unlocked) { g.strokeStyle = '#6ea8ff'; g.lineWidth = 2; roundRect(g, r.x, r.y, r.w, r.h, 10); g.stroke(); }
+          g.fillStyle = un ? '#e8ecf3' : '#3a4358'; g.font = FONT(15, 600);
+          g.fillText('' + L, r.x + r.w / 2, r.y + 16);
+          g.font = FONT(11, 400);
+          g.fillStyle = ['#3a4358', '#ffd166', '#ffd166', '#ffd166'][(p.stars[i] || 0)];
+          g.fillText('★'.repeat(p.stars[i] || 0) || '·', r.x + r.w / 2, r.y + 33);
+          if (un) hitButtons.push({ r, cb: () => startLevel(L) });
+        }
+        const maxY = 160 + Math.ceil(cfg.levels / cols) * (ch + 14);
+        homeScroll = clamp(homeScroll, 0, Math.max(0, maxY - (H - 70)));
+        g.restore();
+        btn({ x: 57, y: H - 58, w: 261, h: 44 }, '返回', () => { gridMode = false; });
+      }
+      /* 音效开关（右上，状态区） */
+      const sr = { x: W - 56, y: 26, w: 40, h: 40 };
+      g.fillStyle = '#2c3a5c'; roundRect(g, sr.x, sr.y, sr.w, sr.h, 12); g.fill();
+      g.fillStyle = store.settings.sound ? '#ffd166' : '#5b6478'; g.font = FONT(18, 600);
+      g.fillText(store.settings.sound ? '♪' : '×', sr.x + 20, sr.y + 21);
+      hitButtons.push({ r: sr, cb: () => { store.settings.sound = !store.settings.sound; store.mark('settings'); snd('tap'); } });
+      g.fillStyle = '#3a4358'; g.font = FONT(11, 400); g.fillText(`${cfg.slug} v${cfg.version}`, W / 2, H - 16);
+    }
+
+    function drawPlay(dt) {
+      if (engine) { engine.update(dt); engine.render(g); }
+      /* 顶栏（状态区，§5.5） */
+      g.fillStyle = '#151b2eee'; g.fillRect(0, 0, W, TOP);
+      g.strokeStyle = '#232c42'; g.beginPath(); g.moveTo(0, TOP - .5); g.lineTo(W, TOP - .5); g.stroke();
+      const back = { x: 8, y: 8, w: 44, h: 32 };
+      g.fillStyle = '#2c3a5c'; roundRect(g, back.x, back.y, back.w, back.h, 8); g.fill();
+      g.fillStyle = '#e8ecf3'; g.font = FONT(14, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('‹', back.x + 22, back.y + 17);
+      hitButtons.push({ r: back, cb: goHome });
+      g.textAlign = 'left'; g.font = FONT(12, 500); g.fillStyle = '#8b94a7';
+      let x = 64; g.fillText('第' + curLevel + '关', x, TOP / 2); x += 46;
+      g.textAlign = 'center'; g.font = FONT(13, 700); g.fillStyle = '#e8ecf3';
+      if (hudParts.length === 1) g.fillText(hudParts[0].t + ' ' + fmt(hudParts[0].v), (x + W) / 2, TOP / 2);
+      else if (hudParts.length === 2) {
+        g.textAlign = 'left';
+        g.fillText(hudParts[0].t, x + 6, TOP / 2 - 8); g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[0].v), x + 6, TOP / 2 + 9);
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 500); g.fillText(hudParts[1].t, W / 2 + 24, TOP / 2 - 8);
+        g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[1].v), W / 2 + 24, TOP / 2 + 9);
+      }
+      /* toast */
+      if (toast.t > 0) {
+        toast.t -= dt;
+        g.globalAlpha = clamp(toast.t / 0.4, 0, 1) * .92;
+        g.fillStyle = '#0b0e14'; g.fillRect(0, TOP + 90, W, 40);
+        g.fillStyle = '#ffd166'; g.font = FONT(15, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(toast.text, W / 2, TOP + 110); g.globalAlpha = 1;
+      }
+      /* 结算浮层 */
+      if (result) {
+        result.t += dt;
+        g.fillStyle = 'rgba(11,14,20,.82)'; g.fillRect(0, 0, W, H);
+        const cy = 208, cw2 = 295, ch2 = 250, cx = (W - cw2) / 2;
+        g.fillStyle = '#1a2133'; roundRect(g, cx, cy, cw2, ch2, 18); g.fill();
+        g.strokeStyle = '#2c3a5c'; g.lineWidth = 1.5; roundRect(g, cx, cy, cw2, ch2, 18); g.stroke();
+        g.textAlign = 'center';
+        g.fillStyle = result.win ? '#7bd88f' : '#ff8fa3'; g.font = FONT(21, 800);
+        g.fillText(result.all ? '全部通关！' : result.win ? '第 ' + result.level + ' 关 通过' : '第 ' + result.level + ' 关 失败', W / 2, cy + 44);
+        drawStars(W / 2 - 36, cy + 84, result.stars, 26);
+        g.fillStyle = '#e8ecf3'; g.font = FONT(38, 800); g.fillText(fmt(result.score), W / 2, cy + 130);
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400); g.fillText('得分', W / 2, cy + 154);
+        const bw = 118, bh = 48, gap = 14, bx = (W - bw * 2 - gap) / 2;
+        btn({ x: bx, y: cy + 178, w: bw, h: bh }, '重试', () => startLevel(result.level));
+        if (result.win && !result.all) btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '下一关', () => startLevel(result.level + 1));
+        else btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '首页', goHome);
+      }
+    }
+
+    fit(); window.addEventListener('resize', fit);
+    requestAnimationFrame(frame);
+  }
+
+  return { fnv1a32, mulberry32, clamp, lerp, swipeDir, roundRect, FONT, TIER_CN, boot };
+})();
+
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * 滑动合并引擎（spec §12，2048 式）：四方向滑动，同数字块碰撞合并；
+ * 盘面出现 ≥ target(L) 的块即通关；无可合并且 rescue 耗尽即失败。
+ * target(L) = min(targetCap, 64 × 2^floor((L−1)/5))（每 5 关翻倍，封顶档位）。
+ * score = Σ每次合成产生块的面值；s2 = target×2，s3 = target×3。
+ * ===================================================================== */
+const SlideMergeEngine = (function () {
+  const TILE_BG = { 2: '#3d4b6e', 4: '#4a5a83', 8: '#5a6f9e', 16: '#6ea8ff', 32: '#7bd88f', 64: '#ffd166', 128: '#ff9f43', 256: '#ff8fa3', 512: '#b56cff', 1024: '#4dd0e1', 2048: '#f2789f', 4096: '#9fffcb' };
+  const targetOf = (t, L) => Math.min(t.targetCap, 64 * Math.pow(2, Math.floor((L - 1) / 5)));
+
+  return function (game) {
+    const { cfg, rng } = game;
+    const t = Object.assign({ gridLen: 4, targetCap: 1024, spawn4Rate: 0.10, rescue: 3 }, cfg.typeExtra);
+    const N = t.gridLen;
+    const area = game.area;
+    const bw = Math.floor(area.w * 0.92), cell = Math.floor((bw - (N + 1) * 8) / N);
+    const bx = Math.floor((area.w - (cell * N + (N + 1) * 8)) / 2), by = area.y + 120;
+    let grid, score, target, rescue, over, won;
+    let pop = new Map();      // 合成/新块弹出动画 {idx: t}
+    let down = null;
+
+    const idx = (r, c) => r * N + c;
+    function spawn() {
+      const empties = [];
+      for (let i = 0; i < N * N; i++) if (!grid[i]) empties.push(i);
+      if (!empties.length) return;
+      const i = empties[(rng() * empties.length) | 0];
+      grid[i] = rng() < t.spawn4Rate ? 4 : 2;
+      pop.set(i, 1);
+    }
+    /* 一行向左压实+合并（2048 规则：每块每次移动至多参与一次合并） */
+    function slideRow(row) {
+      const a = row.filter(v => v);
+      const out = [];
+      for (let i = 0; i < a.length; i++) {
+        if (i + 1 < a.length && a[i] === a[i + 1]) { out.push(a[i] * 2); score += a[i] * 2; i++; }
+        else out.push(a[i]);
+      }
+      while (out.length < N) out.push(0);
+      return out;
+    }
+    function move(dir) {
+      const before = grid.slice();
+      for (let k = 0; k < N; k++) {
+        let line = [];
+        for (let j = 0; j < N; j++) line.push(dir === 'l' || dir === 'r' ? grid[idx(k, j)] : grid[idx(j, k)]);
+        if (dir === 'r' || dir === 'd') line.reverse();
+        const out = slideRow(line);
+        if (dir === 'r' || dir === 'd') out.reverse();
+        for (let j = 0; j < N; j++) {
+          const i = dir === 'l' || dir === 'r' ? idx(k, j) : idx(j, k);
+          if (grid[i] !== out[j]) pop.set(i, 1);
+          grid[i] = out[j];
+        }
+      }
+      return grid.some((v, i) => v !== before[i]);
+    }
+    function canMove() {
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        const v = grid[idx(r, c)];
+        if (!v) return true;
+        if (c + 1 < N && grid[idx(r, c + 1)] === v) return true;
+        if (r + 1 < N && grid[idx(r + 1, c)] === v) return true;
+      }
+      return false;
+    }
+    function reshuffle() {    // 死局重洗：保留面值集合，重布位置（消费 rescue，rng 驱动）
+      const vals = grid.filter(v => v);
+      for (let attempt = 0; attempt < 60; attempt++) {
+        grid.fill(0);
+        const order = vals.slice();
+        for (let i = order.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const tmp = order[i]; order[i] = order[j]; order[j] = tmp; }
+        const cells = [];
+        for (let i = 0; i < N * N; i++) cells.push(i);
+        for (let i = cells.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const tmp = cells[i]; cells[i] = cells[j]; cells[j] = tmp; }
+        for (let i = 0; i < order.length; i++) grid[cells[i]] = order[i];
+        if (canMove()) return true;
+      }
+      return false;
+    }
+    const hud = () => [{ t: '分数', v: score }, { t: '重洗', v: rescue }];
+
+    return {
+      startLevel() {
+        grid = new Array(N * N).fill(0);
+        score = 0; rescue = t.rescue; over = false; won = false; pop = new Map();
+        target = targetOf(t, game.level);
+        spawn(); spawn();
+        game.setHud(hud());
+      },
+      update(dt) { for (const [k, v] of pop) { const nv = v - dt * 4; nv <= 0 ? pop.delete(k) : pop.set(k, nv); } },
+      render(g) {
+        /* 目标块提示 */
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillStyle = '#8b94a7'; g.font = G.FONT(13, 500);
+        g.fillText('合成目标块', area.w / 2, by - 78);
+        const tRad = 30;
+        g.fillStyle = TILE_BG[target] || '#6ea8ff';
+        G.roundRect(g, area.w / 2 - tRad, by - 64, tRad * 2, tRad * 2, 10); g.fill();
+        g.fillStyle = '#101522'; g.font = G.FONT(target >= 1024 ? 15 : 18, 800);
+        g.fillText('' + target, area.w / 2, by - 64 + tRad);
+        /* 棋盘 */
+        const bs = cell * N + (N + 1) * 8;
+        g.fillStyle = '#1a2133'; G.roundRect(g, bx, by, bs, bs, 14); g.fill();
+        for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+          const i = idx(r, c), x = bx + 8 + c * (cell + 8), y = by + 8 + r * (cell + 8);
+          g.fillStyle = '#151b2b'; G.roundRect(g, x, y, cell, cell, 10); g.fill();
+          const v = grid[i];
+          if (!v) continue;
+          const p = pop.has(i) ? 1 + 0.18 * pop.get(i) : 1;    // 弹出动画
+          const s = cell * p / 2, cx = x + cell / 2, cy = y + cell / 2;
+          g.fillStyle = TILE_BG[v] || '#9fffcb';
+          G.roundRect(g, cx - s, cy - s, s * 2, s * 2, 10); g.fill();
+          g.fillStyle = v <= 4 ? '#c8d3e8' : '#101522';
+          g.font = G.FONT(v >= 1024 ? cell * .3 : v >= 128 ? cell * .36 : cell * .42, 800);
+          g.fillText('' + v, cx, cy + 1);
+        }
+        g.fillStyle = '#5b6478'; g.font = G.FONT(11, 400); g.textAlign = 'left';
+        g.fillText('滑动合并相同数字', bx, by + bs + 22);
+      },
+      onDown(x, y) { down = { x, y }; },
+      onMove() { },
+      onUp(x, y) {
+        if (!down || over) { down = null; return; }
+        const dir = G.swipeDir(x - down.x, y - down.y);
+        down = null;
+        if (!dir) return;
+        if (!move(dir)) { game.toast('无处可滑'); return; }   // 无效滑动不补块
+        spawn();
+        game.setHud(hud());
+        if (grid.some(v => v >= target)) { over = true; game.win(score, { s2: target * 2, s3: target * 3 }); return; }
+        if (!canMove()) {
+          if (rescue > 0) {
+            rescue--;
+            if (reshuffle()) { game.toast(`死局！自动重洗（剩 ${rescue} 次）`); game.setHud(hud()); }
+            else { over = true; game.lose(score); }
+          } else { over = true; game.lose(score); }
+        }
+      },
+      __state: () => ({ grid: grid.slice(), score, target, rescue, N }),
+    };
+  };
+})();
+
+</script>
+<script>
+G.boot(CONFIG, SlideMergeEngine);
+</script>
+</body>
+</html>

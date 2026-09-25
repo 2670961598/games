@@ -1,0 +1,29 @@
+{
+  "slug": "water-sort-aqua-05",
+  "title": "清澄水序 05",
+  "type": "water-sort",
+  "tier": "master",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 210,
+  "scoring": {
+    "win": "全部颜色各自归拢为整管",
+    "lose": "步数耗尽",
+    "s2": "used ≤ 0.80×moves(L)",
+    "s3": "used ≤ 0.65×moves(L)"
+  },
+  "description": "点源管再点目标管倾倒，把每色水归拢成整管（大师档）",
+  "typeExtra": {
+    "colorsBase": 7,
+    "colorsCap": 14,
+    "tubeCap": 4,
+    "emptyTubes": 1,
+    "moveFactor": 1.6
+  }
+}

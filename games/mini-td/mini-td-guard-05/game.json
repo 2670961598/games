@@ -1,0 +1,31 @@
+{
+  "slug": "mini-td-guard-05",
+  "title": "路口守卫 05",
+  "type": "mini-td",
+  "tier": "master",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 300,
+  "scoring": {
+    "win": "撑过 waves(L) 波",
+    "lose": "基地命耗尽",
+    "s2": "12×enemies(L)",
+    "s3": "15×enemies(L)"
+  },
+  "description": "点空位建塔自动索敌，守住波次；漏怪耗基地命（大师档）",
+  "typeExtra": {
+    "gold0": 84,
+    "livesBase": 7,
+    "enemyHP": 15,
+    "waveSize": 12,
+    "wavesCap": 15,
+    "enemySpeed": 60,
+    "slots": 12
+  }
+}

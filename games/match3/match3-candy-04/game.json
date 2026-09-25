@@ -1,0 +1,30 @@
+{
+  "slug": "match3-candy-04",
+  "title": "甜趣三消 04",
+  "type": "match3",
+  "tier": "hard",
+  "levels": 50,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "步数耗尽前 score ≥ target(L)",
+    "lose": "步数耗尽未达标",
+    "s2": "target(L)×1.2",
+    "s3": "target(L)×1.5"
+  },
+  "description": "8×8 棋盘滑动交换，同色三连消除，步数内冲目标分（困难档）",
+  "typeExtra": {
+    "gridN": 8,
+    "colors": 6,
+    "movesBase": 21,
+    "targetScore": 2400,
+    "blockerRate": 0.1,
+    "cascadeCap": 5
+  }
+}

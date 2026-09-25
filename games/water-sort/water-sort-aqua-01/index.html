@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>清澄水序 01</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0b0e14; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+/* 本款数值（与同目录 game.json 同源生成——GAMES-21 build.mjs；引擎零网络请求，离线可玩） */
+const CONFIG = {
+  "slug": "water-sort-aqua-01",
+  "title": "清澄水序 01",
+  "type": "water-sort",
+  "tier": "normal",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 210,
+  "scoring": {
+    "win": "全部颜色各自归拢为整管",
+    "lose": "步数耗尽",
+    "s2": "used ≤ 0.80×moves(L)",
+    "s3": "used ≤ 0.65×moves(L)"
+  },
+  "description": "点源管再点目标管倾倒，把每色水归拢成整管（标准档）",
+  "typeExtra": {
+    "colorsBase": 5,
+    "colorsCap": 10,
+    "tubeCap": 4,
+    "emptyTubes": 2,
+    "moveFactor": 2.2
+  }
+};
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * GAMES 公共框架（spec §4.4/§5）——所有类型引擎共享，由 build.mjs 内联进各 index.html。
+ * 职责：PRNG（§5.6 逐字实现）、宿主钩子+telemetry 兜底（§5.3）、localStorage 三键（§5.2）、
+ *       WebAudio 程序合成音效、375×667 画布外壳（DPR 缩放/安全区）、关卡流程与星级（§3.2）、
+ *       事件词表（boot/start/levelEnd/end）、选关/结算/暂停 UI。
+ * 确定性铁律：判定路径零 Math.random；每关 rng = mulberry32(fnv1a32(`${slug}#${level}`))。
+ * ===================================================================== */
+const G = (function () {
+
+  /* ---------- §5.6 PRNG 参考实现（全引擎统一，冻结） ---------- */
+  function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  /* ---------- 通用工具 ---------- */
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const TIER_CN = { relaxed: '轻松', simple: '简单', normal: '标准', hard: '困难', master: '大师' };
+  /** 滑动定向（§12：位移 ≥24px 定向，主轴优先）。不足阈值返回 null。 */
+  function swipeDir(dx, dy) {
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return null;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'r' : 'l') : (dy > 0 ? 'd' : 'u');
+  }
+  function roundRect(g, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
+
+  /* ---------- §5.3 宿主钩子 + telemetry 兜底 ---------- */
+  function makeReporter(slug, store) {
+    return function report(event, payload) {
+      try { (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) ? window.__GAMES_HOOK__.report(event, payload) : store.telemetryPush({ t: Date.now(), event, payload }); }
+      catch (e) { /* 宿主钩子异常不影响游戏 */ }
+    };
+  }
+
+  /* ---------- §5.2 localStorage 三键（节流/flush/损坏静默重置） ---------- */
+  function makeStore(slug) {
+    const P = `games:${slug}:progress`, S = `games:${slug}:settings`, T = `games:${slug}:telemetry`;
+    const LS = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+    function readJson(k, dflt) {
+      if (!LS) return dflt;
+      try { const v = JSON.parse(LS.getItem(k)); return (v && typeof v === 'object') ? v : dflt; } catch (e) { return dflt; } /* 损坏静默重置 */
+    }
+    const st = {
+      progress: null, settings: null,
+      _pending: {}, _lastWrite: 0,
+      load(levels) {
+        st.progress = Object.assign({ unlocked: 1, best: 0, stars: new Array(levels).fill(0), updated: 0 }, readJson(P, {}));
+        if (!Array.isArray(st.progress.stars)) st.progress.stars = new Array(levels).fill(0);
+        st.settings = Object.assign({ sound: true }, readJson(S, {}));
+      },
+      telemetryPush(item) {
+        if (!LS) return;
+        const ring = readJson(T, { items: [] }).items || [];
+        ring.push(item); if (ring.length > 50) ring.splice(0, ring.length - 50);
+        try { LS.setItem(T, JSON.stringify({ items: ring })); } catch (e) { /* 满/禁则弃 */ }
+      },
+      mark(kind) { st._pending[kind] = true; st.flushIfDue(); },
+      flushIfDue() {
+        const now = Date.now();
+        if (now - st._lastWrite < 1000) return;              // 写入节流 ≤1 次/秒
+        st._lastWrite = now;
+        if (!LS) { st._pending = {}; return; }
+        try {
+          if (st._pending.progress) { st.progress.updated = now; LS.setItem(P, JSON.stringify(st.progress)); }
+          if (st._pending.settings) LS.setItem(S, JSON.stringify(st.settings));
+        } catch (e) { /* 配额满等静默 */ }
+        st._pending = {};
+      },
+      flushNow() { st._lastWrite = 0; st.flushIfDue(); }
+    };
+    return st;
+  }
+
+  /* ---------- WebAudio 程序合成音效（装饰，可关） ---------- */
+  function makeSound(store) {
+    let ac = null;
+    function ctx() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } } return ac; }
+    function tone(f0, f1, dur, type, vol) {
+      const a = ctx(); if (!a) return;
+      const o = a.createOscillator(), gn = a.createGain(), t = a.currentTime;
+      o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(gn).connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+    }
+    return function snd(name) {
+      if (!store.settings.sound) return;
+      if (name === 'tap') tone(660, 440, 0.08, 'square', 0.04);
+      else if (name === 'pop') tone(520, 900, 0.1, 'triangle', 0.08);
+      else if (name === 'ok') { tone(523, 523, 0.12, 'sine', 0.08); setTimeout(() => tone(784, 784, 0.16, 'sine', 0.08), 110); }
+      else if (name === 'bad') tone(220, 110, 0.3, 'sawtooth', 0.06);
+      else if (name === 'star') tone(1046, 1568, 0.18, 'sine', 0.07);
+    };
+  }
+
+  /* ---------- 画布外壳 + 关卡流程（boot 入口） ----------
+   * engineFactory(game) → { startLevel, update(dt), render(g), onDown, onMove, onUp, hudParts? }
+   *   game.cfg / game.W / game.H / game.area（顶栏下方的游戏区矩形）
+   *   game.rng（每关重置的 PRNG）/ game.level
+   *   game.setHud([{t,v}...])（顶栏状态，≤3 组）/ game.toast(text)
+   *   game.win(score, {s2,s3} 或 {stars}) / game.lose(score)
+   * 框架负责：选关/顶栏/结算浮层/星级与进度/事件上报/音效开关。 */
+  function boot(cfg, engineFactory) {
+    const W = 375, H = 667, TOP = 48;
+    const cvs = document.getElementById('cv'), g = cvs.getContext('2d');
+    let scale = 1;
+    function fit() {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const s = Math.min(vw / W, vh / H), dpr = clamp(window.devicePixelRatio || 1, 1, 3);
+      cvs.style.width = (W * s) + 'px'; cvs.style.height = (H * s) + 'px';
+      cvs.width = Math.round(W * s * dpr); cvs.height = Math.round(H * s * dpr);
+      scale = s * dpr;
+    }
+    function toXY(e) { const r = cvs.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
+
+    const store = makeStore(cfg.slug); store.load(cfg.levels);
+    const report = makeReporter(cfg.slug, store);
+    const snd = makeSound(store);
+
+    /* --- 会话与关卡状态 --- */
+    let screen = 'home';            // home | play
+    let engine = null, curLevel = 1, hudParts = [], toast = { text: '', t: 0 };
+    let result = null;              // {level,win,score,stars,next:boolean,all:boolean}
+    let session = null;             // {score, t0} → end 事件
+    let homeScroll = 0, gridMode = false, dragFrom = null;
+    let animT = 0;
+
+    report('boot', { slug: cfg.slug, version: cfg.version, specVersion: cfg.specVersion });
+
+    /* --- UI 帮助 --- */
+    function btn(r, label, cb) { // 命中检测+绘制合一（当前帧绘制时命中测试由 down 处理器完成）
+      g.fillStyle = '#3b4a6b'; roundRect(g, r.x, r.y, r.w, r.h, r.h / 2); g.fill();
+      g.fillStyle = '#e8ecf3'; g.font = FONT(16, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1);
+      hitButtons.push({ r, cb });
+    }
+    let hitButtons = [];
+    function drawStars(x, y, n, size) {
+      for (let i = 0; i < 3; i++) {
+        g.fillStyle = i < n ? '#ffd166' : '#3a4358'; g.font = FONT(size, 700); g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.fillText('★', x + i * (size + 2), y);
+      }
+    }
+    function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : '' + Math.floor(n); }
+
+    /* --- 关卡流程（事件词表 §5.3） --- */
+    function startLevel(L) {
+      curLevel = L; screen = 'play'; result = null; hudParts = []; levelT0 = performance.now();
+      if (!session) session = { score: 0, t0: performance.now() };
+      engine = engineFactory({
+        W, H, cfg, level: L,
+        area: { x: 0, y: TOP, w: W, h: H - TOP },
+        rng: mulberry32(fnv1a32(`${cfg.slug}#${L}`)),
+        setHud: (p) => { hudParts = p.slice(0, 3); },
+        toast: (t) => { toast = { text: t, t: 1.4 }; },
+        win: (score, opt) => finish(true, score, opt),
+        lose: (score) => finish(false, score, {}),
+      });
+      engine.startLevel();
+      report('start', { level: L });
+      snd('tap');
+    }
+    function finish(win, score, opt) {
+      if (result) return;                                     // 双保险：结算后不再重复判局
+      let stars = 0;
+      if (win) stars = opt.stars != null ? opt.stars : 1 + (score >= opt.s2 ? 1 : 0) + (score >= opt.s3 ? 1 : 0);
+      const durMs = Math.round(performance.now() - levelT0);
+      session.score += score;
+      const all = win && curLevel >= cfg.levels;
+      result = { level: curLevel, win, score, stars, all, t: 0 };
+      if (win) {                                              // 进度只升不降（§3.2）
+        const p = store.progress;
+        p.unlocked = Math.max(p.unlocked, Math.min(cfg.levels, curLevel + 1));
+        p.best = Math.max(p.best, curLevel);
+        p.stars[curLevel - 1] = Math.max(p.stars[curLevel - 1] || 0, stars);
+        store.mark('progress');
+      }
+      report('levelEnd', { level: curLevel, win, score, stars, durMs });
+      if (all) { report('end', { reason: 'allClear', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) }); session = null; }
+      snd(win ? 'ok' : 'bad');
+    }
+    let levelT0 = performance.now();
+
+    function goHome() {
+      if (screen === 'play' && session) {                     // 退出会话 → quit
+        report('end', { reason: 'quit', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) });
+        session = null;
+      }
+      screen = 'home'; result = null; engine = null; store.flushNow();
+    }
+
+    /* --- 输入路由 --- */
+    cvs.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); cvs.setPointerCapture && cvs.setPointerCapture(e.pointerId);
+      const p = toXY(e);
+      if (screen === 'play' && !result && engine) { engine.onDown(p.x, p.y); }
+      dragFrom = { ...p, scroll: homeScroll, moved: false };
+    });
+    cvs.addEventListener('pointermove', (e) => {
+      const p = toXY(e);
+      if (screen === 'play' && !result && engine) engine.onMove(p.x, p.y);
+      if (dragFrom && screen === 'home' && gridMode) {
+        const dy = p.y - dragFrom.y;
+        if (Math.abs(dy) > 6) { dragFrom.moved = true; homeScroll = clamp(dragFrom.scroll + dy, 0, 1e5); }
+      }
+    });
+    const upHandler = (e) => {
+      const p = toXY(e);
+      const wasDrag = dragFrom && dragFrom.moved; dragFrom = null;
+      if (wasDrag) return;
+      /* 结算浮层按钮 */
+      if (result) { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
+      if (screen === 'home') { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
+      if (engine) engine.onUp(p.x, p.y);
+    };
+    cvs.addEventListener('pointerup', upHandler);
+    cvs.addEventListener('pointercancel', upHandler);
+    function hit(r, p) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+
+    /* --- 崩溃恢复：页面隐藏/关闭前 flush（§5.2） --- */
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') store.flushNow(); });
+    window.addEventListener('pagehide', () => store.flushNow());
+    window.addEventListener('beforeunload', () => store.flushNow());
+
+    /* --- 主循环 --- */
+    let last = performance.now();
+    function frame(t) {
+      const dt = clamp((t - last) / 1000, 0, 0.05); last = t; animT += dt;
+      store.flushIfDue();
+      hitButtons = [];
+      g.setTransform(scale, 0, 0, scale, 0, 0);
+      g.fillStyle = '#101522'; g.fillRect(0, 0, W, H);
+      if (screen === 'home') drawHome();
+      else drawPlay(dt);
+      requestAnimationFrame(frame);
+    }
+
+    function drawHome() {
+      const p = store.progress;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#e8ecf3'; g.font = FONT(30, 800); g.fillText(cfg.title, W / 2, 92);
+      g.fillStyle = '#8b94a7'; g.font = FONT(14, 400);
+      g.fillText(`${TIER_CN[cfg.tier] || cfg.tier} · ${cfg.levels} 关 · ${cfg.controls.primary}`, W / 2, 124);
+      const next = Math.min(p.unlocked, cfg.levels);
+      if (!gridMode) {
+        btn({ x: 57, y: 210, w: 261, h: 64 }, p.best ? `继续 · 第 ${next} 关` : `开始 · 第 1 关`, () => startLevel(next));
+        btn({ x: 57, y: 290, w: 261, h: 52 }, '选关', () => { gridMode = true; homeScroll = 0; });
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400);
+        g.fillText(`最高通关 ${p.best} / ${cfg.levels}`, W / 2, 372);
+      } else {
+        g.save(); g.beginPath(); g.rect(0, 150, W, H - 210); g.clip();
+        g.translate(0, -homeScroll);
+        const cols = 5, cw = 58, ch = 46, x0 = (W - cols * cw - (cols - 1) * 8) / 2;
+        for (let i = 0; i < cfg.levels; i++) {
+          const L = i + 1, r = { x: x0 + (i % cols) * (cw + 8), y: 160 + Math.floor(i / cols) * (ch + 14), w: cw, h: ch };
+          const un = L <= p.unlocked;
+          g.fillStyle = un ? '#2c3a5c' : '#1a2133'; roundRect(g, r.x, r.y, r.w, r.h, 10); g.fill();
+          if (L === p.unlocked) { g.strokeStyle = '#6ea8ff'; g.lineWidth = 2; roundRect(g, r.x, r.y, r.w, r.h, 10); g.stroke(); }
+          g.fillStyle = un ? '#e8ecf3' : '#3a4358'; g.font = FONT(15, 600);
+          g.fillText('' + L, r.x + r.w / 2, r.y + 16);
+          g.font = FONT(11, 400);
+          g.fillStyle = ['#3a4358', '#ffd166', '#ffd166', '#ffd166'][(p.stars[i] || 0)];
+          g.fillText('★'.repeat(p.stars[i] || 0) || '·', r.x + r.w / 2, r.y + 33);
+          if (un) hitButtons.push({ r, cb: () => startLevel(L) });
+        }
+        const maxY = 160 + Math.ceil(cfg.levels / cols) * (ch + 14);
+        homeScroll = clamp(homeScroll, 0, Math.max(0, maxY - (H - 70)));
+        g.restore();
+        btn({ x: 57, y: H - 58, w: 261, h: 44 }, '返回', () => { gridMode = false; });
+      }
+      /* 音效开关（右上，状态区） */
+      const sr = { x: W - 56, y: 26, w: 40, h: 40 };
+      g.fillStyle = '#2c3a5c'; roundRect(g, sr.x, sr.y, sr.w, sr.h, 12); g.fill();
+      g.fillStyle = store.settings.sound ? '#ffd166' : '#5b6478'; g.font = FONT(18, 600);
+      g.fillText(store.settings.sound ? '♪' : '×', sr.x + 20, sr.y + 21);
+      hitButtons.push({ r: sr, cb: () => { store.settings.sound = !store.settings.sound; store.mark('settings'); snd('tap'); } });
+      g.fillStyle = '#3a4358'; g.font = FONT(11, 400); g.fillText(`${cfg.slug} v${cfg.version}`, W / 2, H - 16);
+    }
+
+    function drawPlay(dt) {
+      if (engine) { engine.update(dt); engine.render(g); }
+      /* 顶栏（状态区，§5.5） */
+      g.fillStyle = '#151b2eee'; g.fillRect(0, 0, W, TOP);
+      g.strokeStyle = '#232c42'; g.beginPath(); g.moveTo(0, TOP - .5); g.lineTo(W, TOP - .5); g.stroke();
+      const back = { x: 8, y: 8, w: 44, h: 32 };
+      g.fillStyle = '#2c3a5c'; roundRect(g, back.x, back.y, back.w, back.h, 8); g.fill();
+      g.fillStyle = '#e8ecf3'; g.font = FONT(14, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('‹', back.x + 22, back.y + 17);
+      hitButtons.push({ r: back, cb: goHome });
+      g.textAlign = 'left'; g.font = FONT(12, 500); g.fillStyle = '#8b94a7';
+      let x = 64; g.fillText('第' + curLevel + '关', x, TOP / 2); x += 46;
+      g.textAlign = 'center'; g.font = FONT(13, 700); g.fillStyle = '#e8ecf3';
+      if (hudParts.length === 1) g.fillText(hudParts[0].t + ' ' + fmt(hudParts[0].v), (x + W) / 2, TOP / 2);
+      else if (hudParts.length === 2) {
+        g.textAlign = 'left';
+        g.fillText(hudParts[0].t, x + 6, TOP / 2 - 8); g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[0].v), x + 6, TOP / 2 + 9);
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 500); g.fillText(hudParts[1].t, W / 2 + 24, TOP / 2 - 8);
+        g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[1].v), W / 2 + 24, TOP / 2 + 9);
+      }
+      /* toast */
+      if (toast.t > 0) {
+        toast.t -= dt;
+        g.globalAlpha = clamp(toast.t / 0.4, 0, 1) * .92;
+        g.fillStyle = '#0b0e14'; g.fillRect(0, TOP + 90, W, 40);
+        g.fillStyle = '#ffd166'; g.font = FONT(15, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(toast.text, W / 2, TOP + 110); g.globalAlpha = 1;
+      }
+      /* 结算浮层 */
+      if (result) {
+        result.t += dt;
+        g.fillStyle = 'rgba(11,14,20,.82)'; g.fillRect(0, 0, W, H);
+        const cy = 208, cw2 = 295, ch2 = 250, cx = (W - cw2) / 2;
+        g.fillStyle = '#1a2133'; roundRect(g, cx, cy, cw2, ch2, 18); g.fill();
+        g.strokeStyle = '#2c3a5c'; g.lineWidth = 1.5; roundRect(g, cx, cy, cw2, ch2, 18); g.stroke();
+        g.textAlign = 'center';
+        g.fillStyle = result.win ? '#7bd88f' : '#ff8fa3'; g.font = FONT(21, 800);
+        g.fillText(result.all ? '全部通关！' : result.win ? '第 ' + result.level + ' 关 通过' : '第 ' + result.level + ' 关 失败', W / 2, cy + 44);
+        drawStars(W / 2 - 36, cy + 84, result.stars, 26);
+        g.fillStyle = '#e8ecf3'; g.font = FONT(38, 800); g.fillText(fmt(result.score), W / 2, cy + 130);
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400); g.fillText('得分', W / 2, cy + 154);
+        const bw = 118, bh = 48, gap = 14, bx = (W - bw * 2 - gap) / 2;
+        btn({ x: bx, y: cy + 178, w: bw, h: bh }, '重试', () => startLevel(result.level));
+        if (result.win && !result.all) btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '下一关', () => startLevel(result.level + 1));
+        else btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '首页', goHome);
+      }
+    }
+
+    fit(); window.addEventListener('resize', fit);
+    requestAnimationFrame(frame);
+  }
+
+  return { fnv1a32, mulberry32, clamp, lerp, swipeDir, roundRect, FONT, TIER_CN, boot };
+})();
+
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * 水排序引擎（spec §24）：点源管再点目标管倾倒；只能倒向同色顶层或空管。
+ * 生成：由已解终局出发，用 seed 反向执行 N=⌈moves×0.6⌉ 次合法倒水 → 生成即保证可解；
+ *       终局仍为已解（退化）则重掷。反向倒水 = 从 B 顶部取 j 层同色放回 A（A 顶异色或空）。
+ * 通关：全部颜色各自归拢为整管；步数耗尽即失败。
+ * score = colors(L)×100 + 剩余步×10；星级（覆盖 §3.2）：2★ used ≤ 0.80×moves，3★ used ≤ 0.65×moves。
+ * ===================================================================== */
+const WaterSortEngine = (function () {
+  const PAL = ['#ff8fa3', '#ffd166', '#7bd88f', '#6ea8ff', '#b56cff', '#ff9f43', '#4dd0e1', '#f6a5c0', '#a3d977', '#7c9eff', '#e2b6ff', '#ffd48a', '#8affd4', '#ff7b7b'];
+
+  const colorsOf = (t, L, n) => Math.min(t.colorsCap, t.colorsBase + Math.floor((L - 1) / Math.max(1, Math.floor(n / 5))));
+  const movesOf = (t, colors) => Math.ceil(colors * t.tubeCap * t.moveFactor * 0.5);
+
+  return function (game) {
+    const { cfg, rng } = game;
+    const t = Object.assign({ colorsBase: 5, colorsCap: 10, tubeCap: 4, emptyTubes: 2, moveFactor: 2.2 }, cfg.typeExtra);
+    const CAP = t.tubeCap;
+    const area = game.area;
+
+    let tubes, colors, movesLimit, used, over, sel = -1, animPulse;
+
+    const topRun = (tb) => { const n = tb.length; if (!n) return { c: -1, k: 0 }; let k = 1; while (k < n && tb[n - 1 - k] === tb[n - 1]) k++; return { c: tb[n - 1], k }; };
+    const solved = () => tubes.every(tb => tb.length === 0 || (tb.length === CAP && tb.every(v => v === tb[0])));
+
+    /* 反向生成（每次重掷继续消费同一 rng 流，保持确定性） */
+    function generate() {
+      for (let attempt = 0; attempt < 32; attempt++) {
+        tubes = [];
+        for (let c = 0; c < colors; c++) tubes.push(new Array(CAP).fill(c));
+        for (let e = 0; e < t.emptyTubes; e++) tubes.push([]);
+        const n = Math.ceil(movesLimit * 0.6);
+        let moved = 0;
+        for (let s = 0; s < n; s++) {
+          /* 反向倒水：B 顶部 j 层同色 → A（A 空或顶异色） */
+          const srcs = [];
+          for (let i = 0; i < tubes.length; i++) if (tubes[i].length) srcs.push(i);
+          if (!srcs.length) break;
+          const B = srcs[(rng() * srcs.length) | 0];
+          const run = topRun(tubes[B]);
+          const dsts = [];
+          for (let i = 0; i < tubes.length; i++) {
+            if (i === B || tubes[i].length >= CAP) continue;
+            const tr = topRun(tubes[i]);
+            if (tr.k === 0 || tr.c !== run.c) dsts.push(i);
+          }
+          if (!dsts.length) continue;
+          const A = dsts[(rng() * dsts.length) | 0];
+          const room = Math.min(run.k, CAP - tubes[A].length);   // 可回填层数
+          const j = room - ((rng() * room) | 0);                 // j ∈ [1, room]
+          for (let m = 0; m < j; m++) tubes[A].push(tubes[B].pop());
+          moved += j;
+        }
+        if (moved > 0 && !solved()) return;                    // 非退化 → 采纳
+      }
+      /* 32 掷仍退化（理论不可能）：保留最后一局 */
+    }
+    function pour(a, b) {
+      const ra = topRun(tubes[a]);
+      const space = CAP - tubes[b].length;
+      const k = Math.min(ra.k, space);
+      for (let m = 0; m < k; m++) tubes[b].push(tubes[a].pop());
+      return k;
+    }
+    const canPour = (a, b) => a !== b && tubes[a].length && tubes[b].length < CAP &&
+      (tubes[b].length === 0 || tubes[b][tubes[b].length - 1] === tubes[a][tubes[a].length - 1]);
+
+    /* 布局：每行 5 管 */
+    let layout = null;
+    function computeLayout() {
+      const per = 5, tw = 46, gapX = 14, gapY = 26;
+      const rows = Math.ceil(tubes.length / per);
+      const totalW = per * tw + (per - 1) * gapX;
+      const x0 = (area.w - totalW) / 2;
+      const th = CAP * 24 + 8;
+      const y0 = area.y + 58;
+      layout = { per, tw, th, pos: [] };
+      for (let i = 0; i < tubes.length; i++) {
+        const r = Math.floor(i / per), c = i % per;
+        layout.pos.push({ x: x0 + c * (tw + gapX) + (r % 2 ? 7 : 0), y: y0 + r * (th + gapY) });
+      }
+    }
+    function tubeAt(x, y) {
+      for (let i = 0; i < layout.pos.length; i++) {
+        const p = layout.pos[i];
+        if (x >= p.x - 6 && x <= p.x + layout.tw + 6 && y >= p.y - 44 && y <= p.y + layout.th + 8) return i;  // 热区加宽（≥44px）
+      }
+      return -1;
+    }
+
+    return {
+      startLevel() {
+        colors = colorsOf(t, game.level, cfg.levels);
+        movesLimit = movesOf(t, colors);
+        used = 0; over = false; sel = -1; animPulse = 0;
+        generate();
+        computeLayout();
+        game.setHud([{ t: '颜色', v: colors }, { t: '步数', v: movesLimit }]);
+      },
+      update(dt) { animPulse = Math.max(0, animPulse - dt); },
+      render(g) {
+        /* 步数进度条 */
+        const pw = area.w - 24, px = 12, py = area.y + 10;
+        g.fillStyle = '#1a2133'; G.roundRect(g, px, py, pw, 12, 6); g.fill();
+        g.fillStyle = used / movesLimit > 0.8 ? '#ff8fa3' : '#6ea8ff';
+        G.roundRect(g, px + 2, py + 2, Math.max(3, (pw - 4) * (1 - used / movesLimit)), 8, 4); g.fill();
+        g.fillStyle = '#8b94a7'; g.font = G.FONT(11, 500); g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(`剩余 ${movesLimit - used} 步`, area.w / 2, py + 6);
+        for (let i = 0; i < tubes.length; i++) {
+          const p = layout.pos[i], tw = layout.tw, th = layout.th;
+          const isSel = i === sel;
+          g.save();
+          if (isSel) { g.translate(0, -8); g.shadowColor = '#ffd166'; g.shadowBlur = 10; }
+          /* 管体（玻璃） */
+          g.fillStyle = 'rgba(140,170,220,.10)';
+          g.strokeStyle = isSel ? '#ffd166' : '#3a4a6b'; g.lineWidth = isSel ? 3 : 2;
+          G.roundRect(g, p.x, p.y, tw, th, 9); g.fill(); g.stroke();
+          g.restore();
+          /* 水层（自底向上） */
+          const lh = 24, ly = p.y + th - 4;
+          for (let m = 0; m < tubes[i].length; m++) {
+            g.fillStyle = PAL[tubes[i][m]];
+            G.roundRect(g, p.x + 3.5, ly - (m + 1) * lh + 1, tw - 7, lh - 2, 4); g.fill();
+          }
+          /* 管口椭圆 */
+          g.strokeStyle = '#3a4a6b'; g.lineWidth = 2;
+          g.beginPath(); g.ellipse(p.x + tw / 2, p.y + 2, tw / 2 - 3, 5, 0, 0, 7); g.stroke();
+          if (isSel) {   /* 顶部浮层提示（将倒出的顶层） */
+            const run = topRun(tubes[i]);
+            g.fillStyle = PAL[run.c];
+            G.roundRect(g, p.x + 6, p.y - 40, tw - 12, 12, 6); g.fill();
+            g.fillStyle = '#101522'; g.font = G.FONT(10, 700);
+            g.fillText('倒出 ' + Math.min(run.k, CAP), p.x + tw / 2, p.y - 33.5);
+          }
+        }
+      },
+      onDown() { },
+      onMove() { },
+      onUp(x, y) {
+        if (over) return;
+        const i = tubeAt(x, y);
+        if (i < 0) { sel = -1; return; }
+        if (sel === -1) {
+          if (tubes[i].length) { sel = i; game.toast('已选源管，点目标管'); }
+          else game.toast('空管不能作源');
+          return;
+        }
+        if (i === sel) { sel = -1; return; }                    // 再点同管 = 取消
+        if (canPour(sel, i)) {
+          pour(sel, i);
+          used++;
+          animPulse = .3;
+          game.setHud([{ t: '颜色', v: colors }, { t: '步数', v: movesLimit - used }]);
+          sel = -1;
+          if (solved()) {
+            over = true;
+            const score = colors * 100 + (movesLimit - used) * 10;
+            const stars = 1 + (used <= 0.80 * movesLimit ? 1 : 0) + (used <= 0.65 * movesLimit ? 1 : 0);
+            game.win(score, { stars });
+          } else if (used >= movesLimit) { over = true; game.lose(0); }
+        } else {
+          game.toast('只能倒向同色顶层或空管');
+          sel = tubes[i].length ? i : -1;                        // 换选
+        }
+      },
+      __state: () => ({ tubes: tubes.map(tb => tb.slice()), colors, movesLimit, used, layout, solved: solved() }),
+    };
+  };
+})();
+
+</script>
+<script>
+G.boot(CONFIG, WaterSortEngine);
+</script>
+</body>
+</html>
