@@ -1,0 +1,28 @@
+{
+  "slug": "slide-merge-tile-03",
+  "title": "数字滑合 03",
+  "type": "slide-merge",
+  "tier": "simple",
+  "levels": 25,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "盘面出现 ≥ target(L) 的块",
+    "lose": "无可合并且 rescue 耗尽",
+    "s2": "target(L)×2",
+    "s3": "target(L)×3"
+  },
+  "description": "2048 式四向滑动合并，合成当关目标数字块即胜（简单档）",
+  "typeExtra": {
+    "gridLen": 5,
+    "targetCap": 512,
+    "spawn4Rate": 0.08,
+    "rescue": 4
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "slug": "rhythm-tap-beat-04",
+  "title": "律动四轨 04",
+  "type": "rhythm-tap",
+  "tier": "hard",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap-zone"
+  },
+  "avgDurationSec": 120,
+  "scoring": {
+    "win": "谱面走完且 life > 0",
+    "lose": "life 耗尽",
+    "s2": "80×notes(L)",
+    "s3": "92×notes(L)"
+  },
+  "description": "四轨音符下落，到判定线点对应轨区，按精度计分（困难档）",
+  "typeExtra": {
+    "bpm": 125,
+    "density": 1.5,
+    "notesBase": 72,
+    "perfectMs": 40,
+    "life": 5
+  }
+}

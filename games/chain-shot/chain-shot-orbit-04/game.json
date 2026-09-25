@@ -1,0 +1,29 @@
+{
+  "slug": "chain-shot-orbit-04",
+  "title": "珠链环消 04",
+  "type": "chain-shot",
+  "tier": "hard",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 165,
+  "scoring": {
+    "win": "清空珠链",
+    "lose": "珠链首珠到达洞口",
+    "s2": "balls(L)×12",
+    "s3": "balls(L)×15"
+  },
+  "description": "射珠入链同色三连消除，清空珠链；首珠入洞即败（困难档）",
+  "typeExtra": {
+    "chainSpeed": 38,
+    "colors": 5,
+    "totalBalls": 48,
+    "swap": 3,
+    "trackLen": 1200
+  }
+}

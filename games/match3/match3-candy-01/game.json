@@ -1,0 +1,30 @@
+{
+  "slug": "match3-candy-01",
+  "title": "甜趣三消 01",
+  "type": "match3",
+  "tier": "normal",
+  "levels": 50,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "步数耗尽前 score ≥ target(L)",
+    "lose": "步数耗尽未达标",
+    "s2": "target(L)×1.2",
+    "s3": "target(L)×1.5"
+  },
+  "description": "8×8 棋盘滑动交换，同色三连消除，步数内冲目标分（标准档）",
+  "typeExtra": {
+    "gridN": 8,
+    "colors": 5,
+    "movesBase": 25,
+    "targetScore": 2000,
+    "blockerRate": 0.05,
+    "cascadeCap": 5
+  }
+}
