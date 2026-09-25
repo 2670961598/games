@@ -1,0 +1,30 @@
+{
+  "slug": "fruit-slice-blade-01",
+  "title": "快刀切果 01",
+  "type": "fruit-slice",
+  "tier": "normal",
+  "levels": 40,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 300,
+  "scoring": {
+    "win": "60s 内切果 ≥ target(L)",
+    "lose": "missMax 或 lives 耗尽/超时",
+    "s2": "target(L)×12",
+    "s3": "target(L)×15"
+  },
+  "description": "水果抛物线飞出，单指划线切割，60 秒内切够目标数，小心炸弹与漏果（标准档）",
+  "typeExtra": {
+    "targetBase": 25,
+    "spawnRate": 1.4,
+    "flySpeed": 520,
+    "bombRate": 0.12,
+    "missMax": 5,
+    "lives": 3
+  }
+}

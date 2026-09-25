@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>迷宫冲刺 03</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0b0e14; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+/* 本款数值（与同目录 game.json 同源生成——GAMES-19 build-b.mjs；引擎零网络请求，离线可玩） */
+const CONFIG = {
+  "slug": "maze-dash-hedge-03",
+  "title": "迷宫冲刺 03",
+  "type": "maze-dash",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 150,
+  "scoring": {
+    "win": "集齐钥匙到达出口",
+    "lose": "超时",
+    "s2": "12×time(L)",
+    "s3": "15×time(L)"
+  },
+  "description": "程序生成完美迷宫，滑动定向冲刺到岔口，限时集齐钥匙抵达出口，后段带迷雾（简单档）",
+  "typeExtra": {
+    "sizeN": 11,
+    "timeFactor": 2,
+    "speed": 4,
+    "keysCap": 2,
+    "fogR": 0
+  }
+};
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * GAMES 公共框架（spec §4.4/§5）——所有类型引擎共享，由 build.mjs 内联进各 index.html。
+ * 职责：PRNG（§5.6 逐字实现）、宿主钩子+telemetry 兜底（§5.3）、localStorage 三键（§5.2）、
+ *       WebAudio 程序合成音效、375×667 画布外壳（DPR 缩放/安全区）、关卡流程与星级（§3.2）、
+ *       事件词表（boot/start/levelEnd/end）、选关/结算/暂停 UI。
+ * 确定性铁律：判定路径零 Math.random；每关 rng = mulberry32(fnv1a32(`${slug}#${level}`))。
+ * ===================================================================== */
+const G = (function () {
+
+  /* ---------- §5.6 PRNG 参考实现（全引擎统一，冻结） ---------- */
+  function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  /* ---------- 通用工具 ---------- */
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const TIER_CN = { relaxed: '轻松', simple: '简单', normal: '标准', hard: '困难', master: '大师' };
+  /** 滑动定向（§12：位移 ≥24px 定向，主轴优先）。不足阈值返回 null。 */
+  function swipeDir(dx, dy) {
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return null;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'r' : 'l') : (dy > 0 ? 'd' : 'u');
+  }
+  function roundRect(g, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
+
+  /* ---------- §5.3 宿主钩子 + telemetry 兜底 ---------- */
+  function makeReporter(slug, store) {
+    return function report(event, payload) {
+      try { (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) ? window.__GAMES_HOOK__.report(event, payload) : store.telemetryPush({ t: Date.now(), event, payload }); }
+      catch (e) { /* 宿主钩子异常不影响游戏 */ }
+    };
+  }
+
+  /* ---------- §5.2 localStorage 三键（节流/flush/损坏静默重置） ---------- */
+  function makeStore(slug) {
+    const P = `games:${slug}:progress`, S = `games:${slug}:settings`, T = `games:${slug}:telemetry`;
+    const LS = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+    function readJson(k, dflt) {
+      if (!LS) return dflt;
+      try { const v = JSON.parse(LS.getItem(k)); return (v && typeof v === 'object') ? v : dflt; } catch (e) { return dflt; } /* 损坏静默重置 */
+    }
+    const st = {
+      progress: null, settings: null,
+      _pending: {}, _lastWrite: 0,
+      load(levels) {
+        st.progress = Object.assign({ unlocked: 1, best: 0, stars: new Array(levels).fill(0), updated: 0 }, readJson(P, {}));
+        if (!Array.isArray(st.progress.stars)) st.progress.stars = new Array(levels).fill(0);
+        st.settings = Object.assign({ sound: true }, readJson(S, {}));
+      },
+      telemetryPush(item) {
+        if (!LS) return;
+        const ring = readJson(T, { items: [] }).items || [];
+        ring.push(item); if (ring.length > 50) ring.splice(0, ring.length - 50);
+        try { LS.setItem(T, JSON.stringify({ items: ring })); } catch (e) { /* 满/禁则弃 */ }
+      },
+      mark(kind) { st._pending[kind] = true; st.flushIfDue(); },
+      flushIfDue() {
+        const now = Date.now();
+        if (now - st._lastWrite < 1000) return;              // 写入节流 ≤1 次/秒
+        st._lastWrite = now;
+        if (!LS) { st._pending = {}; return; }
+        try {
+          if (st._pending.progress) { st.progress.updated = now; LS.setItem(P, JSON.stringify(st.progress)); }
+          if (st._pending.settings) LS.setItem(S, JSON.stringify(st.settings));
+        } catch (e) { /* 配额满等静默 */ }
+        st._pending = {};
+      },
+      flushNow() { st._lastWrite = 0; st.flushIfDue(); }
+    };
+    return st;
+  }
+
+  /* ---------- WebAudio 程序合成音效（装饰，可关） ---------- */
+  function makeSound(store) {
+    let ac = null;
+    function ctx() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } } return ac; }
+    function tone(f0, f1, dur, type, vol) {
+      const a = ctx(); if (!a) return;
+      const o = a.createOscillator(), gn = a.createGain(), t = a.currentTime;
+      o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(gn).connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+    }
+    return function snd(name) {
+      if (!store.settings.sound) return;
+      if (name === 'tap') tone(660, 440, 0.08, 'square', 0.04);
+      else if (name === 'pop') tone(520, 900, 0.1, 'triangle', 0.08);
+      else if (name === 'ok') { tone(523, 523, 0.12, 'sine', 0.08); setTimeout(() => tone(784, 784, 0.16, 'sine', 0.08), 110); }
+      else if (name === 'bad') tone(220, 110, 0.3, 'sawtooth', 0.06);
+      else if (name === 'star') tone(1046, 1568, 0.18, 'sine', 0.07);
+    };
+  }
+
+  /* ---------- 画布外壳 + 关卡流程（boot 入口） ----------
+   * engineFactory(game) → { startLevel, update(dt), render(g), onDown, onMove, onUp, hudParts? }
+   *   game.cfg / game.W / game.H / game.area（顶栏下方的游戏区矩形）
+   *   game.rng（每关重置的 PRNG）/ game.level
+   *   game.setHud([{t,v}...])（顶栏状态，≤3 组）/ game.toast(text)
+   *   game.win(score, {s2,s3} 或 {stars}) / game.lose(score)
+   * 框架负责：选关/顶栏/结算浮层/星级与进度/事件上报/音效开关。 */
+  function boot(cfg, engineFactory) {
+    const W = 375, H = 667, TOP = 48;
+    const cvs = document.getElementById('cv'), g = cvs.getContext('2d');
+    let scale = 1;
+    function fit() {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const s = Math.min(vw / W, vh / H), dpr = clamp(window.devicePixelRatio || 1, 1, 3);
+      cvs.style.width = (W * s) + 'px'; cvs.style.height = (H * s) + 'px';
+      cvs.width = Math.round(W * s * dpr); cvs.height = Math.round(H * s * dpr);
+      scale = s * dpr;
+    }
+    function toXY(e) { const r = cvs.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
+
+    const store = makeStore(cfg.slug); store.load(cfg.levels);
+    const report = makeReporter(cfg.slug, store);
+    const snd = makeSound(store);
+
+    /* --- 会话与关卡状态 --- */
+    let screen = 'home';            // home | play
+    let engine = null, curLevel = 1, hudParts = [], toast = { text: '', t: 0 };
+    let result = null;              // {level,win,score,stars,next:boolean,all:boolean}
+    let session = null;             // {score, t0} → end 事件
+    let homeScroll = 0, gridMode = false, dragFrom = null;
+    let animT = 0;
+
+    report('boot', { slug: cfg.slug, version: cfg.version, specVersion: cfg.specVersion });
+
+    /* --- UI 帮助 --- */
+    function btn(r, label, cb) { // 命中检测+绘制合一（当前帧绘制时命中测试由 down 处理器完成）
+      g.fillStyle = '#3b4a6b'; roundRect(g, r.x, r.y, r.w, r.h, r.h / 2); g.fill();
+      g.fillStyle = '#e8ecf3'; g.font = FONT(16, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1);
+      hitButtons.push({ r, cb });
+    }
+    let hitButtons = [];
+    function drawStars(x, y, n, size) {
+      for (let i = 0; i < 3; i++) {
+        g.fillStyle = i < n ? '#ffd166' : '#3a4358'; g.font = FONT(size, 700); g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.fillText('★', x + i * (size + 2), y);
+      }
+    }
+    function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : '' + Math.floor(n); }
+
+    /* --- 关卡流程（事件词表 §5.3） --- */
+    function startLevel(L) {
+      curLevel = L; screen = 'play'; result = null; hudParts = []; levelT0 = performance.now();
+      if (!session) session = { score: 0, t0: performance.now() };
+      engine = engineFactory({
+        W, H, cfg, level: L,
+        area: { x: 0, y: TOP, w: W, h: H - TOP },
+        rng: mulberry32(fnv1a32(`${cfg.slug}#${L}`)),
+        setHud: (p) => { hudParts = p.slice(0, 3); },
+        toast: (t) => { toast = { text: t, t: 1.4 }; },
+        win: (score, opt) => finish(true, score, opt),
+        lose: (score) => finish(false, score, {}),
+      });
+      engine.startLevel();
+      report('start', { level: L });
+      snd('tap');
+    }
+    function finish(win, score, opt) {
+      if (result) return;                                     // 双保险：结算后不再重复判局
+      let stars = 0;
+      if (win) stars = opt.stars != null ? opt.stars : 1 + (score >= opt.s2 ? 1 : 0) + (score >= opt.s3 ? 1 : 0);
+      const durMs = Math.round(performance.now() - levelT0);
+      session.score += score;
+      const all = win && curLevel >= cfg.levels;
+      result = { level: curLevel, win, score, stars, all, t: 0 };
+      if (win) {                                              // 进度只升不降（§3.2）
+        const p = store.progress;
+        p.unlocked = Math.max(p.unlocked, Math.min(cfg.levels, curLevel + 1));
+        p.best = Math.max(p.best, curLevel);
+        p.stars[curLevel - 1] = Math.max(p.stars[curLevel - 1] || 0, stars);
+        store.mark('progress');
+      }
+      report('levelEnd', { level: curLevel, win, score, stars, durMs });
+      if (all) { report('end', { reason: 'allClear', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) }); session = null; }
+      snd(win ? 'ok' : 'bad');
+    }
+    let levelT0 = performance.now();
+
+    function goHome() {
+      if (screen === 'play' && session) {                     // 退出会话 → quit
+        report('end', { reason: 'quit', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) });
+        session = null;
+      }
+      screen = 'home'; result = null; engine = null; store.flushNow();
+    }
+
+    /* --- 输入路由 --- */
+    cvs.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); cvs.setPointerCapture && cvs.setPointerCapture(e.pointerId);
+      const p = toXY(e);
+      if (screen === 'play' && !result && engine) { engine.onDown(p.x, p.y); }
+      dragFrom = { ...p, scroll: homeScroll, moved: false };
+    });
+    cvs.addEventListener('pointermove', (e) => {
+      const p = toXY(e);
+      if (screen === 'play' && !result && engine) engine.onMove(p.x, p.y);
+      if (dragFrom && screen === 'home' && gridMode) {
+        const dy = p.y - dragFrom.y;
+        if (Math.abs(dy) > 6) { dragFrom.moved = true; homeScroll = clamp(dragFrom.scroll + dy, 0, 1e5); }
+      }
+    });
+    const upHandler = (e) => {
+      const p = toXY(e);
+      const wasDrag = dragFrom && dragFrom.moved; dragFrom = null;
+      if (wasDrag) return;
+      /* 结算浮层按钮 */
+      if (result) { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
+      if (screen === 'home') { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
+      if (engine) engine.onUp(p.x, p.y);
+    };
+    cvs.addEventListener('pointerup', upHandler);
+    cvs.addEventListener('pointercancel', upHandler);
+    function hit(r, p) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+
+    /* --- 崩溃恢复：页面隐藏/关闭前 flush（§5.2） --- */
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') store.flushNow(); });
+    window.addEventListener('pagehide', () => store.flushNow());
+    window.addEventListener('beforeunload', () => store.flushNow());
+
+    /* --- 主循环 --- */
+    let last = performance.now();
+    function frame(t) {
+      const dt = clamp((t - last) / 1000, 0, 0.05); last = t; animT += dt;
+      store.flushIfDue();
+      hitButtons = [];
+      g.setTransform(scale, 0, 0, scale, 0, 0);
+      g.fillStyle = '#101522'; g.fillRect(0, 0, W, H);
+      if (screen === 'home') drawHome();
+      else drawPlay(dt);
+      requestAnimationFrame(frame);
+    }
+
+    function drawHome() {
+      const p = store.progress;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#e8ecf3'; g.font = FONT(30, 800); g.fillText(cfg.title, W / 2, 92);
+      g.fillStyle = '#8b94a7'; g.font = FONT(14, 400);
+      g.fillText(`${TIER_CN[cfg.tier] || cfg.tier} · ${cfg.levels} 关 · ${cfg.controls.primary}`, W / 2, 124);
+      const next = Math.min(p.unlocked, cfg.levels);
+      if (!gridMode) {
+        btn({ x: 57, y: 210, w: 261, h: 64 }, p.best ? `继续 · 第 ${next} 关` : `开始 · 第 1 关`, () => startLevel(next));
+        btn({ x: 57, y: 290, w: 261, h: 52 }, '选关', () => { gridMode = true; homeScroll = 0; });
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400);
+        g.fillText(`最高通关 ${p.best} / ${cfg.levels}`, W / 2, 372);
+      } else {
+        g.save(); g.beginPath(); g.rect(0, 150, W, H - 210); g.clip();
+        g.translate(0, -homeScroll);
+        const cols = 5, cw = 58, ch = 46, x0 = (W - cols * cw - (cols - 1) * 8) / 2;
+        for (let i = 0; i < cfg.levels; i++) {
+          const L = i + 1, r = { x: x0 + (i % cols) * (cw + 8), y: 160 + Math.floor(i / cols) * (ch + 14), w: cw, h: ch };
+          const un = L <= p.unlocked;
+          g.fillStyle = un ? '#2c3a5c' : '#1a2133'; roundRect(g, r.x, r.y, r.w, r.h, 10); g.fill();
+          if (L === p.unlocked) { g.strokeStyle = '#6ea8ff'; g.lineWidth = 2; roundRect(g, r.x, r.y, r.w, r.h, 10); g.stroke(); }
+          g.fillStyle = un ? '#e8ecf3' : '#3a4358'; g.font = FONT(15, 600);
+          g.fillText('' + L, r.x + r.w / 2, r.y + 16);
+          g.font = FONT(11, 400);
+          g.fillStyle = ['#3a4358', '#ffd166', '#ffd166', '#ffd166'][(p.stars[i] || 0)];
+          g.fillText('★'.repeat(p.stars[i] || 0) || '·', r.x + r.w / 2, r.y + 33);
+          if (un) hitButtons.push({ r, cb: () => startLevel(L) });
+        }
+        const maxY = 160 + Math.ceil(cfg.levels / cols) * (ch + 14);
+        homeScroll = clamp(homeScroll, 0, Math.max(0, maxY - (H - 70)));
+        g.restore();
+        btn({ x: 57, y: H - 58, w: 261, h: 44 }, '返回', () => { gridMode = false; });
+      }
+      /* 音效开关（右上，状态区） */
+      const sr = { x: W - 56, y: 26, w: 40, h: 40 };
+      g.fillStyle = '#2c3a5c'; roundRect(g, sr.x, sr.y, sr.w, sr.h, 12); g.fill();
+      g.fillStyle = store.settings.sound ? '#ffd166' : '#5b6478'; g.font = FONT(18, 600);
+      g.fillText(store.settings.sound ? '♪' : '×', sr.x + 20, sr.y + 21);
+      hitButtons.push({ r: sr, cb: () => { store.settings.sound = !store.settings.sound; store.mark('settings'); snd('tap'); } });
+      g.fillStyle = '#3a4358'; g.font = FONT(11, 400); g.fillText(`${cfg.slug} v${cfg.version}`, W / 2, H - 16);
+    }
+
+    function drawPlay(dt) {
+      if (engine) { engine.update(dt); engine.render(g); }
+      /* 顶栏（状态区，§5.5） */
+      g.fillStyle = '#151b2eee'; g.fillRect(0, 0, W, TOP);
+      g.strokeStyle = '#232c42'; g.beginPath(); g.moveTo(0, TOP - .5); g.lineTo(W, TOP - .5); g.stroke();
+      const back = { x: 8, y: 8, w: 44, h: 32 };
+      g.fillStyle = '#2c3a5c'; roundRect(g, back.x, back.y, back.w, back.h, 8); g.fill();
+      g.fillStyle = '#e8ecf3'; g.font = FONT(14, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('‹', back.x + 22, back.y + 17);
+      hitButtons.push({ r: back, cb: goHome });
+      g.textAlign = 'left'; g.font = FONT(12, 500); g.fillStyle = '#8b94a7';
+      let x = 64; g.fillText('第' + curLevel + '关', x, TOP / 2); x += 46;
+      g.textAlign = 'center'; g.font = FONT(13, 700); g.fillStyle = '#e8ecf3';
+      if (hudParts.length === 1) g.fillText(hudParts[0].t + ' ' + fmt(hudParts[0].v), (x + W) / 2, TOP / 2);
+      else if (hudParts.length === 2) {
+        g.textAlign = 'left';
+        g.fillText(hudParts[0].t, x + 6, TOP / 2 - 8); g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[0].v), x + 6, TOP / 2 + 9);
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 500); g.fillText(hudParts[1].t, W / 2 + 24, TOP / 2 - 8);
+        g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[1].v), W / 2 + 24, TOP / 2 + 9);
+      }
+      /* toast */
+      if (toast.t > 0) {
+        toast.t -= dt;
+        g.globalAlpha = clamp(toast.t / 0.4, 0, 1) * .92;
+        g.fillStyle = '#0b0e14'; g.fillRect(0, TOP + 90, W, 40);
+        g.fillStyle = '#ffd166'; g.font = FONT(15, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(toast.text, W / 2, TOP + 110); g.globalAlpha = 1;
+      }
+      /* 结算浮层 */
+      if (result) {
+        result.t += dt;
+        g.fillStyle = 'rgba(11,14,20,.82)'; g.fillRect(0, 0, W, H);
+        const cy = 208, cw2 = 295, ch2 = 250, cx = (W - cw2) / 2;
+        g.fillStyle = '#1a2133'; roundRect(g, cx, cy, cw2, ch2, 18); g.fill();
+        g.strokeStyle = '#2c3a5c'; g.lineWidth = 1.5; roundRect(g, cx, cy, cw2, ch2, 18); g.stroke();
+        g.textAlign = 'center';
+        g.fillStyle = result.win ? '#7bd88f' : '#ff8fa3'; g.font = FONT(21, 800);
+        g.fillText(result.all ? '全部通关！' : result.win ? '第 ' + result.level + ' 关 通过' : '第 ' + result.level + ' 关 失败', W / 2, cy + 44);
+        drawStars(W / 2 - 36, cy + 84, result.stars, 26);
+        g.fillStyle = '#e8ecf3'; g.font = FONT(38, 800); g.fillText(fmt(result.score), W / 2, cy + 130);
+        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400); g.fillText('得分', W / 2, cy + 154);
+        const bw = 118, bh = 48, gap = 14, bx = (W - bw * 2 - gap) / 2;
+        btn({ x: bx, y: cy + 178, w: bw, h: bh }, '重试', () => startLevel(result.level));
+        if (result.win && !result.all) btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '下一关', () => startLevel(result.level + 1));
+        else btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '首页', goHome);
+      }
+    }
+
+    fit(); window.addEventListener('resize', fit);
+    requestAnimationFrame(frame);
+  }
+
+  return { fnv1a32, mulberry32, clamp, lerp, swipeDir, roundRect, FONT, TIER_CN, boot };
+})();
+
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * 迷宫冲刺引擎（spec §28）：递归回溯法由 seed 生成完美迷宫（唯一解），再拆
+ * q=⌊size²×0.05⌋ 面墙制造环路；后段带钥匙与视野迷雾；限时集齐钥匙到出口即胜，超时即败。
+ * 曲线：size(L)=min(sizeN+4, sizeN+⌊4p⌋)——本实现取 +2⌊2p⌋ 保持 schema"奇数"不变式（同包络）；
+ *       keys(L)=min(keysCap, ⌊3p⌋)；time(L)=ceil(bfsPathLen×timeFactor/speed)；speed 常量 4.0。
+ * 生成（§28）：钥匙放在 BFS 深度前 60% 的死端格（不足则放宽到全部死端）。
+ * 计分：score=剩余秒×20+钥匙×50；s2=12×time(L)，s3=15×time(L)。
+ * 交互（§28 单手映射）：滑动定向前进至下一个岔口（格吸附，免连滑）；顶部剩余时间条。
+ * ===================================================================== */
+const MazeDashEngine = (function () {
+  const DIRV = { u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] };
+  const STEP = 1 / 120;
+
+  return function (game) {
+    const { cfg, rng, area } = game;
+    const t = Object.assign({ sizeN: 11, timeFactor: 1.7, speed: 4.0, keysCap: 2, fogR: 0 }, cfg.typeExtra);
+    const n = cfg.levels, L = game.level, p = (L - 1) / (n - 1);
+    const size = Math.min(t.sizeN + 4, t.sizeN + 2 * Math.floor(2 * p));   // 奇偶不变式（schema 注）
+    const keysN = Math.min(t.keysCap, Math.floor(3 * p));
+
+    /* --- 墙表示：hwal[y][x] 竖立于 (x,y)-(x+1,y)；vwal[y][x] 竖立于 (x,y)-(x,y+1) --- */
+    const hwal = [], vwal = [];
+    for (let y = 0; y < size; y++) { hwal.push(new Array(Math.max(0, size - 1)).fill(true)); vwal.push(new Array(Math.max(0, size - 1)).fill(true)); }
+    function open(x, y, d) {
+      const vx = x + DIRV[d][0], vy = y + DIRV[d][1];
+      if (vx < 0 || vy < 0 || vx >= size || vy >= size) return false;
+      if (d === 'l') return !hwal[y][x - 1];
+      if (d === 'r') return !hwal[y][x];
+      if (d === 'u') return !vwal[y - 1][x];
+      return !vwal[y][x];
+    }
+    function carve(x, y, d) {
+      if (d === 'l') hwal[y][x - 1] = false;
+      else if (d === 'r') hwal[y][x] = false;
+      else if (d === 'u') vwal[y - 1][x] = false;
+      else vwal[y][x] = false;
+    }
+    /* --- 递归回溯（迭代栈，邻序 seed 洗牌）→ 完美迷宫 --- */
+    {
+      const seen = new Uint8Array(size * size);
+      const stack = [[0, 0]];
+      seen[0] = 1;
+      while (stack.length) {
+        const [x, y] = stack[stack.length - 1];
+        const cand = ['u', 'd', 'l', 'r'].filter(d => {
+          const nx = x + DIRV[d][0], ny = y + DIRV[d][1];
+          return nx >= 0 && ny >= 0 && nx < size && ny < size && !seen[ny * size + nx];
+        });
+        if (!cand.length) { stack.pop(); continue; }
+        for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp; }
+        const d = cand[0];
+        carve(x, y, d);
+        const nx = x + DIRV[d][0], ny = y + DIRV[d][1];
+        seen[ny * size + nx] = 1;
+        stack.push([nx, ny]);
+      }
+    }
+    /* --- 拆 q 面墙造环路（§28） --- */
+    {
+      const walls = [];
+      for (let y = 0; y < size; y++) for (let x = 0; x < size - 1; x++) if (hwal[y][x]) walls.push(['h', x, y]);
+      for (let y = 0; y < size - 1; y++) for (let x = 0; x < size; x++) if (vwal[y][x]) walls.push(['v', x, y]);
+      for (let i = walls.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = walls[i]; walls[i] = walls[j]; walls[j] = tmp; }
+      const q = Math.floor(size * size * 0.05);
+      for (let i = 0; i < Math.min(q, walls.length); i++) {
+        const [w, x, y] = walls[i];
+        if (w === 'h') hwal[y][x] = false; else vwal[y][x] = false;
+      }
+    }
+    /* --- BFS（起点→全图距离 / 死端 / 钥匙 / 时限基准） --- */
+    const dist = new Int32Array(size * size).fill(-1);
+    dist[0] = 0;
+    {
+      const q = [[0, 0]];
+      for (let qi = 0; qi < q.length; qi++) {
+        const [x, y] = q[qi];
+        for (const d of 'udlr') {
+          if (!open(x, y, d)) continue;
+          const nx = x + DIRV[d][0], ny = y + DIRV[d][1], k = ny * size + nx;
+          if (dist[k] === -1) { dist[k] = dist[y * size + x] + 1; q.push([nx, ny]); }
+        }
+      }
+    }
+    const exitCell = [size - 1, size - 1];
+    const bfsLen = dist[(size - 1) * size + (size - 1)];
+    const degree = (x, y) => 'udlr'.split('').filter(d => open(x, y, d)).length;
+    const keys = new Set();
+    {
+      const deadEnds = [];
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        if ((x === 0 && y === 0) || (x === size - 1 && y === size - 1)) continue;
+        if (degree(x, y) === 1) deadEnds.push([x, y]);
+      }
+      let band = deadEnds.filter(c => dist[c[1] * size + c[0]] <= 0.6 * bfsLen);
+      if (band.length < keysN) band = deadEnds;            // 带内不足放宽（§28 意图内的兜底）
+      for (let i = band.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = band[i]; band[i] = band[j]; band[j] = tmp; }
+      for (let i = 0; i < Math.min(keysN, band.length); i++) keys.add(band[i][1] * size + band[i][0]);
+    }
+    /* 时限基准（裁量）：spec 的 bfsPathLen 取"经全部钥匙的强制路线最短路"——
+     * 钥匙在死端格，纯起→终最短路会让高 keys 档超出 timeFactor 余量而不可赢；
+     * keysCap ≤ 3 → 全排列精确解（≤6 组 BFS 距离拼和）。keys=0 时退化为纯最短路（公式原样）。 */
+    function bfsDist(from, to) {
+      if (from[0] === to[0] && from[1] === to[1]) return 0;
+      const d = new Int32Array(size * size).fill(-1);
+      d[from[1] * size + from[0]] = 0;
+      const q = [from];
+      for (let qi = 0; qi < q.length; qi++) {
+        const [x, y] = q[qi];
+        for (const dd of 'udlr') {
+          if (!open(x, y, dd)) continue;
+          const nx = x + DIRV[dd][0], ny = y + DIRV[dd][1], k = ny * size + nx;
+          if (d[k] === -1) { d[k] = d[y * size + x] + 1; if (nx === to[0] && ny === to[1]) return d[k]; q.push([nx, ny]); }
+        }
+      }
+      return -1;
+    }
+    let routeLen = bfsLen;
+    {
+      const keyCells = [...keys].map(k => [k % size, (k / size) | 0]);
+      if (keyCells.length) {
+        const start = [0, 0];
+        let best = Infinity;
+        const swap = (a, i, j) => { const b = a.slice(); const tmp = b[i]; b[i] = b[j]; b[j] = tmp; return b; }
+        const permute = (arr, m) => {
+          if (m === 1) {
+            let total = 0, cur = start;
+            for (const wp of [...arr, exitCell]) { total += bfsDist(cur, wp); cur = wp; }
+            if (total < best) best = total;
+            return;
+          }
+          for (let i = 0; i < m; i++) permute(swap(arr, i, m - 1), m - 1);
+        };
+        permute(keyCells, keyCells.length);
+        routeLen = best;
+      }
+    }
+    const time = Math.max(1, Math.ceil(routeLen * t.timeFactor / t.speed));
+
+    /* --- 玩家：格吸附自动奔跑至岔口 --- */
+    let cx = 0, cy = 0, path = [], prog = 0, pending = null;
+    let keysGot = 0, timeLeft = time, score = 0, done = false, down = null;
+
+    const moving = () => path.length > 0;
+    function launch(d) {
+      if (done || moving()) return;
+      const nx = cx + DIRV[d][0], ny = cy + DIRV[d][1];
+      if (!open(cx, cy, d)) { game.toast('此路不通'); return; }
+      path = [[nx, ny]];
+      prog = 0;
+      extendFrom(nx, ny, cx, cy);
+    }
+    /** 从 (x,y) 沿来向直进到岔口或墙前（岔口=度 ≥3，进入即停，§28 免连滑）；
+     *  (fx,fy)=来向格——直进不折返（含起点方向），保证"滑动一次跑一整段"语义 */
+    function extendFrom(x, y, fx, fy) {
+      let px = x, py = y, fromX = fx, fromY = fy;
+      for (let hop = 0; hop < size * size; hop++) {
+        if (degree(px, py) >= 3) return;                   // 岔口：停在进入格
+        const next = 'udlr'.split('').find(d => {
+          if (!open(px, py, d)) return false;
+          const bx = px + DIRV[d][0], by = py + DIRV[d][1];
+          return !(bx === fromX && by === fromY);          // 不掉头
+        });
+        if (!next) return;                                  // 死端/墙前停
+        fromX = px; fromY = py;
+        px += DIRV[next][0]; py += DIRV[next][1];
+        path.push([px, py]);
+      }
+    }
+    function arrive(x, y) {
+      cx = x; cy = y;
+      if (keys.has(y * size + x)) { keys.delete(y * size + x); keysGot++; game.toast(`钥匙 ${keysGot}/${keysN}`); }
+      if (x === exitCell[0] && y === exitCell[1]) {
+        if (keysGot >= keysN) {                             // 集齐钥匙到达出口（§28）
+          done = true; score = Math.ceil(timeLeft) * 20 + keysGot * 50;
+          game.win(score, { s2: 12 * time, s3: 15 * time });
+        } else game.toast(`还差 ${keysN - keysGot} 把钥匙`);
+      }
+    }
+
+    function step() {
+      if (done) return;
+      timeLeft -= STEP;
+      if (timeLeft <= 0) { done = true; game.lose(score); return; }
+      if (!path.length) return;
+      prog += t.speed * STEP;
+      while (path.length && prog >= 1) {
+        prog -= 1;
+        const [nx, ny] = path.shift();
+        arrive(nx, ny);
+        if (done) return;
+        if (!path.length) { prog = 0; break; }
+        if (pending && open(cx, cy, pending)) {             // 行进中转向：下一格起改向
+          const d = pending; pending = null;
+          const tx = cx + DIRV[d][0], ty = cy + DIRV[d][1];
+          path = [[tx, ty]];
+          extendFrom(tx, ty, cx, cy);
+          break;
+        }
+      }
+      if (!path.length && pending) {                        // 停稳后补执行行进中滑入的方向
+        const d = pending; pending = null;
+        launch(d);
+      }
+    }
+
+    /* --- 渲染布局 --- */
+    const cell = Math.floor(Math.min((area.w - 16) / size, (area.h - 30) / size));
+    const mx = (area.w - cell * size) / 2, my = area.y + 22;
+    const cxOf = (x) => mx + (x + 0.5) * cell;
+    const cyOf = (y) => my + (y + 0.5) * cell;
+
+    return {
+      startLevel() { game.setHud([{ t: `/${time}秒`, v: time }, { t: '钥匙', v: `0/${keysN}` }, { t: '格', v: size }]); },
+      update(dt) {
+        let acc = dt;
+        while (acc >= STEP) { acc -= STEP; step(); if (done) break; }
+        game.setHud([
+          { t: `/${time}秒`, v: Math.ceil(Math.max(0, timeLeft)) },
+          { t: '钥', v: `${keysGot}/${keysN}` },
+          { t: '边', v: size },
+        ]);
+      },
+      onDown(x, y) { down = { x, y }; },
+      onMove() { },
+      onUp(x, y) {
+        if (!down) return;
+        const d = G.swipeDir(x - down.x, y - down.y);
+        down = null;
+        if (!d) return;
+        if (moving()) pending = d;
+        else launch(d);
+      },
+      render(g) {
+        /* 顶部剩余时间条（§28） */
+        const tr = G.clamp(timeLeft / time, 0, 1);
+        g.fillStyle = '#1a2133'; g.fillRect(20, area.y + 6, area.w - 40, 4);
+        g.fillStyle = tr > 0.25 ? '#7bd88f' : '#ff8fa3'; g.fillRect(20, area.y + 6, (area.w - 40) * tr, 4);
+        /* 墙 */
+        g.strokeStyle = '#3b4a6b'; g.lineWidth = 2; g.lineCap = 'round';
+        g.strokeRect(mx, my, cell * size, cell * size);
+        for (let y = 0; y < size; y++) for (let x = 0; x < size - 1; x++) {
+          if (!hwal[y][x]) continue;
+          g.beginPath(); g.moveTo(mx + (x + 1) * cell, my + y * cell); g.lineTo(mx + (x + 1) * cell, my + (y + 1) * cell); g.stroke();
+        }
+        for (let y = 0; y < size - 1; y++) for (let x = 0; x < size; x++) {
+          if (!vwal[y][x]) continue;
+          g.beginPath(); g.moveTo(mx + x * cell, my + (y + 1) * cell); g.lineTo(mx + (x + 1) * cell, my + (y + 1) * cell); g.stroke();
+        }
+        /* 起点 / 出口 / 钥匙 */
+        g.fillStyle = '#6ea8ff'; g.font = G.FONT(11, 700); g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText('S', cxOf(0), cyOf(0));
+        g.fillStyle = '#7bd88f'; G.roundRect(g, cxOf(exitCell[0]) - cell * 0.36, cyOf(exitCell[1]) - cell * 0.36, cell * 0.72, cell * 0.72, 4); g.fill();
+        g.fillStyle = '#101522'; g.fillText('E', cxOf(exitCell[0]), cyOf(exitCell[1]));
+        g.fillStyle = '#ffd166';
+        keys.forEach(k => {
+          const x = k % size, y = (k / size) | 0;
+          g.save(); g.translate(cxOf(x), cyOf(y));
+          g.beginPath(); g.arc(0, -2, 3.2, Math.PI, 0); g.lineTo(4.5, 2); g.lineTo(2, 2); g.lineTo(2, 6); g.lineTo(-2, 6); g.lineTo(-2, 2); g.lineTo(-4.5, 2); g.closePath(); g.fill();
+          g.restore();
+        });
+        /* 玩家（格间插值） */
+        let fx = cxOf(cx), fy = cyOf(cy);
+        if (path.length) {
+          const [nx, ny] = path[0];
+          fx = G.lerp(cxOf(cx), cxOf(nx), G.clamp(prog, 0, 1));
+          fy = G.lerp(cyOf(cy), cyOf(ny), G.clamp(prog, 0, 1));
+        }
+        g.beginPath(); g.arc(fx, fy, Math.max(4, cell * 0.3), 0, 7);
+        g.fillStyle = '#ffd166'; g.fill();
+        g.strokeStyle = '#101522'; g.lineWidth = 2; g.stroke();
+        /* 迷雾（fogR>0 档：半径外遮蔽，§28 后段视野雾） */
+        if (t.fogR > 0) {
+          const r = t.fogR * cell;
+          const grad = g.createRadialGradient(fx, fy, r * 0.55, fx, fy, r);
+          grad.addColorStop(0, 'rgba(11,14,20,0)');
+          grad.addColorStop(1, 'rgba(11,14,20,0.94)');
+          g.fillStyle = grad;
+          g.fillRect(0, area.y, area.w, area.h);
+        }
+      },
+      __state() {
+        return {
+          size, keysN, bfsLen, routeLen, time, fogR: t.fogR, timeFactor: t.timeFactor,
+          hwal: hwal.map(r => r.map(v => v ? 1 : 0).join('')).join('|'),
+          vwal: vwal.map(r => r.map(v => v ? 1 : 0).join('')).join('|'),
+          keys: [...keys].sort((a, b) => a - b),
+          cx, cy, path: path.map(c => c.join(',')), prog: +prog.toFixed(3), pending,
+          keysGot, timeLeft: +timeLeft.toFixed(2), score, done,
+        };
+      },
+    };
+  };
+})();
+
+</script>
+<script>
+G.boot(CONFIG, MazeDashEngine);
+</script>
+</body>
+</html>

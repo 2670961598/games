@@ -1,0 +1,30 @@
+{
+  "slug": "block-drop-cascade-03",
+  "title": "落块消行 03",
+  "type": "block-drop",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 300,
+  "scoring": {
+    "win": "消行 ≥ lines(L)",
+    "lose": "堆顶（新块无处生成）",
+    "s2": "150×lines(L)",
+    "s3": "220×lines(L)"
+  },
+  "description": "滑动操作的方块下落：左右移、上滑/点按旋转、下滑软降、快滑硬降，消行达标即胜（简单档）",
+  "typeExtra": {
+    "dropMs": 960,
+    "wellW": 10,
+    "garbageBase": 3,
+    "nextN": 3,
+    "linesFactor": 0.9
+  }
+}

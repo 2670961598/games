@@ -1,0 +1,28 @@
+{
+  "slug": "snake-meander-02",
+  "title": "贪吃灵蛇 02",
+  "type": "snake",
+  "tier": "relaxed",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any"
+  },
+  "avgDurationSec": 180,
+  "scoring": {
+    "win": "长度 ≥ targetLen(L)",
+    "lose": "撞身/撞石/撞墙(solid)",
+    "s2": "24×targetLen(L)",
+    "s3": "30×targetLen(L)"
+  },
+  "description": "滑动转向的网格贪吃蛇，吃食物长身体，避开石块撞界，长度达标即胜（轻松档）",
+  "typeExtra": {
+    "speed": 4.2,
+    "targetLenBase": 11,
+    "obstacleBase": 4,
+    "wall": "wrap"
+  }
+}

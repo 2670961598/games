@@ -1,0 +1,30 @@
+{
+  "slug": "stacker-calm-03",
+  "title": "静心叠塔 03",
+  "type": "stacker",
+  "tier": "simple",
+  "levels": 30,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap"
+  },
+  "avgDurationSec": 180,
+  "scoring": {
+    "win": "塔高 ≥ target(L)",
+    "lose": "missMax 耗尽或裁后块宽 < trimMin",
+    "s2": "target(L)×12",
+    "s3": "target(L)×15"
+  },
+  "description": "方块左右摆动，点按落块逐层上叠，完美对齐回涨宽度，塔高达标即胜（简单档）",
+  "typeExtra": {
+    "blockW0": 260,
+    "swingBase": 136,
+    "swingK": 0.8,
+    "trimMin": 12,
+    "missMax": 6,
+    "targetBase": 16
+  }
+}
