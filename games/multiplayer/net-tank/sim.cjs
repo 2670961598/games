@@ -105,6 +105,12 @@
 
   const solid = (walls, c, r) => (c < 0 || r < 0 || c >= COLS || r >= ROWS) ? true : walls[r].charCodeAt(c) === 49;
 
+  /** 顺墙推挤（复用轴碰撞）：给坦克一个位移，被墙挡住则停在墙前 */
+  function tryPush(walls, t, dx, dy) {
+    moveX(walls, t, dx)
+    moveY(walls, t, dy)
+  }
+
   /* ---------- 初始态 ---------- */
   function create(seed, opts) {
     const maxTicks = (opts && opts.maxTicks) || MAX_TICKS;
@@ -178,49 +184,87 @@
       const inp = inputs[t.seat] || { mx: 0, my: 0, fire: 0 };
       const { vx, vy, nx, ny } = velocity(inp.mx, inp.my);
       t.lvx = vx; t.lvy = vy;
+      const px0 = t.x, py0 = t.y;
       moveX(walls, t, vx);
       moveY(walls, t, vy);
+      // 防卡死账本（确定性）：有力输出但位移 <2px 记 1 tick 卡死，brain 据此脱困
+      const movedSq = (t.x - px0) * (t.x - px0) + (t.y - py0) * (t.y - py0);
+      if (nx * nx + ny * ny > 900 && movedSq < 4000000) t.sx = (t.sx || 0) < 99 ? t.sx + 1 : t.sx;
+      else t.sx = 0;
       if (nx !== 0 || ny !== 0) { t.fx = nx; t.fy = ny; }
       if (t.cool > 0) t.cool--;
       if (inp.fire && t.cool === 0) {
         const fl = Math.sqrt(t.fx * t.fx + t.fy * t.fy) || 1;
         const s = BSPEED_M / fl;
         const dx = Math.trunc(t.fx * s), dy = Math.trunc(t.fy * s);
-        bullets.push({ x: t.x + Math.trunc(t.fx * 12), y: t.y + Math.trunc(t.fy * 12), dx, dy, team: t.team, by: t.seat, life: LIFE });
+        bullets.push({ x: t.x + Math.trunc(t.fx * 120), y: t.y + Math.trunc(t.fy * 120), dx, dy, team: t.team, by: t.seat, life: LIFE });
         t.cool = COOLDOWN;
         ev.push({ k: 'shot', seat: t.seat });
       }
     }
 
-    // 2) 子弹推进（数组序稳定，filter 保序）
+    // 1.5) 坦克实体分离（不可互穿——防对穿振荡导致的"贴脸永不开火"；席位对序推挤，确定性）
+    for (let i = 0; i < tanks.length; i++) {
+      const a = tanks[i]
+      if (!a.alive) continue
+      for (let j = i + 1; j < tanks.length; j++) {
+        const b = tanks[j]
+        if (!b.alive) continue
+        const ddx = b.x - a.x, ddy = b.y - a.y
+        const ox = 2 * HALF_M - (ddx < 0 ? -ddx : ddx)
+        const oy = 2 * HALF_M - (ddy < 0 ? -ddy : ddy)
+        if (ox <= 0 || oy <= 0) continue
+        if (ox < oy) {
+          const s = ddx >= 0 ? 1 : -1
+          const half = (ox / 2) | 0
+          tryPush(walls, a, -s * (ox - half), 0)
+          tryPush(walls, b, s * half, 0)
+        } else {
+          const s = ddy >= 0 ? 1 : -1
+          const half = (oy / 2) | 0
+          tryPush(walls, a, 0, -s * (oy - half))
+          tryPush(walls, b, 0, s * half)
+        }
+      }
+    }
+
+    // 2) 子弹推进（数组序稳定，filter 保序）。子步推进：单步 32px 会隧穿 20px 外目标/薄墙，
+    //    定长 4 子步（8px/步，整数插值）——命中判定盒 26px、墙格 25px，均不可跳过
+    const SUB = 4;
     const live = [];
     for (let i = 0; i < bullets.length; i++) {
       const b = bullets[i];
-      b.x += b.dx; b.y += b.dy;
-      if (--b.life <= 0) continue;
-      const c0 = Math.floor((b.x - BHALF_M) / CELL_M), c1 = Math.floor((b.x + BHALF_M) / CELL_M);
-      const r0 = Math.floor((b.y - BHALF_M) / CELL_M), r1 = Math.floor((b.y + BHALF_M) / CELL_M);
-      if (solid(walls, c0, r0) || solid(walls, c1, r0) || solid(walls, c0, r1) || solid(walls, c1, r1)) continue;
-      let hit = -1;
-      for (let j = 0; j < tanks.length; j++) {
-        const t = tanks[j];
-        if (!t.alive || t.team === b.team) continue; // 无友伤
-        const dx = b.x - t.x, dy = b.y - t.y;
-        if (dx < 0 ? -dx < HALF_M + BHALF_M : dx < HALF_M + BHALF_M) {
-          if (dy < 0 ? -dy < HALF_M + BHALF_M : dy < HALF_M + BHALF_M) { hit = j; break; }
+      const bx0 = b.x, by0 = b.y;
+      let dead = false;
+      for (let k = 1; k <= SUB && !dead; k++) {
+        b.x = bx0 + Math.trunc(b.dx * k / SUB);
+        b.y = by0 + Math.trunc(b.dy * k / SUB);
+        const c0 = Math.floor((b.x - BHALF_M) / CELL_M), c1 = Math.floor((b.x + BHALF_M) / CELL_M);
+        const r0 = Math.floor((b.y - BHALF_M) / CELL_M), r1 = Math.floor((b.y + BHALF_M) / CELL_M);
+        if (solid(walls, c0, r0) || solid(walls, c1, r0) || solid(walls, c0, r1) || solid(walls, c1, r1)) { dead = true; break; }
+        let hit = -1;
+        for (let j = 0; j < tanks.length; j++) {
+          const t = tanks[j];
+          if (!t.alive || t.team === b.team) continue; // 无友伤
+          const ddx = b.x - t.x, ddy = b.y - t.y;
+          if (ddx < 0 ? -ddx < HALF_M + BHALF_M : ddx < HALF_M + BHALF_M) {
+            if (ddy < 0 ? -ddy < HALF_M + BHALF_M : ddy < HALF_M + BHALF_M) { hit = j; break; }
+          }
+        }
+        if (hit >= 0) {
+          const t = tanks[hit];
+          t.hp--;
+          ev.push({ k: 'hit', seat: t.seat, by: b.by, hp: t.hp });
+          if (t.hp <= 0) {
+            t.alive = false;
+            state.kills[b.team === 'A' ? 'A' : 'B']++;
+            ev.push({ k: 'die', seat: t.seat, by: b.by });
+          }
+          dead = true;
+          break;
         }
       }
-      if (hit >= 0) {
-        const t = tanks[hit];
-        t.hp--;
-        ev.push({ k: 'hit', seat: t.seat, by: b.by, hp: t.hp });
-        if (t.hp <= 0) {
-          t.alive = false;
-          state.kills[b.team === 'A' ? 'A' : 'B']++;
-          ev.push({ k: 'die', seat: t.seat, by: b.by });
-        }
-        continue;
-      }
+      if (dead || --b.life <= 0) continue;
       live.push(b);
     }
     state.bullets = live;
@@ -250,6 +294,50 @@
    * rng 由调用方持有（服务端每 bot 一个 mulberry32；离线模式客户端自持）。
    * 输出即输入向量，走与真人完全相同的帧通道。
    * ===================================================================== */
+  /** BFS 网格寻路（确定性：固定邻居序/Int16Array 回溯）→ 返回路径第一步格中心 milli-px；不可达/同格返回 null */
+  function bfsNext(walls, fc, fr, tc, tr) {
+    if (fc === tc && fr === tr) return null
+    const start = fr * COLS + fc, goal = tr * COLS + tc
+    const prev = new Int16Array(COLS * ROWS).fill(-1)
+    const seen = new Uint8Array(COLS * ROWS)
+    const q = [start]
+    seen[start] = 1
+    let head = 0, found = false
+    while (head < q.length && !found) {
+      const p = q[head++]
+      if (p === goal) { found = true; break }
+      const r = (p / COLS) | 0, c = p % COLS
+      for (let k = 0; k < 4; k++) { // 固定邻居序：上左下右（确定性纪律）
+        const nc = c + (k === 0 ? 0 : k === 1 ? -1 : k === 2 ? 0 : 1)
+        const nr = r + (k === 0 ? -1 : k === 1 ? 0 : k === 2 ? 1 : 0)
+        if (nc < 0 || nr < 0 || nc >= COLS || nr >= ROWS) continue
+        const i = nr * COLS + nc
+        if (seen[i] || walls[nr].charCodeAt(nc) === 49) continue
+        seen[i] = 1
+        prev[i] = p
+        q.push(i)
+      }
+    }
+    if (!found) return null
+    let cur = goal
+    const first = start
+    let guard = 0
+    while (prev[cur] !== first && prev[cur] !== -1 && guard++ < COLS * ROWS) cur = prev[cur]
+    if (prev[cur] !== first) return null
+    const r = (cur / COLS) | 0, c = cur % COLS
+    return { x: c * CELL_M + (CELL_M >> 1), y: r * CELL_M + (CELL_M >> 1) }
+  }
+
+  /** 视线检查（确定性采样）：两点间每 ~12px 采一点，穿墙返回 false */
+  function los(walls, x0, y0, x1, y1) {
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) / 12000 | 0
+    for (let i = 1; i <= steps; i++) {
+      const x = x0 + ((x1 - x0) / steps * i | 0), y = y0 + ((y1 - y0) / steps * i | 0)
+      if (solid(walls, Math.floor(x / CELL_M), Math.floor(y / CELL_M))) return false
+    }
+    return true
+  }
+
   function nearestEnemy(state, me) {
     let best = null, bd = Infinity; // milli-px 平方距离可达 ~4e11，不可用 1<<30 当上界
     for (let i = 0; i < state.tanks.length; i++) {
@@ -287,7 +375,11 @@
           my = a === 2 ? 100 : a === 3 ? -100 : 0;
         }
       }
-      const fire = target.d < 26000 * 10 && rng() < 0.25 ? 1 : 0; // 260px 内 25% 概率开火
+      // 粗略瞄准门（朝向大致对敌才开火）+ 低弹幕率——休闲档弱在乱逛与低命中，不是射速
+      const fdx = target.t.x - me.x, fdy = target.t.y - me.y;
+      const fl = Math.sqrt(me.fx * me.fx + me.fy * me.fy) || 1;
+      const aim0 = (me.fx / fl) * fdx + (me.fy / fl) * fdy;
+      const fire = target.d < 260000 && aim0 > 0 && rng() < 0.12 ? 1 : 0;
       return { mx, my, fire };
     }
 
@@ -296,9 +388,18 @@
       const dx = target.t.x - me.x, dy = target.t.y - me.y;
       const d = target.d; // milli-px
       let mx = 0, my = 0;
-      if (d > 220000) { mx = clamp100(dx / 2000 | 0); my = clamp100(dy / 2000 | 0); }
-      else if (d < 140000) { mx = clamp100(-dx / 2000 | 0); my = clamp100(-dy / 2000 | 0); }
-      else { // 环绕：切向移动
+      if (d > 220000 || d < 140000) {
+        // 进出距离带：BFS 寻路走向/背向敌人（远则逼近，近则拉开）
+        const sign = d > 220000 ? 1 : -1;
+        const wp = bfsNext(state.walls,
+          Math.floor(me.x / CELL_M), Math.floor(me.y / CELL_M),
+          Math.floor(target.t.x / CELL_M), Math.floor(target.t.y / CELL_M));
+        if (wp && sign > 0) {
+          mx = clamp100((wp.x - me.x) / 2000 | 0); my = clamp100((wp.y - me.y) / 2000 | 0);
+        } else {
+          mx = clamp100(sign * (dx / 2000 | 0)); my = clamp100(sign * (dy / 2000 | 0));
+        }
+      } else { // 环绕：切向移动
         mx = clamp100(-dy / 2000 | 0); my = clamp100(dx / 2000 | 0);
       }
       // 大致朝敌才开火（方向叉积小于阈值）
@@ -306,6 +407,11 @@
       const dot = me.fx * dx + me.fy * dy;
       const aligned = dot > 0 && (cross < 0 ? -cross : cross) < (dot / 2 | 0 ? (dot / 2 | 0) : 1);
       const fire = target.d < 260000 && aligned && rng() < 0.85 ? 1 : 0;
+      if (me.sx >= 3) { // 防卡死：期望方向旋转 90° 蹭出
+        const flip = ((state.tick >> 2) & 1) === 1 ? 1 : -1;
+        const t0 = mx;
+        mx = clamp100(-my * flip); my = clamp100(t0 * flip);
+      }
       return { mx, my, fire };
     }
 
@@ -317,34 +423,60 @@
     const eta = dist / BSPEED_M | 0; // 子弹飞行 tick 数
     const ax = t.x + (t.lvx * eta | 0) - me.x; // 预判点
     const ay = t.y + (t.lvy * eta | 0) - me.y;
-    // 躲避：检查己方来袭子弹（敌队、且弹道将在 2 tick 内经过附近）
+    // 躲避：检查己方来袭子弹（敌队、且弹道将在 2 tick 内经过附近）。
+    // 仅中远距躲避——近战(<40px)站桩对射换血：对弹幕流永躲=永不开火的死循环（平衡教训）
     let dodge = null;
-    for (let i = 0; i < state.bullets.length; i++) {
-      const b = state.bullets[i];
-      if (b.team === me.team) continue;
-      const relx = me.x - b.x, rely = me.y - b.y;
-      const ahead = relx * b.dx + rely * b.dy; // >0 = 朝我来
-      if (ahead <= 0) continue;
-      const bx = b.x + b.dx * 2, by = b.y + b.dy * 2;
-      if ((bx - me.x < 0 ? -(bx - me.x) : bx - me.x) < 60000 && (by - me.y < 0 ? -(by - me.y) : by - me.y) < 60000) {
-        dodge = b; break;
+    if (dist >= 40000) {
+      for (let i = 0; i < state.bullets.length; i++) {
+        const b = state.bullets[i];
+        if (b.team === me.team) continue;
+        const relx = me.x - b.x, rely = me.y - b.y;
+        const ahead = relx * b.dx + rely * b.dy; // >0 = 朝我来
+        if (ahead <= 0) continue;
+        const bx = b.x + b.dx * 2, by = b.y + b.dy * 2;
+        if ((bx - me.x < 0 ? -(bx - me.x) : bx - me.x) < 60000 && (by - me.y < 0 ? -(by - me.y) : by - me.y) < 60000) {
+          dodge = b; break;
+        }
       }
     }
     let mx, my;
-    if (dodge) {
+    if (me.sx >= 3) {
+      // 脱困：沿敌向的垂直方向蹭出凹角，(tick>>2)&1 交替正反（确定性，无随机源）
+      const flip = ((state.tick >> 2) & 1) === 1 ? 1 : -1;
+      const dl = dist || 1;
+      const dirx = Math.trunc(dx / dl * 100), diry = Math.trunc(dy / dl * 100);
+      mx = clamp100(-diry * flip);
+      my = clamp100(dirx * flip);
+    } else if (dodge) {
       // 垂直于弹道方向侧移（代价：暂时丢失瞄准轴——朝向绑定移动方向的 lite 模型）
       mx = clamp100(dodge.dy / 320 | 0); my = clamp100(-dodge.dx / 320 | 0);
+    } else if (dist < 40000) {
+      // 近距对轴：已对准且有视线 → 停车身开火（朝向锁定敌向，杜绝对穿振荡）；
+      // 未对准则逼近——速度按接触距离衰减（贴住即停，防对穿互换振荡）
+      const fl0 = Math.sqrt(me.fx * me.fx + me.fy * me.fy) || 1;
+      const dot0 = (me.fx / fl0) * (dx / (dist || 1)) + (me.fy / fl0) * (dy / (dist || 1));
+      if (dot0 > 0.9 && los(state.walls, me.x, me.y, t.x, t.y)) return { mx: 0, my: 0, fire: 1 };
+      const dl = dist || 1;
+      const f = Math.min(1, Math.max(0, dist - 19000) / 22000);
+      mx = clamp100(Math.trunc(dx / dl * 100 * f));
+      my = clamp100(Math.trunc(dy / dl * 100 * f));
     } else {
-      // 直压预判点：移动方向即朝向 → 边接近边对轴（贴脸 bump 亦保持对轴，换弹互射）
-      mx = clamp100(ax / 2000 | 0); my = clamp100(ay / 2000 | 0);
+      // BFS 寻路压向敌人（移动方向即朝向 → 边走边对轴）；无路（同格/异常）直压预判点
+      const wp = bfsNext(state.walls,
+        Math.floor(me.x / CELL_M), Math.floor(me.y / CELL_M),
+        Math.floor(t.x / CELL_M), Math.floor(t.y / CELL_M));
+      const gx = wp ? wp.x : me.x + ax, gy = wp ? wp.y : me.y + ay;
+      mx = clamp100((gx - me.x) / 2000 | 0);
+      my = clamp100((gy - me.y) / 2000 | 0);
     }
-    // 开火：当前朝向对预判点的偏差 < 8%
+    // 开火：当前朝向对预判点的偏差（贴脸放宽阈值，远距狙击收紧）
     const fl = Math.sqrt(me.fx * me.fx + me.fy * me.fy) || 1;
     const ux = me.fx / fl, uy = me.fy / fl;
     const tl = Math.sqrt(ax * ax + ay * ay) || 1;
     const tx = ax / tl, ty = ay / tl;
     const aimDot = ux * tx + uy * ty;
-    const fire = dist < 300000 && aimDot > 0.92 ? 1 : 0;
+    const aimLine = dist < 80000 ? 0.75 : 0.92;
+    const fire = dist < 300000 && aimDot > aimLine ? 1 : 0;
     return { mx, my, fire };
   }
 

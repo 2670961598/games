@@ -132,7 +132,8 @@
   canvas.addEventListener('touchcancel', endTouch);
   window.addEventListener('keydown', function (e) {
     keys[e.key] = true;
-    if (e.key === ' ') { kbFire = true; markInput(e.timeStamp); e.preventDefault(); }
+    if (e.key === ' ') { kbFire = true; e.preventDefault(); }
+    if ('wasdWASD'.indexOf(e.key) >= 0 || e.key.indexOf('Arrow') === 0 || e.key === ' ') markInput(e.timeStamp);
   });
   window.addEventListener('keyup', function (e) { keys[e.key] = false; if (e.key === ' ') kbFire = false; });
 
@@ -151,6 +152,7 @@
     if (!simState) { drawBoot(); return; }
 
     var alpha = started && !matchOver ? Math.min(1, (now - lastTickAt) / S.META.tickMs) : 1;
+    var cur = started && !matchOver ? currentInput() : { mx: 0, my: 0, fire: 0 };
     ctx.fillStyle = PAGE_BG; ctx.fillRect(0, 0, W, H);
     if (wallLayer) ctx.drawImage(wallLayer, 0, HUD_H, W, FIELD_H);
 
@@ -178,7 +180,14 @@
         continue;
       }
       var col = TEAM_COLOR[t.team];
-      if (t.seat === mySeat) { ctx.strokeStyle = '#e8ecf3'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 13, 0, 7); ctx.stroke(); }
+      if (t.seat === mySeat) {
+        ctx.strokeStyle = '#e8ecf3'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 13, 0, 7); ctx.stroke();
+        // 本地输入预示（表现层，不动 sim 确定性）：10Hz lockstep 下让操纵反馈落在下一渲染帧（<100ms 红线）
+        if (started && !matchOver) {
+          cx += cur.mx / 100 * 11 * alpha;
+          cy += cur.my / 100 * 11 * alpha;
+        }
+      }
       ctx.fillStyle = col;
       ctx.fillRect(cx - 9, cy - 9, 18, 18);
       ctx.fillStyle = 'rgba(11,14,20,.5)';
@@ -400,6 +409,9 @@
     events: [],
     start: function (level, opts) { startOffline(Object.assign({ seedSalt: String(level || 1) }, opts || {})); },
     state: function () { return JSON.parse(JSON.stringify(simState)); },
+    seat: function () { return mySeat; },
+    roomId: function () { return session ? session.roomId : null; },
+    mode: function () { return mode; },
     fps: function () { return fpsV; },
     perf: function () { return { inputMaxMs: Math.round(inputMaxMs), fps: fpsV }; },
   };
