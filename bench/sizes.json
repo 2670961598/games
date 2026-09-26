@@ -1,0 +1,82 @@
+[
+  {
+    "name": "native-tap",
+    "engine": "native",
+    "game": "tap",
+    "vendor": "—",
+    "ownBytes": 25662,
+    "ownGzip": 9720,
+    "glueLines": 135,
+    "sharedLines": 275
+  },
+  {
+    "name": "native-runner",
+    "engine": "native",
+    "game": "runner",
+    "vendor": "—",
+    "ownBytes": 25668,
+    "ownGzip": 9719,
+    "glueLines": 135,
+    "sharedLines": 275
+  },
+  {
+    "name": "phaser3-tap",
+    "engine": "phaser3",
+    "game": "tap",
+    "vendor": "phaser3.min.js",
+    "ownBytes": 30004,
+    "ownGzip": 11151,
+    "glueLines": 228,
+    "sharedLines": 275
+  },
+  {
+    "name": "phaser3-runner",
+    "engine": "phaser3",
+    "game": "runner",
+    "vendor": "phaser3.min.js",
+    "ownBytes": 30010,
+    "ownGzip": 11150,
+    "glueLines": 228,
+    "sharedLines": 275
+  },
+  {
+    "name": "phaser4-tap",
+    "engine": "phaser4",
+    "game": "tap",
+    "vendor": "phaser4.min.js",
+    "ownBytes": 30004,
+    "ownGzip": 11152,
+    "glueLines": 228,
+    "sharedLines": 275
+  },
+  {
+    "name": "phaser4-runner",
+    "engine": "phaser4",
+    "game": "runner",
+    "vendor": "phaser4.min.js",
+    "ownBytes": 30010,
+    "ownGzip": 11151,
+    "glueLines": 228,
+    "sharedLines": 275
+  },
+  {
+    "name": "pixi8-tap",
+    "engine": "pixi8",
+    "game": "tap",
+    "vendor": "pixi8.min.js",
+    "ownBytes": 27814,
+    "ownGzip": 10418,
+    "glueLines": 204,
+    "sharedLines": 275
+  },
+  {
+    "name": "pixi8-runner",
+    "engine": "pixi8",
+    "game": "runner",
+    "vendor": "pixi8.min.js",
+    "ownBytes": 27820,
+    "ownGzip": 10418,
+    "glueLines": 204,
+    "sharedLines": 275
+  }
+]
