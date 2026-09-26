@@ -1,6 +1,10 @@
 'use strict';
 /* =====================================================================
  * 狂点爆发引擎（spec §7）：时限内点够冒出的目标圆点数；点中红色陷阱叉点扣分断连击。
+ * GAMES-30 试点重构（原生基座黄金样本）：判定路径逐字保留（rng 消费序/步长/计分
+ * 与旧版一致——QA 确定性/可赢性断言原样可跑）；表现层按 GAMES-24 §7.2.A 强化：
+ *   A2 命中火花并发上限 MAX_FX（低端机极端积压防护）+ bench 式 8 向确定性火花；
+ *   A1+ 出生弹入动画（bench 蓝本）；零 G./GE. 依赖（任何外壳/vm 桩可驱动）。
  * 曲线：target(L)=ceil(targetBase×(1+0.10p))；time(L)=max(10,round(timeSec×(1−0.15p)))；
  *       size(L)=max(48,round(sizePx×(1−0.10p)))；rate(L)=spawnPerSec×(1+0.20p)（schema k=0.20）；
  *       decoy(L)=decoyRate×(1+0.10p)（schema k=0.10）；p=(L−1)/(Ln−1)。
@@ -17,6 +21,8 @@
 const TapBurstEngine = (function () {
   const T0 = 0.3;              // 首目标出现时刻（秒）
   const STEP = 1 / 120;
+  const MAX_FX = 24;           // §7.2.A.2 命中火花并发上限（超限弃最旧，装饰层不影响判定）
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
   return function (game) {
     const { cfg, rng, area } = game;
@@ -32,10 +38,17 @@ const TapBurstEngine = (function () {
     const bx = area.w * 0.05 + r, bX = area.w * 0.95 - r;
     const by = area.y + area.h * 0.05 + r, bY = area.y + area.h * 0.95 - r;
 
-    /* --- 整场生成时间表（seed；均匀节拍，逐目标掷陷阱附带与落点） --- */
+    /* --- 整场生成时间表（seed；均匀节拍，目标每拍必有，陷阱为额外附带流） ---
+     * 裁量①修复（GAMES-30 E2E 抓出）：旧实现陷阱挤占生成位（decoy 掷中则该拍变陷阱），
+     * master L1 目标数 33×0.88≈29 < target 30 结构性不可赢，与下述文档裁定矛盾；
+     * 现兑现"额外流"原意：每拍必出 1 目标，另掷 decoyRate 附带 1 陷阱（同拍落地，
+     * 位置由 place() 掷点避让）。rng 消费数/拍不变（每拍 4 掷）。 */
     const spawns = [];
     for (let tt = T0; tt < time; tt += 1 / rate) {
-      spawns.push({ t: +tt.toFixed(4), decoy: rng() < decoyRate, x: bx + rng() * (bX - bx), y: by + rng() * (bY - by), hue: Math.floor(rng() * 360) });
+      const decoy = rng() < decoyRate;
+      const x = bx + rng() * (bX - bx), y = by + rng() * (bY - by), hue = Math.floor(rng() * 360);
+      spawns.push({ t: +tt.toFixed(4), decoy: false, x, y, hue });
+      if (decoy) spawns.push({ t: +tt.toFixed(4), decoy: true, x, y, hue });
     }
     let sp = 0;
 
@@ -43,7 +56,10 @@ const TapBurstEngine = (function () {
     let items = [], timeLeft = time, hits = 0, decoyHits = 0;
     let combo = 0, maxCombo = 0, score = 0, done = false, anim = 0;
     let down = null;
-    let popFx = [];                                            // 命中粒子（装饰）
+    let popFx = [];                                            // 命中粒子（装饰，§7.2.A.2 上限）
+    /* HUD 源头脏检查（§7.2.A.4）：值变才 setHud（秒/连击/命中均事件级变化，消灭逐帧分配） */
+    let hudH = -1, hudC = -1, hudS = -1;
+    let acc0 = 0;                                              // 固定步长余数跨帧携带（GAMES-30 修复：丢弃式累加器在 120Hz 帧到位≈STEP 时整帧丢步，引擎慢 ~17%）
 
     const curScore = () => Math.max(0, hits * 10 + maxCombo * 5 - decoyHits * 15);
 
@@ -81,7 +97,11 @@ const TapBurstEngine = (function () {
             game.toast('陷阱！−15');
           } else {
             hits++; combo++; maxCombo = Math.max(maxCombo, combo);
-            popFx.push({ x: it.x, y: it.y, hue: it.hue, t: 0.4 });
+            /* bench 式 8 向火花（角度/速度由 hits 确定性导出，装饰不入 __state） */
+            const sparks = [];
+            for (let k = 0; k < 8; k++) sparks.push({ a: (k / 8) * Math.PI * 2 + (hits % 8) * 0.13, sp: 120 + ((hits * 7 + k * 13) % 60) });
+            if (popFx.length >= MAX_FX) popFx.shift();        // §7.2.A.2：并发上限（弃最旧）
+            popFx.push({ x: it.x, y: it.y, hue: it.hue, t: 0.4, sparks });
             if (hits >= target) { done = true; score = curScore(); game.win(score, { s2: target * 12, s3: target * 15 }); return; }
           }
           return;
@@ -94,50 +114,57 @@ const TapBurstEngine = (function () {
       startLevel() { game.setHud([{ t: `/${target}`, v: 0 }, { t: '连击', v: 0 }, { t: '秒', v: time }]); },
       update(dt) {
         anim += dt;
-        let acc = dt;
-        while (acc >= STEP) { acc -= STEP; step(); if (done) break; }
+        acc0 += dt;
+        while (acc0 >= STEP) { acc0 -= STEP; step(); if (done) break; }
         score = curScore();
         for (const f of popFx) f.t -= dt;
         popFx = popFx.filter(f => f.t > 0);
-        game.setHud([
-          { t: `/${target}`, v: hits },
-          { t: '连击', v: combo },
-          { t: 'x' + Math.max(0, decoyHits), v: Math.ceil(Math.max(0, timeLeft)) },
-        ]);
+        const sec = Math.ceil(Math.max(0, timeLeft));
+        if (hits !== hudH || combo !== hudC || sec !== hudS) {
+          hudH = hits; hudC = combo; hudS = sec;
+          game.setHud([
+            { t: `/${target}`, v: hits },
+            { t: '连击', v: combo },
+            { t: 'x' + Math.max(0, decoyHits), v: sec },
+          ]);
+        }
       },
       onDown(x, y) { down = { x, y }; },
       onMove() { },
       onUp(x, y) { if (down && Math.abs(x - down.x) < 24 && Math.abs(y - down.y) < 24) tap(x, y); down = null; },
       render(g) {
         /* 顶栏下倒计时条 */
-        const tr = G.clamp(timeLeft / time, 0, 1);
+        const tr = clamp(timeLeft / time, 0, 1);
         g.fillStyle = '#1a2133'; g.fillRect(20, area.y + 6, area.w - 40, 4);
         g.fillStyle = tr > 0.25 ? '#7bd88f' : '#ff8fa3'; g.fillRect(20, area.y + 6, (area.w - 40) * tr, 4);
-        /* 目标/陷阱 */
+        /* 目标/陷阱（bench 式出生弹入：0.12s 0.6→1） */
         for (const it of items) {
+          const pop = Math.min(1, (anim - it.born) / 0.12);
+          const rr = it.r * (0.6 + 0.4 * pop);
           if (it.decoy) {                                      // 红色陷阱叉点（§7）
-            g.fillStyle = '#2a1520'; g.beginPath(); g.arc(it.x, it.y, it.r, 0, 7); g.fill();
+            g.fillStyle = '#2a1520'; g.beginPath(); g.arc(it.x, it.y, rr, 0, 7); g.fill();
             g.strokeStyle = '#ff8fa3'; g.lineWidth = 4;
-            const d = it.r * 0.55;
+            const d = rr * 0.55;
             g.beginPath(); g.moveTo(it.x - d, it.y - d); g.lineTo(it.x + d, it.y + d);
             g.moveTo(it.x + d, it.y - d); g.lineTo(it.x - d, it.y + d); g.stroke();
           } else {
             const pulse = 1 + Math.sin(anim * 5 + it.hue) * 0.04;
             g.fillStyle = `hsl(${it.hue},70%,58%)`;
-            g.beginPath(); g.arc(it.x, it.y, it.r * pulse, 0, 7); g.fill();
+            g.beginPath(); g.arc(it.x, it.y, rr * pulse, 0, 7); g.fill();
             g.fillStyle = 'rgba(255,255,255,.35)';
-            g.beginPath(); g.arc(it.x - it.r * 0.28, it.y - it.r * 0.3, it.r * 0.24, 0, 7); g.fill();
+            g.beginPath(); g.arc(it.x - rr * 0.28, it.y - rr * 0.3, rr * 0.24, 0, 7); g.fill();
             g.strokeStyle = `hsl(${it.hue},70%,42%)`; g.lineWidth = 2;
-            g.beginPath(); g.arc(it.x, it.y, it.r * pulse, 0, 7); g.stroke();
+            g.beginPath(); g.arc(it.x, it.y, rr * pulse, 0, 7); g.stroke();
           }
         }
-        /* 命中粒子（装饰） */
+        /* 命中火花（装饰；bench 式径向飞散+衰减） */
         for (const f of popFx) {
-          g.globalAlpha = G.clamp(f.t / 0.4, 0, 1);
-          g.fillStyle = `hsl(${f.hue},80%,70%)`;
-          for (let i = 0; i < 6; i++) {
-            const a = i * Math.PI / 3, d = (0.4 - f.t) * 130;
-            g.beginPath(); g.arc(f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, 3.2, 0, 7); g.fill();
+          const k = f.t / 0.4;
+          g.globalAlpha = clamp(k, 0, 1);
+          for (const s of f.sparks) {
+            const d = (0.4 - f.t) * s.sp * 0.4;
+            g.fillStyle = `hsl(${f.hue},80%,70%)`;
+            g.beginPath(); g.arc(f.x + Math.cos(s.a) * d, f.y + Math.sin(s.a) * d, 3.2 * k, 0, 7); g.fill();
           }
           g.globalAlpha = 1;
         }
@@ -146,7 +173,7 @@ const TapBurstEngine = (function () {
         return {
           target, time, size, rate, decoyRate,
           spawnsN: spawns.length, sp,
-          realByDeadline: spawns.length,                        // 陷阱为加流：目标数=全场生成数（裁量①）
+          realByDeadline: spawns.reduce((a, s) => a + (s.decoy ? 0 : 1), 0),   // 真实目标数（陷阱为额外流，不计入——GAMES-30 修正口径）
           timeLeft: +timeLeft.toFixed(2), hits, decoyHits, combo, maxCombo, score, done,
           items: items.map(it => [+it.x.toFixed(2), +it.y.toFixed(2), +it.r.toFixed(1), it.decoy ? 1 : 0, it.hue]),
         };
