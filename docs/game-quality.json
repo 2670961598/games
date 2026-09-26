@@ -286,12 +286,12 @@
    "notes": ""
   },
   "demo:color-strike": {
-   "stage": "backlog",
+   "stage": "testing",
    "perf": "pending",
    "play": "pending",
-   "visual": "pending",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
   },
   "demo:mole-grid": {
    "stage": "backlog",
@@ -318,12 +318,12 @@
    "notes": ""
   },
   "demo:quick-math": {
-   "stage": "tuning",
+   "stage": "testing",
    "perf": "pending",
    "play": "pending",
-   "visual": "fail",
-   "iterations": 1,
-   "notes": "一轮修复未根治横向溢出，Q-004"
+   "visual": "pass",
+   "iterations": 2,
+   "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
   },
   "drop-catcher:drop-catcher-harvest-01": {
    "stage": "backlog",

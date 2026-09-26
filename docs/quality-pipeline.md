@@ -84,3 +84,19 @@ R 引擎调研(GAMES-24) → P0/P1 基座+黄金样本(GAMES-22, 按R结论选�
 
 ### 8.3 任务书规范
 PM 生成 worker 任务书时：内嵌该类型规范节全文、设计书全文、黄金样本范式路径、相关案例库条目；禁止"参见"式省略。
+
+### 8.4 识图终审协议 v2（案例 Q-005 教训，2026-09-26 生效）
+
+无头截图必须加 `--force-device-scale-factor=1`——Retina 机上无头 Chrome 默认 DPR=2，`--window-size=375` 会得到 ~750 CSS px 布局视口，max-width 居中的页面在 PNG 里呈"左 25% 空白+右列裁切"伪影（曾连续误判 quick-math/color-strike 三次 BROKEN，烧掉两轮 FIX 单）。
+
+标准命令：
+```
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
+  --force-device-scale-factor=1 --window-size=375,667 --virtual-time-budget=4000 \
+  --screenshot=/tmp/vis/<id>.png http://localhost:4399/games/<path>/index.html
+```
+
+**几何断言先行，识图殿后**：
+1. 判 BROKEN 前必须先做几何断言（真实 375×667 视口，如 Playwright/浏览器实测）：`documentElement.scrollWidth <= clientWidth` 且无可见元素 `right > clientWidth+0.5 || left < -0.5`。几何脏 → 直接 BROKEN，无需识图。
+2. 识图 prompt 用中性提问（"描述布局与四边边距"），禁止诱导式"是否有内容被裁切"——Flash 会把"距边 26px"放大成"贴边被裁"。
+3. 冲突裁决：几何净 + 识图 BROKEN → 判词需给出具体像素证据，否则视为噪声，需第二张独立截图复核或 PM 人工裁决；几何证据优先级最高。
