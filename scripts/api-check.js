@@ -75,6 +75,56 @@ const POLICIES = {
     const len = Math.sqrt(dx * dx + dy * dy) || 1
     return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100), fire: 1 }
   },
+  /**
+   * 宏观推进（slg-battlefield A2 能赢，设计书 §6 时间轴 + 经济适配）：
+   * 开局 2×inf 车道1 → 双信号塔常驻集结线+驻塔 inf（占塔拿 +2 CP/s 与积分通道兜底）→
+   * razor/inf 交替车道1 → tick 300 起 heavy 推进；敌集群 ≥4 barrage、基地 <70% repair。
+   * 每次轮询至多回 1 条 cmd（离散指令，S1 帧通道一次一条）。
+   */
+  'macro-push': (state, seat) => {
+    const NOOP = { cmd: { k: 'noop' } }
+    const s = state.seats && state.seats[seat]
+    if (!s) return NOOP
+    const t = state.tick
+    const foe = s.team === 'A' ? 'B' : 'A'
+    const myBase = (state.bld || []).find((b) => b.kind === 'base' && b.team === s.team)
+    const cp = s.cp, tier = s.tier
+    const cost = (u) => ({ inf: [20, 30, 40], razor: [45, 65, 85], heavy: [110, 155, 210] })[u][tier - 1] * 1000
+    const units = state.units || []
+    const pop = units.filter((u) => u.seat === seat).length
+    const towers = state.towers || []
+    const castable = (id) => s.energy >= [60, 40, 70, 50][id] && (!s.cd || s.cd[id] <= 0)
+    /* 技能：repair（基地 <70%）> barrage（敌集群 ≥4，45px 同车道窗口口径同 sim） */
+    if (myBase && myBase.hp < 1050 && castable(1)) return { cmd: { k: 'skill', id: 1 } }
+    let cl = null
+    for (const e of units) {
+      if (e.team !== foe) continue
+      let c = 0
+      for (const o of units) if (o.team === foe && o.lane === e.lane && Math.abs(o.y - e.y) <= 45000) c++
+      if (!cl || c > cl.c) cl = { lane: e.lane, row: Math.max(0, Math.min(19, (e.y / 25000) | 0)), c }
+    }
+    if (cl && cl.c >= 4 && castable(0)) return { cmd: { k: 'skill', id: 0, lane: cl.lane, row: cl.row } }
+    /* 集结：双塔车道常驻塔位（占塔/反夺回；车道 1 不设集结 → 直推敌基地） */
+    for (const tw of towers) {
+      if (s.rally[tw.lane] !== tw.row) return { cmd: { k: 'rally', lane: tw.lane, row: tw.row } }
+    }
+    /* 驻塔：塔无己方单位驻守（40px 口径同 sim 占点）→ 补 1 inf */
+    if (pop < 12 && s.spawnCd <= 0) {
+      for (const tw of towers) {
+        const holder = units.some((u) => u.seat === seat && u.lane === tw.lane && Math.abs(u.y - tw.y) <= 40000)
+        if (!holder && cp >= cost('inf')) return { cmd: { k: 'spawn', unit: 'inf', lane: tw.lane } }
+      }
+      /* 研究：T2 凑够即升（设计 tick 150 起的 opportunist 版——经济允许时才花） */
+      if (tier === 1 && !s.research && t >= 150 && cp >= 150000) return { cmd: { k: 'research', tier: 2 } }
+      if (tier === 2 && !s.research && t >= 900 && cp >= 300000) return { cmd: { k: 'research', tier: 3 } }
+      /* 主攻车道 1：开场 2×inf → razor/inf 交替（留 CP 缓冲）→ tick 300 起 heavy */
+      if (t < 40) { if (cp >= cost('inf')) return { cmd: { k: 'spawn', unit: 'inf', lane: 1 } } }
+      else if (t >= 300 && cp >= cost('heavy') + 30000) return { cmd: { k: 'spawn', unit: 'heavy', lane: 1 } }
+      else if (cp >= cost('razor') + 25000 && s.spawned % 2 === 0) return { cmd: { k: 'spawn', unit: 'razor', lane: 1 } }
+      else if (cp >= cost('inf') + 25000) return { cmd: { k: 'spawn', unit: 'inf', lane: 1 } }
+    }
+    return NOOP
+  },
 }
 
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */

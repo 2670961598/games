@@ -12,7 +12,7 @@ function gwHttp() {
 /* 21 槽目录（roadmap §3；on = 已上线可点，url = 游戏页路径） */
 const CATALOG = [
   { name: '净斗坦克', track: 'T4 物理', tech: 'S4', on: true, url: '/games/multiplayer/net-tank/index.html' },
-  { name: '指挥官战场', track: 'T1 帧同步', tech: 'S1' },
+  { name: '指挥官战场', track: 'T1 帧同步', tech: 'S1', on: true, url: '/games/multiplayer/slg-battlefield/index.html' },
   { name: '战棋对决', track: 'T1 帧同步', tech: 'S1+S5' },
   { name: '炸弹乱斗', track: 'T1 帧同步', tech: 'S1' },
   { name: '星海小镇', track: 'T2 状态同步', tech: 'S2' },

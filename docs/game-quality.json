@@ -1016,6 +1016,18 @@
     "bot": "三档(休闲/均衡/竞技)+真人让位"
    },
    "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
+  },
+  "multiplayer:slg-battlefield": {
+   "stage": "testing",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 1,
+   "net": {
+    "tech": "S1",
+    "bot": "三档(休闲/均衡/竞技)，断线托管=casual"
+   },
+   "notes": "GAMES-43 DEV 交付（单链 2/10+）。设计书 docs/designs/slg-battlefield.md（GAMES-42）。自测：api-check 14/14（A2 推平 3×casual tick720 / A3 被竞技快攻 tick1378 / 注入 19ms / 重连 1.2s）；net-check 25/25 回归；perf-smoke 60.1fps 掉帧 0%。待 PM 验收。"
   }
  }
 }

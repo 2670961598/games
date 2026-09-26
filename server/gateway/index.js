@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { RoomManager } from './rooms.js'
 import { BotHost } from './bothost.js'
 import { netTankSim } from './sims/net-tank.js'
+import { slgBattlefieldSim } from './sims/slg-battlefield.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -43,9 +44,11 @@ function log(obj) {
 /* ---------- 房间管理 + Bot 宿主 ---------- */
 const rooms = new RoomManager({ log })
 rooms.register(netTankSim)
+rooms.register(slgBattlefieldSim)
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
+bothost.register({ gameId: 'slg-battlefield', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 上线节奏同 net-tank（设计 §8）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })

@@ -21,7 +21,10 @@ const nowMs = () => Date.now()
 const genId = (prefix) => `${prefix}-${(nowMs() % 0x100000).toString(36)}${(++roomSeq).toString(36)}${randomBytes(2).toString('hex')}`
 const sanitizeKeys = (k) => {
   const n = (v) => (Number.isFinite(v) ? Math.max(-100, Math.min(100, Math.trunc(v))) : 0)
-  return { mx: n(k && k.mx), my: n(k && k.my), fire: k && k.fire ? 1 : 0 }
+  // 离散指令游戏（sim.META.cmdInput，协议 §8.3 游戏级键集）的 cmd 原样透传：
+  // 形状校验在 sim（execCmd 白名单，畸形=静默 noop）——网关保持游戏规则无关。
+  const cmd = k && k.cmd && typeof k.cmd === 'object' && !Array.isArray(k.cmd) ? k.cmd : null
+  return cmd ? { mx: n(k.mx), my: n(k.my), fire: k.fire ? 1 : 0, cmd } : { mx: n(k && k.mx), my: n(k && k.my), fire: k && k.fire ? 1 : 0 }
 }
 
 export class RoomManager {
@@ -240,11 +243,11 @@ export class RoomManager {
   }
 
   doFrame(room, now) {
-    // 托管：真人断线逾 10s → 席位转 bot（均衡档），名册广播
+    // 托管：真人断线逾 10s → 席位转 bot（默认均衡档；游戏可经 META.takeOver 定档），名册广播
     for (const s of room.seats) {
       if (s.kind === 'human' && !s.conn && s.goneAt && now - s.goneAt > RECONNECT_MS) {
         s.kind = 'bot'
-        s.level = 'balanced'
+        s.level = room.sim.META.takeOver || 'balanced'
         s.name = 'Bot·托管'
         s.botRng = room.sim.mulberry32((room.state.seed ^ (s.seat * 0x85ebca6b)) >>> 0)
         s.pending.clear()
@@ -258,7 +261,11 @@ export class RoomManager {
       if (s.kind === 'bot') {
         inputs[s.seat] = room.sim.brain(room.state, s.seat, s.level || 'balanced', s.botRng)
       } else {
-        inputs[s.seat] = s.pending.get(room.frame) || s.lastInput
+        const pend = s.pending.get(room.frame)
+        inputs[s.seat] = pend || s.lastInput
+        // 离散指令一次性语义（slg 设计 §5.1：缺输入沿用=静默）：宽限沿用的 cmd
+        // 只在本帧执行一次，之后回落 noop——防同一条 spawn 被逐帧重放。
+        if (!pend && s.lastInput.cmd) s.lastInput = { mx: 0, my: 0, fire: 0 }
       }
       s.pending.delete(room.frame)
       if (s.pending.size > 0) for (const k of [...s.pending.keys()]) if (k <= room.frame) s.pending.delete(k)
