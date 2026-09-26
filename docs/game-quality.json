@@ -318,12 +318,12 @@
    "notes": ""
   },
   "demo:quick-math": {
-   "stage": "backlog",
+   "stage": "tuning",
    "perf": "pending",
    "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
+   "visual": "fail",
+   "iterations": 1,
+   "notes": "一轮修复未根治横向溢出，Q-004"
   },
   "drop-catcher:drop-catcher-harvest-01": {
    "stage": "backlog",
@@ -406,44 +406,44 @@
    "notes": ""
   },
   "lane-runner:lane-runner-dash-01": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "lane-runner:lane-runner-dash-02": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "lane-runner:lane-runner-dash-03": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "lane-runner:lane-runner-dash-04": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "lane-runner:lane-runner-dash-05": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "match3:match3-candy-01": {
    "stage": "backlog",
@@ -886,44 +886,44 @@
    "notes": ""
   },
   "tap-burst:tap-burst-pop-01": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "tap-burst:tap-burst-pop-02": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "tap-burst:tap-burst-pop-03": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "tap-burst:tap-burst-pop-04": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "tap-burst:tap-burst-pop-05": {
-   "stage": "backlog",
-   "perf": "pending",
+   "stage": "testing",
+   "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": ""
+   "notes": "GAMES-30 原生重建，待FEEL"
   },
   "tap-jump:tap-jump-flap-01": {
    "stage": "backlog",
