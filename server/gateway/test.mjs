@@ -7,6 +7,8 @@
  *   4. WS 端到端（真网关 + Node 原生 WebSocket 客户端，随机端口）：
  *      quick 入房/欢迎帧/帧推进/输入上行/pong/第二真人 bot 让位/断线重连(10s 窗)/
  *      席位托管转 bot/feed HTTP 形状。
+ *   5. 测试管理 API（GAMES-41）：isLoopback 鉴权/隔离测试房/操作注入→帧反映/
+ *      $disconnect+$reconnect 复席/DELETE 回收/feed 隔离。
  * ===================================================================== */
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -100,7 +102,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const GW_PORT = 4400 + (process.pid % 400)
 const child = spawn(process.execPath, ['server/gateway/index.js'], {
   cwd: new URL('../..', import.meta.url).pathname.replace(/\/$/, ''),
-  env: { ...process.env, PORT: String(GW_PORT), HOST: '127.0.0.1', GATEWAY_LOG: '/dev/null' },
+  // GATEWAY_PID 改道：临时网关不得覆盖常驻实例的 server/data/gateway.pid（§9 运维口径依赖它）
+  env: { ...process.env, PORT: String(GW_PORT), HOST: '127.0.0.1', GATEWAY_LOG: '/dev/null', GATEWAY_PID: `/tmp/gateway-test-${GW_PORT}.pid` },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 const gwLog = []
@@ -199,6 +202,71 @@ try {
   // 房间 gone：等一局终局（bot 互杀终有果）后 room-gone / 或直接验证 join 房被回收路径
   p1b.ws.close(); p2.ws.close()
   ok(true, '会话关闭（席位进入 10s 保留窗）')
+
+  /* ---------- 5. 测试管理 API（GAMES-41）：隔离房/同路径注入/快照/重连/回收 ---------- */
+  console.log('[5] 测试管理 API（/api/test/*，协议 §8）')
+  const GW_HTTP = `http://127.0.0.1:${GW_PORT}`
+  const api = async (method, path, body) => {
+    const res = await fetch(GW_HTTP + path, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    let json = null
+    try { json = await res.json() } catch { /* 非 JSON 应答 */ }
+    return { status: res.status, json }
+  }
+  {
+    const { isLoopback } = await import('./testapi.js')
+    ok(isLoopback({ socket: { remoteAddress: '127.0.0.1' } }) && isLoopback({ socket: { remoteAddress: '::1' } })
+      && isLoopback({ socket: { remoteAddress: '::ffff:127.0.0.1' } }), 'isLoopback：回环三形全认')
+    ok(!isLoopback({ socket: { remoteAddress: '192.168.1.5' } }) && !isLoopback({ socket: { remoteAddress: '10.0.0.2' } })
+      && !isLoopback({ socket: { remoteAddress: undefined } }), 'isLoopback：非回环/未知来源一律拒')
+  }
+  const tr = await api('POST', '/api/test/room', {
+    gameId: 'net-tank', seed: 20260926, timeScale: 4, startDelayMs: 200,
+    botLevels: [null, 'casual', 'competitive', 'casual'],
+  })
+  ok(tr.status === 200 && tr.json.ok && tr.json.roomId && tr.json.playerSeat === 0 && !!tr.json.token,
+    '建房：确定性 seed + API 席 0 + token（回环可用）')
+  ok(tr.json.phase === 'waiting' && tr.json.seats.length === 4 && tr.json.state.seed === 20260926,
+    '初态 waiting + 4 席 + seed 钉死')
+  const feedT = await (await fetch(`${GW_HTTP}/api/matches`)).json()
+  ok(!feedT.matches.some((m) => m.roomId === tr.json.roomId), '测试房不进 feed（隔离红线）')
+  let snap = null
+  for (let i = 0; i < 40; i++) {
+    snap = await api('GET', `/api/test/state?roomId=${tr.json.roomId}`)
+    if (snap.json.phase === 'live') break
+    await sleep(100)
+  }
+  ok(snap.json.phase === 'live', 'boot→live（startDelay 后开赛）')
+  ok(snap.json.events.some((e) => e.msg.t === 'welcome' && e.msg.role === 'player'),
+    '虚拟会话 welcome 入账（与真人同入房路径）')
+  const inj = await api('POST', '/api/test/input', { roomId: tr.json.roomId, seat: 0, op: 'ctrl', payload: { mx: 63, my: 0, fire: 0 } })
+  ok(inj.status === 200 && inj.json.ok && typeof inj.json.receivedAt === 'number', '注入 op=ctrl（WS input 同 sim 入口）')
+  let refl = null
+  for (let i = 0; i < 40; i++) {
+    snap = await api('GET', `/api/test/state?roomId=${tr.json.roomId}&since=${snap.json.cursor}`)
+    refl = snap.json.events.find((e) => e.msg.t === 'frame' && e.msg.inputs[0] && e.msg.inputs[0].mx === 63)
+    if (refl) break
+    await sleep(50)
+  }
+  ok(!!refl && refl.ts - inj.json.receivedAt < 100, `注入→帧反映 <100ms（实测 ${refl ? refl.ts - inj.json.receivedAt : '-'}ms）`)
+  const dis = await api('POST', '/api/test/input', { roomId: tr.json.roomId, op: '$disconnect' })
+  ok(dis.status === 200 && dis.json.ok, '$disconnect（与 WS close 同路径）')
+  await sleep(300)
+  snap = await api('GET', `/api/test/state?roomId=${tr.json.roomId}`)
+  ok(snap.json.seats[0].kind === 'human', '断线 10s 窗内席位保留（未转 bot）')
+  const rec2 = await api('POST', '/api/test/input', { roomId: tr.json.roomId, op: '$reconnect', payload: { token: tr.json.token } })
+  ok(rec2.status === 200 && rec2.json.ok && rec2.json.seat === 0, '$reconnect 凭 token 复席')
+  const badTok = await api('POST', '/api/test/input', { roomId: tr.json.roomId, op: '$reconnect', payload: { token: 'deadbeef' } })
+  ok(badTok.status === 409, '坏 token 重连被拒（复席语义不降级）')
+  const del = await api('DELETE', '/api/test/room', { roomId: tr.json.roomId })
+  ok(del.status === 200 && del.json.ok, 'DELETE 清理')
+  const gone = await api('GET', `/api/test/state?roomId=${tr.json.roomId}`)
+  ok(gone.status === 404, '清理后 room-gone')
+  const badGame = await api('POST', '/api/test/room', { gameId: 'no-such-game', botLevels: [null] })
+  ok(badGame.status === 404, '未知游戏 404')
 } finally {
   child.kill('SIGTERM')
   await sleep(300)

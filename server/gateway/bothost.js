@@ -41,10 +41,10 @@ export class BotHost {
 
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null }
 
-  /** 补房：纯 bot 的 live/waiting 房 < minLive 且总房数 < maxRooms 时建一间 */
+  /** 补房：纯 bot 的 live/waiting 房 < minLive 且总房数 < maxRooms 时建一间（测试房不计入，GAMES-41） */
   ensure() {
     for (const [gameId, cfg] of this.games) {
-      const all = this.rooms.roomsFor(gameId).filter((r) => r.phase !== 'ended')
+      const all = this.rooms.roomsFor(gameId).filter((r) => r.phase !== 'ended' && !r.test)
       const pureBot = all.filter((r) => this.rooms.humanCount(r) === 0 && r.spectators.size === 0)
       if (pureBot.length >= cfg.minLive || all.length >= cfg.maxRooms) continue
       const level = cfg.levels[pureBot.length % cfg.levels.length]

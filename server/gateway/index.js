@@ -4,11 +4,13 @@
  *
  *   HTTP  GET /healthz     → {ok:true}（验活）
  *         GET /api/matches → live 房间 feed（CORS *，大厅跨端口轮询）
+ *         /api/test/*      → 测试管理 API（GAMES-41，仅 127.0.0.1；协议 §8）
  *   WS    upgrade 任意路径（约定 /ws）→ 房间协议（docs/net-protocol.md）
  *
  * 组成：lib/ws.js（自研最小 RFC6455，零新依赖）+ rooms.js（房间管理）
- *      + bothost.js（Bot 宿主，常驻 bot 房）+ sims/（每游戏 sim 适配器）。
- * 启动（docs/net-protocol.md §8 附录）：
+ *      + bothost.js（Bot 宿主，常驻 bot 房）+ sims/（每游戏 sim 适配器）
+ *      + testapi.js（测试管理 API：隔离测试房/操作注入/状态快照）。
+ * 启动（docs/net-protocol.md §9 附录）：
  *   HOST=0.0.0.0 nohup node server/gateway/index.js > server/data/gateway.log 2>&1 &
  * ===================================================================== */
 import http from 'node:http'
@@ -19,13 +21,14 @@ import { RoomManager } from './rooms.js'
 import { BotHost } from './bothost.js'
 import { netTankSim } from './sims/net-tank.js'
 import { attachWs } from './lib/ws.js'
+import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const PORT = Number(process.env.PORT) || 4400
 const HOST = process.env.HOST || '0.0.0.0'
 const DATA_DIR = join(ROOT, 'server', 'data')
 const LOG_FILE = process.env.GATEWAY_LOG || join(DATA_DIR, 'gateway.log')
-const PID_FILE = join(DATA_DIR, 'gateway.pid')
+const PID_FILE = process.env.GATEWAY_PID || join(DATA_DIR, 'gateway.pid') // 测试子进程经 GATEWAY_PID 改道，防覆盖常驻实例的 pid 文件
 const TICKER_MS = 50           // 全局驱动精度；房间自身按 tickMs(100ms) 定频
 const MAX_MSG_BYTES = 16 * 1024
 
@@ -45,9 +48,21 @@ const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
 rooms.onEnded = () => bothost.ensure()
 
+const testHost = new TestHost({ rooms, log })
+
 /* ---------- HTTP ---------- */
 const server = http.createServer((req, res) => {
   const url = (req.url || '/').split('?')[0]
+  if (url.startsWith('/api/test/')) {
+    // 测试面唯一鉴权：仅回环可用（局域网/公网 403；无 CORS 头，浏览器打不进来）——协议 §8
+    if (!isLoopback(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: false, error: 'local-only' }))
+      return
+    }
+    handleTestApi(req, res, url, testHost)
+    return
+  }
   if (req.method === 'GET' && (url === '/healthz' || url === '/api/health')) {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ ok: true, ts: Date.now(), rooms: rooms.rooms.size }))
