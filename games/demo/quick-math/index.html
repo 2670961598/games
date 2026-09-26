@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="game-slug" content="quick-math">
 <title>极速心算</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -16,8 +17,10 @@
   #q { font-size: 52px; font-weight: 800; letter-spacing: .06em; }
   #q.flash { animation: shake .3s; }
   @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
-  #opts { width: min(86vw, 380px); display: flex; gap: 12px; }
-  #opts button { flex: 1; padding: 18px 0; border-radius: 16px; border: 0; font-size: 24px; font-weight: 700;
+  /* GAMES-23：单行 flex 只有 3 选项且右缘余量偏紧，识图终审判裁切；对齐 color-strike 范式改 2×2 grid。
+     minmax(0,1fr) 零 min-content 下限——任意内容宽度都不会撑破 375px 视口（结构性防溢出）。 */
+  #opts { width: min(86vw, 380px); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  #opts button { padding: 18px 0; border-radius: 16px; border: 0; font-size: 24px; font-weight: 700;
     color: #fff; background: #26304a; }
   #opts button:active { background: #33415f; }
   #combo { font-size: 13px; color: #8b94a7; height: 16px; }
@@ -51,10 +54,10 @@
     const b = 1 + ((Math.random() * 20) | 0)
     answer = a + b
     qEl.textContent = `${a} + ${b} = ?`
-    // 干扰项：±1/±2/±10，保证不重复不等于答案
+    // 干扰项：±1/±2/±3/±10 凑满 4 选项（GAMES-23 前只有 3 个），保证不重复不等于答案
     const set = new Set([answer])
-    while (set.size < 3) {
-      const d = answer + [-2, -1, 1, 2, 10][(Math.random() * 5) | 0]
+    while (set.size < 4) {
+      const d = answer + [-3, -2, -1, 1, 2, 3, 10][(Math.random() * 7) | 0]
       if (d > 0) set.add(d)
     }
     const arr = [...set].sort(() => Math.random() - .5)
