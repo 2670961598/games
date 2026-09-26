@@ -158,6 +158,13 @@ Bot 走网关 Bot 宿主统一接口（`spawnBot('slg-battlefield', level)`，br
 > **F2（三档无梯度/克制表不可达）** competitive"有 CP 即花"与克制表互锁（2CP/s 收入下 45/70CP 克制兵永攒不齐，QA 5 局 0 次非 inf 出兵），信号塔反攻仅覆盖"持有后被夺"（从未持有则永久弃塔，让出积分通道被 score 推平）。修复五件套：① 克制储蓄窗口（300 tick 封顶、超窗降级 inf、出兵即重开——即"支付档降级"）；② 未持有塔持续争塔（<2 续送，防添油）；③ 保命压顶（敌迫基地 5 行内车道直援）；④ T2 储蓄遇克制情报（敌众数非 inf）让位出兵；⑤ T3 改机会式升阶（300CP 硬储蓄≈后半局弃权）。
 > 修复后实测（vs macro-push 参考策略，每档 3 局）：casual 0/3（被拆@724-1005）、balanced 0/3（score 负@1240）、competitive **3/3 胜**（score 胜@1370）——胜率梯度成立；razor 铺场探针从 ~711 tick 被单方面推平 → 2180 tick 积分 400:386 憾负、基地保全、克制兵（arty/razor）正常上场。上表为修正后行为；§6 剧本与断言不变（A2/A3 复验绿）。
 
+> **BOT 深化记录（GAMES-46 · 2026-09-27）**：在 F1/F2 底座上叠**人格层**——Bot 是内容不是填充（制作人指令）。行为事实源=sim.cjs brain 段头"三档人格"注释+行为清单；要点：
+> **① 三档人格化差异**：casual=慢节奏陪玩（走神窗口 15%/1.2-2s 明显失误留窗、基地被打 5s 内 60% 概率回敬 1×inf 的温和回击）；balanced=标准节奏（原样）；competitive=快开+克制针对（F2 底座）+**集火残血**（barrage 目标评分=集群数+2×残血数（hp≤40%），残血≥2 即使集群<4 也打）+**守塔换位**（持有塔 2.5 行内出现敌军→出兵道让位协防+集结线收到塔位，优先级：保命压顶>守塔>争塔>最弱点）。
+> **② 陪玩模式**（casual 房）：同队有真人（网关经 brain 第 5 参 env.kinds 透传名册；离线端 seat0=真人同口径）的 casual bot"带躺不抢戏"——真人活跃（spawned/kills/tier/research/rally 快照在变）→ 让位：3× 出兵闸门+pop≤4+集结钉己方 1/3 守势线+barrage/surge 全让（维修仅基地<40% 保命）；真人静默>150 tick（carry.idleTicks）→ 接管节奏：恢复正常 casual 行为+集结线顶到中线（真人回线自动让回）。
+> **③ 猎杀让力**（competitive 房，game.json `net.botTuning.mercy` 可调）：己队分差≥triggerGap(150) → 整档收力至 balanced 水平（决策间隔 20 tick/技能收敛/无 drop 断线/研究降档），回落≤releaseGap(75) 才恢复（滞回防抖）——纯分差函数，确定性不破，触发区间可由分差时间线精确重构。
+> **④ 开局树**：三档各 2 套，开局由服务端 botRng（房间 seed 派生）在首决策 tick 一次性定桩——同 seed 同局必同树。casual：C0 懒散混编｜C1 慢热占塔（首兵 inf 走最近塔道+一次性塔位集结）；balanced：B0 中路试探（inf 起手、左道起）｜B1 双线占塔（razor 起手、右道起、开局即双塔道集结）；competitive：P0 快攻抢塔（原版）｜P1 中路压制（3×inf 直推中路、无开局 rally、drop 前期只断兵线）。
+> **⑤ 调参面**：`net.botTuning = { mercy:{triggerGap,releaseGap,level}, carry:{idleTicks} }`——game.json 为可调事实源，服务端适配器启动时注入 sim（sim 内置同值默认兜底离线端）。§6 剧本与断言不变（A2/A3 复验绿；A3 观感从"单方面拆家"变为让力后 400:284 积分收官，胜方不变）。
+
 ## 5. S1 帧同步协议细节
 
 本节在 net-protocol.md v1.1 冻结框架内落 slg-battlefield 的实现细则；**不新增消息类型**（复用 §4.1 `input`/§4.2 `frame`/`state` 等），故无需协议变更单。

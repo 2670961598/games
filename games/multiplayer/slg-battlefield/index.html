@@ -501,15 +501,67 @@
   const deserialize = (json) => JSON.parse(json);
 
   /* =====================================================================
-   * Bot 决策 brain(state, seat, level, rng) → {cmd:{…}}
-   * 三档策略表=设计书 §4 抄录。rng 由调用方持有（服务端每 bot 一个 mulberry32；
-   * 离线模式客户端自持）。决策记忆存 WeakMap（键=state 对象，不入模拟状态、
-   * 不入帧协议——服务端侧消耗，客户端只回放输入，不破坏确定性）。
+   * Bot 决策 brain(state, seat, level, rng, env?) → {cmd:{…}}
+   * 三档策略底座=设计书 §4（含 GAMES-45 F1/F2 修正）；GAMES-46 在其上叠人格层。
+   * rng 由调用方持有（服务端每 bot 一个 mulberry32，seed 派生；离线模式客户端
+   * 自持）。决策记忆存 WeakMap（键=state 对象，不入模拟状态、不入帧协议——
+   * 服务端侧消耗，客户端只回放输入，不破坏确定性）。
+   * env（GAMES-46 新增，可选）：{kinds:[…席位 kind…]}——网关/离线端把房间名册
+   * 透传给 brain（陪玩模式判定"同队是否有真人"用）；纯 bot 局可缺省。
+   *
+   * ── 三档人格（GAMES-46；超越参数表的"像人"差异，行为清单）─────────────
+   * casual 慢节奏陪玩 · 人设：偶尔想赢一下的新手导师
+   *   □ 开局延后 15s 观察（FIRST=150）；出兵保守（攒 2× 造价，F1 闸门夹上限）
+   *   □ 走神窗口：每决策 15% 概率发呆 1.2-2s（不出兵不放技能）——明显失误，
+   *     给对手留下可乘之窗（人格核心：休闲局该有喘息）
+   *   □ 温和回击：基地被打后 5s 内 60% 概率回敬 1 个 inf 到威胁车道——
+   *     点到为止，不升级响应（"被打后温和回击"）
+   *   □ 陪玩模式（同队真人，env.kinds）：真人活跃 → 让位（3× 闸门/pop≤4/
+   *     己方 1/3 守势集结/不放抢头技能，基地<40% 才维修）；真人挂机>15s →
+   *     接管节奏（恢复正常 casual + 集结线顶到中线带推）
+   *   □ 开局树 ×2（rng 定桩）：C0 懒散混编（随机兵随机道）｜C1 慢热占塔
+   *     （首兵 inf 走最近塔道 + 一次性塔位集结）
+   * balanced 标准节奏 · 人设：打法正经的普通玩家
+   *   □ 标准节奏：2×inf 试探 → inf→razor→arty 轮换、两车道轮换、前线 1/2 集结
+   *   □ 技能规矩：repair<60%、barrage 集群≥4、surge ≥6 单位推家才放
+   *   □ 开局树 ×2：B0 中路试探（inf 起手轮换、左侧道起）｜B1 双线占塔
+   *     （razor 起手轮换、右侧道起、开局即双塔道集结塔位）
+   * competitive 快开竞技 · 人设：读你套路的排位对手
+   *   □ 快开（tick 8 首动）+ 克制针对（敌众数→克制兵）+ 克制储蓄窗口（F2b）
+   *   □ 集火残血：barrage 目标评分 = 集群数 + 2×残血数（hp≤40%），残血≥2
+   *     即使集群<4 也打——收头优先于覆盖（"集火残血"）
+   *   □ 守塔换位：己方持有塔 2.5 行内出现敌军 → 出兵道让位协防 + 集结线
+   *     收到塔位（防守换位优先于扩张）；基地 5 行压顶直援（F2 保留）
+   *   □ 猎杀让力（动态 mercy，game.json 可调）：己队分差 ≥ triggerGap →
+   *     整档收力至均衡水平（决策放缓/技能收敛/不再 drop 断线），分差回落
+   *     ≤ releaseGap 才恢复（滞回带防抖）——对局观感"势均力敌"
+   *   □ 开局树 ×2：P0 快攻抢塔（首兵驻最近塔 + drop 抢点）｜P1 中路压制
+   *     （3×inf 直推中路、无开局 rally、drop 前期只断兵线不抢塔）
    * ===================================================================== */
   const FIRST = { casual: 150, balanced: 30, competitive: 8 };      // 首行动 tick
   const DECIDE = { casual: 50, balanced: 20, competitive: 10 };     // 决策间隔
   const SAVE_WIN = 300;                                             // F2：competitive 克制储蓄窗口上限（tick）
+  const OPENERS = { casual: 2, balanced: 2, competitive: 2 };       // GAMES-46：开局树数（按 rng 定桩派发）
   const NOOP = { cmd: { k: 'noop' } };
+
+  /* ---------- Bot 调参（GAMES-46）：game.json net.botTuning 是可调事实源，
+   * 此处内置同值默认（离线端无 game.json 读取链路时兜底）；服务端适配器
+   * （server/gateway/sims/slg-battlefield.js）启动时以 game.json 覆盖。 ---------- */
+  const BOT_TUNING = {
+    mercy: { triggerGap: 150, releaseGap: 75, level: 'balanced' },  // 猎杀让力：分差≥150 收力至均衡档，≤75 解除（滞回）
+    carry: { idleTicks: 150 },                                      // 陪玩：同队真人静默超 150 tick（15s）→ casual bot 接管
+  };
+  function setBotTuning(t) {
+    if (!t || typeof t !== 'object') return;
+    if (t.mercy && typeof t.mercy === 'object') {
+      if (Number.isInteger(t.mercy.triggerGap)) BOT_TUNING.mercy.triggerGap = t.mercy.triggerGap;
+      if (Number.isInteger(t.mercy.releaseGap)) BOT_TUNING.mercy.releaseGap = t.mercy.releaseGap;
+      if (LEVELS.indexOf(t.mercy.level) >= 0) BOT_TUNING.mercy.level = t.mercy.level;
+    }
+    if (t.carry && typeof t.carry === 'object' && Number.isInteger(t.carry.idleTicks)) {
+      BOT_TUNING.carry.idleTicks = t.carry.idleTicks;
+    }
+  }
 
   const botMem = new WeakMap();
   function memOf(state, seat) {
@@ -520,7 +572,11 @@
       s = { lastDecide: -1, seenTick: -1, seen: new Set(), enemyLog: [], wanted: null,
             rot: 0, laneFlip: 0, openerInf: 0, openerRallied: false, towerHad: [null, null],
             retowerUntil: -1, retowerIdx: -1, rallySet: [false, false, false], lastRallyRow: [-9, -9, -9],
-            saveFor: null, saveSince: -1, saveSpawned: -1 };
+            saveFor: null, saveSince: -1, saveSpawned: -1,
+            /* GAMES-46 人格层：开局树定桩 / 走神窗口 / 温和回击 / 陪玩 / 让力 */
+            opener: -1, blurUntil: -1, baseHpLast: -1, provokedAt: -1,
+            mateSnap: -1, mateActiveTick: 0, carryRally: [false, false, false], pushRally: [false, false, false],
+            mercy: 0 };
       m[seat] = s;
     }
     return s;
@@ -581,6 +637,53 @@
     return 2;
   }
 
+  /* 集火残血（GAMES-46 competitive 人格）：在 45px 集群口径上加权残血——
+     评分 = 集群数 + 2×残血数（hp≤40% 上限），收头优先于覆盖；全平取先遇者（id 序稳定） */
+  function focusCluster(state, enemyTeam) {
+    let best = null;
+    const units = state.units, r2 = BARR_R2;
+    for (let i = 0; i < units.length; i++) {
+      const e = units[i];
+      if (e.hp <= 0 || e.drop > 0 || e.team !== enemyTeam) continue;
+      let c = 0, w = 0;
+      for (let j = 0; j < units.length; j++) {
+        const o = units[j];
+        if (o.hp <= 0 || o.drop > 0 || o.team !== enemyTeam) continue;
+        if (laneDist2(e.lane, e.y, o.lane, o.y) <= r2) { c++; if (o.hp * 5 <= o.maxHp * 2) w++; }
+      }
+      const sc = c + 2 * w;
+      if (!best || sc > best.sc) best = { lane: e.lane, y: e.y, count: c, wounded: w, sc: sc };
+    }
+    return best;
+  }
+
+  /* 最近威胁车道（casual 温和回击用）：距己方基地最近的敌军所在车道 */
+  function threatLaneNear(state, team, base) {
+    let best = -1, bd = 0;
+    const units = state.units;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.hp <= 0 || u.drop > 0 || u.team === team) continue;
+      const d = laneDist2(u.lane, u.y, 0, base.y);
+      if (best < 0 || d < bd) { best = u.lane; bd = d; }
+    }
+    return best < 0 ? 1 : best;
+  }
+
+  /* 守塔换位（GAMES-46 competitive 人格）：己方持有塔 2.5 行内出现敌军 → 该塔下标（无则 -1） */
+  function guardedTower(state, my, foe) {
+    for (let ti = 0; ti < state.towers.length; ti++) {
+      const tw = state.towers[ti];
+      if (tw.owner !== my) continue;
+      for (let i = 0; i < state.units.length; i++) {
+        const u = state.units[i];
+        if (u.hp <= 0 || u.drop > 0 || u.team !== foe) continue;
+        if (u.lane === tw.lane && Math.abs(u.y - tw.y) <= 2 * ROW_M + 12500) return ti;
+      }
+    }
+    return -1;
+  }
+
   function canCast(state, seat, id) {
     const s = state.seats[seat];
     return s.energy >= SKILLS[id].cost && s.cd[id] <= 0;
@@ -597,21 +700,91 @@
   const enemyBaseRow = (team) => (team === 'A' ? 0 : 19);
   const rowOf = (y) => clamp0((y / ROW_M) | 0, 0, 19);
 
-  function brain(state, seat, level, rng) {
+  function brain(state, seat, level, rng, env) {
     const s = state.seats[seat];
     if (!s) return NOOP;
     const mem = memOf(state, seat);
     trackEnemy(state, seat, mem);
 
-    if (mem.lastDecide < 0) { if (state.tick < FIRST[level]) return NOOP; mem.lastDecide = state.tick; }
-    else if (state.tick - mem.lastDecide < DECIDE[level]) return NOOP;
+    const my = s.team, foe = my === 'A' ? 'B' : 'A';
+
+    /* ---- 猎杀让力（GAMES-46，game.json net.botTuning.mercy 可调）：competitive 己队
+       分差 ≥ triggerGap → 整档收力至 BOT_TUNING.mercy.level（均衡档水平：决策放缓/
+       技能收敛/无 drop 断线/研究节奏全套降档），分差回落 ≤ releaseGap 才恢复（滞回防抖）。
+       置于节奏闸门之前——决策间隔随收力档同步放缓，是"势均力敌"观感的一部分。
+       纯分差函数（state.score），确定性红线不破；让力触发次数可由分差时间线精确重构。 */
+    let lvl = level;
+    if (lvl === 'competitive' && BOT_TUNING.mercy.level !== 'competitive') {
+      const gap = state.score[my] - state.score[foe];
+      if (!mem.mercy) { if (gap >= BOT_TUNING.mercy.triggerGap) mem.mercy = 1; }
+      else if (gap <= BOT_TUNING.mercy.releaseGap) mem.mercy = 0;
+      if (mem.mercy) lvl = BOT_TUNING.mercy.level;
+    }
+
+    if (mem.lastDecide < 0) { if (state.tick < FIRST[lvl]) return NOOP; mem.lastDecide = state.tick; }
+    else if (state.tick - mem.lastDecide < DECIDE[lvl]) return NOOP;
     mem.lastDecide = state.tick;
 
-    const my = s.team, foe = my === 'A' ? 'B' : 'A';
+    /* ---- 开局树定桩（GAMES-46）：首个决策 tick 一次性 rng 派发。服务端 botRng 由房间
+       seed 派生（rooms.js：mulberry32(seed ^ seat·φ)）→ 同 seed 同局必同树、同 seed
+       双跑逐字节一致；分支选择由服务端 rng 承载，客户端只回放输入——确定性红线不破。 */
+    if (mem.opener < 0) mem.opener = (rng() * OPENERS[lvl]) | 0;
+
     const myBase = baseOf(state, my);
 
+    /* ---- 陪玩模式（GAMES-46）：同队真人（env.kinds[seat^2]==='human'）的 casual bot
+       「带躺但不抢戏」。活跃检测纯 state 派生（队友 spawned/kills/tier/research/rally
+       快照变化即活跃）；静默超 carry.idleTicks → 接管节奏，活跃 → 让位让资源让击杀。 */
+    let carry = 0;                                   // 0=非陪玩 1=让位（真人活跃） 2=接管（真人挂机）
+    if (lvl === 'casual' && env && env.kinds && env.kinds[seat ^ 2] === 'human') {
+      const m = state.seats[seat ^ 2];               // 2v2 队友席（0↔2 / 1↔3）
+      if (m) {
+        const snap = m.spawned * 100000 + m.kills * 1000 + m.tier * 100 + (m.research ? 50 : 0) + m.rally[0] + m.rally[1] * 20 + m.rally[2] * 400;
+        if (snap !== mem.mateSnap) { mem.mateSnap = snap; mem.mateActiveTick = state.tick; }
+        carry = (state.tick - mem.mateActiveTick > BOT_TUNING.carry.idleTicks) ? 2 : 1;
+      }
+    }
+    if (carry === 1) {
+      /* 让位期（真人活跃）：维修只在基地 <40%（保命底线）；出兵 3× 闸门 + pop≤4——
+         少花钱少占场，资源与击杀让给真人；集结钉己方 1/3 守势线（不前压不抢线）；
+         barrage/surge（抢头/抢节奏技能）全让。 */
+      if (myBase.hp < 600 && canCast(state, seat, 1)) return { cmd: { k: 'skill', id: 1 } };
+      if (!mem.wanted) mem.wanted = UNIT_CODES[(rng() * 6) | 0];
+      const cost3 = UNITS[mem.wanted].costs[s.tier - 1] * 1000;
+      if (s.cp >= Math.min(cost3 * 3, CP_MAX - 1000) && popOfSeat(state, seat) < 4) {
+        const u = mem.wanted; mem.wanted = null;
+        return { cmd: { k: 'spawn', unit: u, lane: (rng() * 3) | 0 } };
+      }
+      const holdRow = my === 'A' ? 14 : 5;
+      for (let l = 0; l < 3; l++) {
+        if (!mem.carryRally[l]) { mem.carryRally[l] = true; mem.lastRallyRow[l] = holdRow; return { cmd: { k: 'rally', lane: l, row: holdRow } }; }
+      }
+      return NOOP;
+    }
+
+    /* ---- C1 慢热占塔开局（GAMES-46）：一次性把最近塔道集结钉到塔位（开局树指纹之一） */
+    if (lvl === 'casual' && mem.opener === 1 && !mem.openerRallied) {
+      mem.openerRallied = true;
+      const tw = state.towers[my === 'A' ? 1 : 0];
+      mem.lastRallyRow[tw.lane] = tw.row;
+      return { cmd: { k: 'rally', lane: tw.lane, row: tw.row } };
+    }
+
+    /* ---- casual 走神窗口（GAMES-46 人格）：15% 概率发呆 1.2-2s——明显失误给对手
+       留可乘之窗。纯 bot 局（carry=0）照常人格化；陪玩接管期（carry=2）认真带躺不走神 */
+    if (lvl === 'casual' && carry === 0) {
+      if (mem.blurUntil > state.tick) return NOOP;
+      if (rng() < 0.15) { mem.blurUntil = state.tick + 120 + ((rng() * 80) | 0); return NOOP; }
+    }
+    /* ---- casual 温和回击记账（GAMES-46 人格）：基地 HP 下降 → 记最近受击 tick（回击在出兵段） */
+    if (lvl === 'casual') {
+      if (mem.baseHpLast < 0) mem.baseHpLast = myBase.hp;
+      if (myBase.hp < mem.baseHpLast) mem.provokedAt = state.tick;
+      mem.baseHpLast = myBase.hp;
+    }
+
     /* ---- 技能战术（三档差异主战场） ---- */
-    if (level === 'casual') {
+    if (lvl === 'casual') {
       // 有能量+冷却好 30% 概率随机放（barrage 常放空）
       if (rng() < 0.3) {
         const ids = [];
@@ -622,7 +795,7 @@
           return { cmd: { k: 'skill', id: id } };
         }
       }
-    } else if (level === 'balanced') {
+    } else if (lvl === 'balanced') {
       if (myBase.hp < 900 && canCast(state, seat, 1)) return { cmd: { k: 'skill', id: 1 } };                    // repair：基地 <60%
       const cl = bestCluster(state, foe);
       if (cl && cl.count >= 4 && canCast(state, seat, 0)) return { cmd: { k: 'skill', id: 0, lane: cl.lane, row: rowOf(cl.y) } }; // barrage：敌集群 ≥4
@@ -634,10 +807,12 @@
       if (myBase.hp < 1125 && canCast(state, seat, 1)) return { cmd: { k: 'skill', id: 1 } };                   // repair：<75% 即用
       let foeSurge = false;
       for (let i = 0; i < state.seats.length; i++) if (state.seats[i].team === foe && state.tick < state.seats[i].surgeUntil) foeSurge = true;
-      const cl = bestCluster(state, foe);
-      if (canCast(state, seat, 0) && ((cl && cl.count >= 4) || foeSurge)) {
+      /* 集火残血（GAMES-46 人格）：目标评分 = 集群数 + 2×残血数（hp≤40%），残血 ≥2
+         即使集群 <4 也打——收头优先于覆盖 */
+      const cl = focusCluster(state, foe);
+      if (canCast(state, seat, 0) && ((cl && (cl.count >= 4 || cl.wounded >= 2)) || foeSurge)) {
         const tgt = cl || { lane: 1, y: baseOf(state, my).y + (my === 'A' ? -125000 : 125000) };
-        return { cmd: { k: 'skill', id: 0, lane: tgt.lane, row: rowOf(tgt.y) } };                                // barrage：集群 ≥4 或敌 surge 期间
+        return { cmd: { k: 'skill', id: 0, lane: tgt.lane, row: rowOf(tgt.y) } };                                // barrage：集群 ≥4 / 残血 ≥2 / 敌 surge 期间
       }
       if (canCast(state, seat, 2)) {                                                                            // drop：抢点/断兵线
         for (let ti = 0; ti < state.towers.length; ti++) {
@@ -645,7 +820,9 @@
           if (tw.owner === my) continue;
           let near = 0;
           for (let i = 0; i < state.units.length; i++) { const u = state.units[i]; if (u.seat === seat && u.hp > 0 && laneDist2(tw.lane, tw.y, u.lane, u.y) <= CAP_R2) near++; }
-          if (near === 0 && (state.tick < 400 || tw.owner === foe)) return { cmd: { k: 'skill', id: 2, lane: tw.lane, row: tw.row } }; // 抢点（前期/被夺反攻）
+          /* P1 中路压制开局树（GAMES-46）：开局不走 drop 抢塔（那是 P0 的侵略指纹），
+             前期只留给断兵线 drop；被夺反攻照旧 */
+          if (near === 0 && ((state.tick < 400 && mem.opener === 0) || tw.owner === foe)) return { cmd: { k: 'skill', id: 2, lane: tw.lane, row: tw.row } }; // 抢点（前期/被夺反攻）
         }
         if (state.tick > 200 && state.tick % 100 === 0 && popOfSeat(state, seat) < POP_MAX) {                     // 断兵线：砸敌基地门口
           const eb = baseOf(state, foe);
@@ -657,14 +834,15 @@
       if (pushing && own >= 6 && canCast(state, seat, 3)) return { cmd: { k: 'skill', id: 3 } };
     }
 
-    /* ---- 研究（攒钱闸门：档位阈值后停止出兵直至凑够研发费，防"有 CP 即花"永不升阶） ---- */
+    /* ---- 研究（攒钱闸门：档位阈值后停止出兵直至凑够研发费，防"有 CP 即花"永不升阶；
+       让力期 lvl=balanced → 研究节奏随之降档（tick 600 起，不再 tick 400 抢升） ---- */
     let saving = 0;
-    if (level === 'balanced') {
+    if (lvl === 'balanced') {
       if (state.tick >= 600 && s.tier === 1 && !s.research) {
         if (s.cp >= RESEARCH[2].cost) return { cmd: { k: 'research', tier: 2 } };
         saving = 2;
       }
-    } else if (level === 'competitive') {
+    } else if (lvl === 'competitive') {
       if (s.tier === 1 && state.tick >= 400 && !s.research) {
         if (s.cp >= RESEARCH[2].cost) return { cmd: { k: 'research', tier: 2 } };
         /* F2 补（GAMES-45）：敌方众数非 inf（razor/arty/heavy 压场）时 T2 储蓄让位——
@@ -683,7 +861,19 @@
     /* ---- 出兵 ---- */
     if (saving) return NOOP;                       // 研发储蓄期不出兵（研究期间出兵照常是 sim 规则，此处是策略）
     let spawnCode = null, spawnLane = 0;
-    if (level === 'casual') {
+    if (lvl === 'casual') {
+      /* C1 慢热占塔开局（GAMES-46）：首兵 inf 走最近塔道（此后恢复随机懒散——
+         "偶尔想赢一下"的休闲人格：起手有个章法，然后随缘） */
+      if (mem.opener === 1 && mem.openerInf === 0 && s.cp >= 20000 && popOfSeat(state, seat) < POP_MAX) {
+        mem.openerInf = 1;
+        return { cmd: { k: 'spawn', unit: 'inf', lane: state.towers[my === 'A' ? 1 : 0].lane } };
+      }
+      /* 温和回击（GAMES-46 人格）：基地 5s 内被打 → 60% 概率回敬 1 个 inf 到威胁车道
+         （点到为止，不升级响应——"被打后温和回击"） */
+      if (mem.provokedAt >= 0 && state.tick - mem.provokedAt <= 50 && s.cp >= 20000 && popOfSeat(state, seat) < POP_MAX && rng() < 0.6) {
+        mem.provokedAt = -1;
+        return { cmd: { k: 'spawn', unit: 'inf', lane: threatLaneNear(state, my, myBase) } };
+      }
       // 解锁池内 rng 均匀；攒到 2× 造价才出。
       // F1 修复（GAMES-45）：闸门夹取 CP 上限内——heavy 2×110=220 > 上限 200 时原闸门永不可达，
       // wanted 只在成功出兵后重掷 → 掷中即整局零出兵、CP 顶死（QA bots-casual g3 seat2 实证）。
@@ -693,24 +883,26 @@
       const gate = Math.min(cost * 2, CP_MAX - 1000);
       if (s.cp >= gate && popOfSeat(state, seat) < POP_MAX) { spawnCode = mem.wanted; mem.wanted = null; }
       spawnLane = (rng() * 3) | 0;
-    } else if (level === 'balanced') {
-      // 固定轮换 inf→razor→arty；开局 2×inf 试探（tick 30/50）
+    } else if (lvl === 'balanced') {
+      // 固定轮换（B0 inf→razor→arty ｜ B1 razor→arty→inf=相位差一起手）；开局 2×inf 试探（tick 30/50）
       if (state.tick <= 60) spawnCode = 'inf';
-      else spawnCode = ['inf', 'razor', 'arty'][mem.rot % 3];
+      else spawnCode = [['inf', 'razor', 'arty'], ['razor', 'arty', 'inf']][mem.opener][mem.rot % 3];
       if (!affordable(state, seat, spawnCode) || popOfSeat(state, seat) >= POP_MAX) return NOOP;
       mem.rot++;
-      spawnLane = mem.laneFlip === 0 ? 0 : 2;      // 两车道轮换
+      spawnLane = mem.laneFlip === 0 ? (mem.opener === 1 ? 2 : 0) : (mem.opener === 1 ? 0 : 2);  // 两车道轮换（B1 右道起=镜像指纹）
       mem.laneFlip = 1 - mem.laneFlip;
     } else { // competitive
-      // 快攻开局：先集结最近塔车道 → 3×inf（首兵驻塔占点，余二压中路）+ drop 抢点（技能段）
+      // 快攻开局（GAMES-46 开局树：P0 快攻抢塔=先集结最近塔车道 → 3×inf（首兵驻塔、余二压中路）+ drop 抢点；
+      // P1 中路压制=无开局 rally，3×inf 直推中路，drop 前期只断兵线不抢塔）
       if (mem.openerInf < 3) {
         const tw = state.towers[my === 'A' ? 1 : 0];  // A 最近 Bravo(lane2 row13) / B 最近 Alpha(lane0 row6)
-        if (!mem.openerRallied) {
+        if (mem.opener === 1) mem.openerRallied = true;  // P1：跳过开局塔 rally
+        else if (!mem.openerRallied) {
           mem.openerRallied = true; mem.lastRallyRow[tw.lane] = tw.row;
           return { cmd: { k: 'rally', lane: tw.lane, row: tw.row } };
         }
         spawnCode = 'inf';
-        spawnLane = mem.openerInf === 0 ? tw.lane : 1;
+        spawnLane = mem.opener === 1 ? 1 : (mem.openerInf === 0 ? tw.lane : 1);
         if (!affordable(state, seat, spawnCode) || popOfSeat(state, seat) >= POP_MAX) return NOOP;
         mem.openerInf++;
       } else {
@@ -755,14 +947,39 @@
           if (saveOk && state.tick - mem.saveSince <= SAVE_WIN) spawnCode = null;   // 储蓄中：不出兵（落到下方集结段）
           else spawnCode = 'inf';                                                   // 超窗/不可达/全灭 → 支付档降级
         }
-        spawnLane = threatLane >= 0 ? threatLane : contestLane >= 0 ? contestLane : weakestLane(state, foe);
+        /* 守塔换位（GAMES-46 人格）：己方持有塔 2.5 行内出现敌军 → 协防该道
+           （保命压顶仍最优先，其次守塔，再次争塔/最弱点） */
+        const guardTi = guardedTower(state, my, foe);
+        spawnLane = threatLane >= 0 ? threatLane
+          : guardTi >= 0 ? state.towers[guardTi].lane
+          : contestLane >= 0 ? contestLane : weakestLane(state, foe);
         if (!spawnCode || !affordable(state, seat, spawnCode) || popOfSeat(state, seat) >= POP_MAX) spawnCode = null;
       }
     }
     if (spawnCode) return { cmd: { k: 'spawn', unit: spawnCode, lane: spawnLane } };
 
+    /* ---- 陪玩接管期前压（GAMES-46）：真人挂机 → casual bot 把集结线顶到中线带节奏
+       （每车道一次；真人回线让位后由让位段钉回守势线） */
+    if (lvl === 'casual' && carry === 2) {
+      const pushRow = my === 'A' ? 11 : 8;
+      for (let l = 0; l < 3; l++) {
+        if (!mem.pushRally[l]) { mem.pushRally[l] = true; mem.lastRallyRow[l] = pushRow; return { cmd: { k: 'rally', lane: l, row: pushRow } }; }
+      }
+      return NOOP;
+    }
+
     /* ---- 集结/信号塔 ---- */
-    if (level === 'balanced') {
+    if (lvl === 'balanced') {
+      /* B1 双线占塔开局（GAMES-46）：开局 200 tick 内先把双塔道集结钉到塔位（占塔提速） */
+      if (mem.opener === 1 && state.tick < 200) {
+        for (let ti = 0; ti < state.towers.length; ti++) {
+          const tw = state.towers[ti];
+          if (!mem.rallySet[tw.lane] && s.rally[tw.lane] !== tw.row) {
+            mem.rallySet[tw.lane] = true; mem.lastRallyRow[tw.lane] = tw.row;
+            return { cmd: { k: 'rally', lane: tw.lane, row: tw.row } };
+          }
+        }
+      }
       // 路过顺占：≥2 单位经过未持信号塔 → 该车道集结到塔位
       for (let ti = 0; ti < state.towers.length; ti++) {
         const tw = state.towers[ti];
@@ -779,7 +996,7 @@
       for (let l = 0; l < 3; l++) {
         if (!mem.rallySet[l]) { mem.rallySet[l] = true; mem.lastRallyRow[l] = frontRow; return { cmd: { k: 'rally', lane: l, row: frontRow } }; }
       }
-    } else if (level === 'competitive') {
+    } else if (lvl === 'competitive') {
       // 专职占塔：首个决策派 1×inf 走最近塔（出兵段已优先）；点被夺 10s 内反攻
       for (let ti = 0; ti < state.towers.length; ti++) {
         const tw = state.towers[ti];
@@ -787,7 +1004,11 @@
         mem.towerHad[ti] = tw.owner;
       }
       let rallyLane = -1, rallyRow = -1;
-      if (mem.retowerIdx >= 0 && state.tick <= mem.retowerUntil && state.towers[mem.retowerIdx].owner !== my) {
+      const guardTi = guardedTower(state, my, foe);
+      if (guardTi >= 0) {
+        /* 守塔换位（GAMES-46 人格）：持有塔被压 → 集结线收到塔位协防（换位防守优先于扩张） */
+        rallyLane = state.towers[guardTi].lane; rallyRow = state.towers[guardTi].row;
+      } else if (mem.retowerIdx >= 0 && state.tick <= mem.retowerUntil && state.towers[mem.retowerIdx].owner !== my) {
         rallyLane = state.towers[mem.retowerIdx].lane; rallyRow = state.towers[mem.retowerIdx].row;
       } else {
         /* F2c 持续争塔（GAMES-45）：还有未持有的信号塔（含从未持有——原版反攻窗只覆盖
@@ -820,6 +1041,7 @@
   const LEVELS = ['casual', 'balanced', 'competitive'];
 
   return { META, UNITS, SKILLS, RESEARCH, LEVELS, create, step, execCmd, serialize, deserialize, brain, fnv1a32, mulberry32,
+           setBotTuning, botTuning: () => ({ mercy: { ...BOT_TUNING.mercy }, carry: { ...BOT_TUNING.carry } }),
            consts: { POP_MAX, CP_MAX, E_MAX, SCORE_WIN, BASE_HP, DTOWER_HP, ROW_M, LANE_M, FIELD_H_M, BASE_Y, CAP_MAX } };
 });
 
@@ -1697,7 +1919,9 @@
       if (matchOver) { clearInterval(offlineTimer); return; }
       var inputs = {};
       inputs[0] = { cmd: cmdQueue.shift() || { k: 'noop' } };
-      for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng);
+      /* 席位名册 env（GAMES-46）：seat0=真人——同队 casual bot 走陪玩模式（带躺不抢戏） */
+      var env = { kinds: ['human', 'bot', 'bot', 'bot'] };
+      for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng, env);
       stepLocal(inputs);
     }, S.META.tickMs);
   }

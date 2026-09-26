@@ -678,7 +678,9 @@
       if (matchOver) { clearInterval(offlineTimer); return; }
       var inputs = {};
       inputs[0] = { cmd: cmdQueue.shift() || { k: 'noop' } };
-      for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng);
+      /* 席位名册 env（GAMES-46）：seat0=真人——同队 casual bot 走陪玩模式（带躺不抢戏） */
+      var env = { kinds: ['human', 'bot', 'bot', 'bot'] };
+      for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng, env);
       stepLocal(inputs);
     }, S.META.tickMs);
   }
