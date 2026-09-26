@@ -2,6 +2,11 @@
 /* =====================================================================
  * 车道跑酷引擎（spec §9）：三纵向车道，左右滑换道、上滑跳，跑到终点线即胜；
  * 撞障碍耗 hearts，耗尽即败。
+ * GAMES-30 试点重构（原生基座黄金样本）：判定路径逐字保留（rng 消费序/步长/物理
+ * 与旧版一致——QA 确定性/可赢性断言原样可跑）；表现层按 GAMES-24 §7.2.A 强化：
+ *   A1 车道线/地面静态层离屏缓存（一次成图、主循环只 blit；bench 已证明可行），
+ *      无 document.createElement 环境（vm 桩/QA harness）自动回退直绘；
+ *   零 G./GE. 依赖（任何外壳/vm 桩可驱动）。
  * 曲线：speed(L)=speed×(1+0.35p)；obsRate(L)=min(0.50, obsRate×(1+0.25p))；
  *       distance(L)=round(distanceBase×(1+0.50p))；coinTarget(L)=ceil(15×(1+0.40p))，p=(L−1)/(Ln−1)。
  * 生成（§9）：车道按 120px 分段逐车道掷点障碍/金币；硬约束：任一横截面 ≥1 空车道、
@@ -17,6 +22,16 @@ const LaneRunnerEngine = (function () {
   const TALL_RATE = 0.35;   // 障碍中高障碍占比（seed 掷点）
   const STEP = 1 / 120;
 
+  /* 本地工具（判定路径零外部依赖；与 GE/common.js 实现逐字一致） */
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  function roundRect(g, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
+
   return function (game) {
     const { cfg, rng, area } = game;
     const t = Object.assign({ speed: 300, obsRate: 0.30, hearts: 3, coinRate: 0.10, distanceBase: 2000 }, cfg.typeExtra);
@@ -27,6 +42,31 @@ const LaneRunnerEngine = (function () {
     const coinTarget = Math.ceil(15 * (1 + 0.40 * p));
     const laneW = area.w / LANES;
     const playerY = area.y + area.h * 0.70;
+
+    /* --- §7.2.A.1 静态层：车道分隔线 + 地面底色（不变层一次成图，主循环只 blit） --- */
+    let laneLayer = null;                                     // { w, h, cvs|null }；cvs=null 回退直绘
+    function staticLayer() {
+      if (laneLayer && laneLayer.w === area.w && laneLayer.h === area.h) return laneLayer;
+      let ok = false;
+      try {
+        if (typeof document !== 'undefined' && document.createElement) {
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(area.w * 2)); c.height = Math.max(1, Math.round(area.h * 2));
+          const lg = c.getContext('2d');
+          if (lg) { lg.scale(2, 2); drawLanes(lg, 0); ok = true; laneLayer = { w: area.w, h: area.h, cvs: c }; }
+        }
+      } catch (e) { ok = false; }
+      if (!ok) laneLayer = { w: area.w, h: area.h, cvs: null };
+      return laneLayer;
+    }
+    /** 车道底色+分隔线（oy=层内 0 偏移 / 直绘 area.y） */
+    function drawLanes(g, oy) {
+      g.fillStyle = '#151a26'; g.fillRect(0, oy, area.w, area.h);
+      for (let l = 0; l <= LANES; l++) {
+        g.strokeStyle = '#1c2438'; g.lineWidth = l % LANES === 0 ? 2 : 1;
+        g.beginPath(); g.moveTo(laneW * l, oy); g.lineTo(laneW * l, oy + area.h); g.stroke();
+      }
+    }
 
     /* --- 关卡生成：lanes[seg][lane] = 0空 1矮障 2金币 3高障 --- */
     const segN = Math.ceil(distance / SEG);
@@ -60,12 +100,15 @@ const LaneRunnerEngine = (function () {
     let lane = 1, px = area.w / 2, jumpY = 0, vy = 0;
     let dist = 0, coins = 0, hearts = t.hearts, invuln = 0, done = false, score = 0;
     let down = null;
+    /* HUD 源头脏检查（§7.2.A.4）：值变才 setHud（里程显示量化 10px，消灭逐帧分配/GC churn） */
+    let hudD = -1, hudC = -1, hudH = -1;
+    let acc0 = 0;                                              // 固定步长余数跨帧携带（GAMES-30 修复：丢弃式累加器在 120Hz 帧到位≈STEP 时整帧丢步，引擎慢 ~17%）
 
     const laneX = (l) => laneW * (l + 0.5);
     function swipe(dx, dy) {
       if (done) return;
       if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
-      if (Math.abs(dx) >= Math.abs(dy)) { const nl = G.clamp(lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== lane) { lane = nl; } }
+      if (Math.abs(dx) >= Math.abs(dy)) { const nl = clamp(lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== lane) { lane = nl; } }
       else if (dy < 0 && jumpY <= 0) { vy = 560; }         // 上滑跳（§9）
     }
 
@@ -75,7 +118,7 @@ const LaneRunnerEngine = (function () {
       if (invuln > 0) invuln -= STEP;
       /* 换道平滑 */
       const tx = laneX(lane);
-      px += G.clamp(tx - px, -900 * STEP, 900 * STEP);
+      px += clamp(tx - px, -900 * STEP, 900 * STEP);
       /* 跳跃物理 */
       if (jumpY > 0 || vy > 0) { vy -= 1500 * STEP; jumpY += vy * STEP; if (jumpY <= 0) { jumpY = 0; vy = 0; } }
       /* 判定：与玩家 z 邻近分段交互 */
@@ -102,26 +145,29 @@ const LaneRunnerEngine = (function () {
     return {
       startLevel() { game.setHud([{ t: '程', v: 0 }, { t: '币', v: 0 }, { t: '命', v: hearts }]); },
       update(dt) {
-        let acc = dt;
-        while (acc >= STEP) { acc -= STEP; step(); if (done) break; }
+        acc0 += dt;
+        while (acc0 >= STEP) { acc0 -= STEP; step(); if (done) break; }
         score = coins * 20 + hearts * 50;
-        game.setHud([
-          { t: `/${(distance / 1000).toFixed(1)}k`, v: Math.min(distance, Math.round(dist)) },
-          { t: `/${coinTarget}币`, v: coins },
-          { t: '命', v: hearts },
-        ]);
+        const d10 = Math.round(dist / 10) * 10;
+        if (d10 !== hudD || coins !== hudC || hearts !== hudH) {
+          hudD = d10; hudC = coins; hudH = hearts;
+          game.setHud([
+            { t: `/${(distance / 1000).toFixed(1)}k`, v: Math.min(distance, d10) },
+            { t: `/${coinTarget}币`, v: coins },
+            { t: '命', v: hearts },
+          ]);
+        }
       },
       onDown(x, y) { down = { x, y }; },
       onMove() { },
       onUp(x, y) { if (down) { swipe(x - down.x, y - down.y); down = null; } },
       render(g) {
-        /* 车道与地面 */
-        for (let l = 0; l <= LANES; l++) {
-          g.strokeStyle = '#1c2438'; g.lineWidth = l % LANES === 0 ? 2 : 1;
-          g.beginPath(); g.moveTo(laneW * l, area.y); g.lineTo(laneW * l, area.y + area.h); g.stroke();
-        }
+        /* 车道与地面：§7.2.A.1 静态层 blit（vm 桩回退直绘） */
+        const layer = staticLayer();
+        if (layer.cvs) g.drawImage(layer.cvs, 0, area.y, area.w, area.h);
+        else drawLanes(g, area.y);
         /* 顶栏下进度条 */
-        const pr = G.clamp(dist / distance, 0, 1);
+        const pr = clamp(dist / distance, 0, 1);
         g.fillStyle = '#1a2133'; g.fillRect(20, area.y + 6, area.w - 40, 4);
         g.fillStyle = '#7bd88f'; g.fillRect(20, area.y + 6, (area.w - 40) * pr, 4);
         /* 障碍/金币（z→screenY：物品在玩家前方 dist 之上方） */
@@ -133,13 +179,13 @@ const LaneRunnerEngine = (function () {
           for (let l = 0; l < LANES; l++) {
             const v = lanes[s][l];
             const x = laneX(l);
-            if (v === 1) { g.fillStyle = '#3b4a6b'; G.roundRect(g, x - 34, y - OB_LOW, 68, OB_LOW, 6); g.fill(); }
+            if (v === 1) { g.fillStyle = '#3b4a6b'; roundRect(g, x - 34, y - OB_LOW, 68, OB_LOW, 6); g.fill(); }
             else if (v === 3) {
-              g.fillStyle = '#5b3b6b'; G.roundRect(g, x - 36, y - OB_TALL, 72, OB_TALL, 6); g.fill();
+              g.fillStyle = '#5b3b6b'; roundRect(g, x - 36, y - OB_TALL, 72, OB_TALL, 6); g.fill();
               g.fillStyle = '#ff8fa3'; g.fillRect(x - 36, y - OB_TALL, 72, 6);
             } else if (v === 2) {
               g.beginPath(); g.arc(x, y - 26, 9, 0, 7); g.fillStyle = '#ffd166'; g.fill();
-              g.fillStyle = '#b8860b'; g.font = G.FONT(10, 700); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('¥', x, y - 26);
+              g.fillStyle = '#b8860b'; g.font = FONT(10, 700); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('¥', x, y - 26);
             }
           }
         }
@@ -153,7 +199,7 @@ const LaneRunnerEngine = (function () {
         const blink = invuln > 0 && Math.floor(invuln * 10) % 2 === 0;
         if (!blink) {
           g.fillStyle = '#9fc0ff';
-          G.roundRect(g, px - 17, playerY - 46 - jumpY, 34, 46, 9); g.fill();
+          roundRect(g, px - 17, playerY - 46 - jumpY, 34, 46, 9); g.fill();
           g.fillStyle = '#e8ecf3'; g.beginPath(); g.arc(px, playerY - 34 - jumpY, 6, 0, 7); g.fill();
         }
       },

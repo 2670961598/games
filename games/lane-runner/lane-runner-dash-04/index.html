@@ -15,7 +15,7 @@
 <body>
 <canvas id="cv"></canvas>
 <script>
-/* 本款数值（与同目录 game.json 同源生成——GAMES-19 build-b.mjs；引擎零网络请求，离线可玩） */
+/* 本款数值（与同目录 game.json 同源——GAMES-30 build-g30.mjs；引擎零网络请求，离线可玩） */
 const CONFIG = {
   "slug": "lane-runner-dash-04",
   "title": "三轨狂飙 04",
@@ -23,7 +23,7 @@ const CONFIG = {
   "tier": "hard",
   "levels": 40,
   "specVersion": "1.1.0",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "orientation": "portrait",
   "entry": "index.html",
   "controls": {
@@ -48,17 +48,37 @@ const CONFIG = {
 };
 </script>
 <script>
+/* games/_shared/engine.js —— GAMES-30 原生基座 GE（bench 结构化基线产品化，零外部引擎依赖） */
 'use strict';
 /* =====================================================================
- * GAMES 公共框架（spec §4.4/§5）——所有类型引擎共享，由 build.mjs 内联进各 index.html。
- * 职责：PRNG（§5.6 逐字实现）、宿主钩子+telemetry 兜底（§5.3）、localStorage 三键（§5.2）、
- *       WebAudio 程序合成音效、375×667 画布外壳（DPR 缩放/安全区）、关卡流程与星级（§3.2）、
- *       事件词表（boot/start/levelEnd/end）、选关/结算/暂停 UI。
- * 确定性铁律：判定路径零 Math.random；每关 rng = mulberry32(fnv1a32(`${slug}#${level}`))。
+ * GAMES 原生基座 GE（games/_shared/engine.js）——GAMES-30
+ * 来源：GAMES-24 选型报告结论（原生 Canvas + 结构化基线胜出 4.85/5），以 bench/
+ *      结构化基线（外壳+固定步长+PRNG，bench/src/glue-native.js）为蓝本产品化，零外部引擎依赖。
+ * 职责（单据任务 2 的四件套）：
+ *   - seed PRNG：§5.6 冻结逐字实现（fnv1a32 + mulberry32），每关
+ *     rng = mulberry32(fnv1a32(`${slug}#${level}`))，判定路径零 Math.random；
+ *   - tier 参数注入：cfg.typeExtra 五档落值解包 + TIER_CN 词表 + 曲线复算 helper
+ *     （§4.1 线性 lin / §4.2 资源反向 inv）供引擎直接消费；
+ *   - 375×667 安全区词表：W/H/TOP 常量 + fit()（DPR 夹 1..3、安全区 inset 扣减）
+ *     + toXY() 坐标换算 + area() 游戏区矩形；
+ *   - 统一计分上报协议：§5.3 事件词表 boot/start/levelEnd/end/perf（宿主 hook 优先、
+ *     telemetry 兜底）+ §5.2 localStorage 三键（节流/flush/损坏静默重置）。
+ * 引擎契约（与 common.js 逐字兼容，QA harness 原样可驱动）：
+ *   engineFactory(game) → { startLevel, update(dt), render(g), onDown, onMove, onUp, __state? }
+ *   game = { W, H, cfg, level, area, rng, setHud([{t,v}]≤3), toast(text), win(score,opt), lose(score) }
+ * §7.2.A 强化清单落地（GAMES-24 报告 D 阶段输入）：
+ *   A1 静态层离屏缓存：GE.layer() 一次成图、主循环只 blit（bench 已证明可行）；
+ *   A2 粒子并发上限：由各引擎按池语义自限（见 tap-burst MAX_FX）；
+ *   A3 帧预算监控进 telemetry：long17 口径照搬 bench（帧间隔>17.5ms），滚动窗 p95>18ms 告警；
+ *   A4 HUD 脏检查写：值变才 fillText（修复 common.js 只画 1/2 组的历史缺陷，三组三等分）。
+ * ?debug=1 QA 钩子：window.__GAMES_DEBUG__ = { events, start(level), state(), fps(), perf() }
+ *   —— 与 GAMES-22 口径同形（perf-smoke 零改动可跑）；boot 事件在钩子注入后才上报（沉淀 183-87）。
+ * 构建：build-g30.mjs 将本文件与 CONFIG + 逻辑引擎 + boot 调用内联进单文件 index.html
+ *   （§5.1 自包含铁律；server 对 /games/_* 一律 404，无相对引用可能）。
  * ===================================================================== */
-const G = (function () {
+const GE = (function () {
 
-  /* ---------- §5.6 PRNG 参考实现（全引擎统一，冻结） ---------- */
+  /* ---------- §5.6 PRNG 参考实现（全引擎统一，冻结，与 common.js 逐字一致） ---------- */
   function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
   function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
@@ -66,6 +86,7 @@ const G = (function () {
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const lerp = (a, b, t) => a + (b - a) * t;
   const TIER_CN = { relaxed: '轻松', simple: '简单', normal: '标准', hard: '困难', master: '大师' };
+  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
   /** 滑动定向（§12：位移 ≥24px 定向，主轴优先）。不足阈值返回 null。 */
   function swipeDir(dx, dy) {
     if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return null;
@@ -77,7 +98,45 @@ const G = (function () {
     g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
     g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
   }
-  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
+
+  /* ---------- tier 参数注入（§3.1 档位表落值优先于乘子） ---------- */
+  /** 曲线进度 p=(L−1)/(Ln−1)。 */
+  function prog(level, levels) { return levels > 1 ? (level - 1) / (levels - 1) : 0; }
+  /** §4.1 线性曲线：base×(1+k·p)（threat 递增用）。 */
+  const lin = (base, k, p) => base * (1 + k * p);
+  /** §4.2 资源反向曲线：base×(1−k·p)（资源递减用，下限 0）。 */
+  const inv = (base, k, p) => Math.max(0, base * (1 - k * p));
+  /** tier 解包：typeExtra 五档落值 + 曲线进度一并交给引擎。 */
+  function tier(cfg, level) {
+    return { extra: Object.assign({}, cfg.typeExtra || {}), p: prog(level, cfg.levels), cn: TIER_CN[cfg.tier] || cfg.tier };
+  }
+
+  /* ---------- 375×667 安全区词表（§5.4 竖屏逻辑分辨率） ---------- */
+  const W = 375, H = 667, TOP = 48;
+  const area = () => ({ x: 0, y: TOP, w: W, h: H - TOP });
+  /** 刘海/圆角 inset（viewport-fit=cover 时 env() 生效；取不到按 0）。 */
+  function safeInsets() {
+    try {
+      const cs = window.getComputedStyle && window.getComputedStyle(document.documentElement);
+      if (!cs) return { t: 0, r: 0, b: 0, l: 0 };
+      const px = (v) => Math.max(0, parseFloat(v) || 0);
+      return { t: px(cs.getPropertyValue('env(safe-area-inset-top)')), r: px(cs.getPropertyValue('env(safe-area-inset-right)')), b: px(cs.getPropertyValue('env(safe-area-inset-bottom)')), l: px(cs.getPropertyValue('env(safe-area-inset-left)')) };
+    } catch (e) { return { t: 0, r: 0, b: 0, l: 0 }; }
+  }
+  /** 外壳 resize：等比缩放夹进（视口−安全区），DPR 夹 1..3。 */
+  function fit(cvs) {
+    const ins = safeInsets();
+    const vw = Math.max(0, window.innerWidth - ins.l - ins.r), vh = Math.max(0, window.innerHeight - ins.t - ins.b);
+    const s = Math.min(vw / W, vh / H), dpr = clamp(window.devicePixelRatio || 1, 1, 3);
+    cvs.style.width = (W * s) + 'px'; cvs.style.height = (H * s) + 'px';
+    cvs.width = Math.round(W * s * dpr); cvs.height = Math.round(H * s * dpr);
+    return s * dpr;                                        /* 供 setTransform 用 */
+  }
+  /** 指针事件 → 375×667 逻辑坐标。 */
+  function toXY(cvs, e) {
+    const r = cvs.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+  }
 
   /* ---------- §5.3 宿主钩子 + telemetry 兜底 ---------- */
   function makeReporter(slug, store) {
@@ -147,25 +206,34 @@ const G = (function () {
     };
   }
 
-  /* ---------- 画布外壳 + 关卡流程（boot 入口） ----------
-   * engineFactory(game) → { startLevel, update(dt), render(g), onDown, onMove, onUp, hudParts? }
-   *   game.cfg / game.W / game.H / game.area（顶栏下方的游戏区矩形）
-   *   game.rng（每关重置的 PRNG）/ game.level
-   *   game.setHud([{t,v}...])（顶栏状态，≤3 组）/ game.toast(text)
-   *   game.win(score, {s2,s3} 或 {stars}) / game.lose(score)
-   * 框架负责：选关/顶栏/结算浮层/星级与进度/事件上报/音效开关。 */
+  /* ---------- §7.2.A.1 静态层离屏缓存 ----------
+   * 不变层（背景/车道线等）一次成图，主循环 drawImage blit（bench 已证明可行）。
+   * 内部 2x 采样保证 DPR2 下线条锐利；无 document.createElement 环境（vm 桩）回退直绘。 */
+  function layer(w, h, draw) {
+    let cvs = null;
+    try {
+      if (typeof document !== 'undefined' && document.createElement) {
+        cvs = document.createElement('canvas');
+        cvs.width = Math.max(1, Math.round(w * 2)); cvs.height = Math.max(1, Math.round(h * 2));
+        const g = cvs.getContext('2d');
+        if (!g) { cvs = null; }
+        else { g.scale(2, 2); draw(g); }                     /* 逻辑坐标绘制 */
+      }
+    } catch (e) { cvs = null; }
+    return {
+      ok: !!cvs,
+      /** blit 到逻辑矩形（目标 ctx 已带缩放变换）；不可用返回 false 由调用方直绘。 */
+      blit(target, x, y, ww, hh) { if (cvs) { target.drawImage(cvs, x, y, ww, hh); return true; } return false; },
+    };
+  }
+
+  /* ---------- 画布外壳 + 关卡流程（boot 入口；契约同 common.js） ---------- */
   function boot(cfg, engineFactory) {
-    const W = 375, H = 667, TOP = 48;
     const cvs = document.getElementById('cv'), g = cvs.getContext('2d');
     let scale = 1;
-    function fit() {
-      const vw = window.innerWidth, vh = window.innerHeight;
-      const s = Math.min(vw / W, vh / H), dpr = clamp(window.devicePixelRatio || 1, 1, 3);
-      cvs.style.width = (W * s) + 'px'; cvs.style.height = (H * s) + 'px';
-      cvs.width = Math.round(W * s * dpr); cvs.height = Math.round(H * s * dpr);
-      scale = s * dpr;
-    }
-    function toXY(e) { const r = cvs.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
+    function refit() { scale = fit(cvs); }
+    refit();
+    window.addEventListener('resize', refit);
 
     const store = makeStore(cfg.slug); store.load(cfg.levels);
     const report = makeReporter(cfg.slug, store);
@@ -173,37 +241,98 @@ const G = (function () {
 
     /* --- 会话与关卡状态 --- */
     let screen = 'home';            // home | play
-    let engine = null, curLevel = 1, hudParts = [], toast = { text: '', t: 0 };
-    let result = null;              // {level,win,score,stars,next:boolean,all:boolean}
+    let engine = null, curLevel = 1, hudParts = [];
+    let toast = { text: '', t: 0 };
+    let result = null;              // {level,win,score,stars,next,all}
     let session = null;             // {score, t0} → end 事件
     let homeScroll = 0, gridMode = false, dragFrom = null;
-    let animT = 0;
+    let levelT0 = performance.now();
 
-    report('boot', { slug: cfg.slug, version: cfg.version, specVersion: cfg.specVersion });
+    /* --- §7.2.A.3 帧预算监控（long17 口径照搬 bench：帧间隔>17.5ms） --- */
+    const RING = 300;               // 滚动窗 ≈5s @60fps
+    const gaps = new Float32Array(RING);
+    let gapN = 0, gapHead = 0, lastFrameT = 0;
+    let long17 = 0, p95WarnedAt = 0;
+    function noteFrame(t) {
+      if (lastFrameT) {
+        const d = t - lastFrameT;
+        if (gapN < RING) { gaps[gapHead] = d; gapHead = (gapHead + 1) % RING; gapN++; }
+        else { gaps[gapHead] = d; gapHead = (gapHead + 1) % RING; }
+        if (d > 17.5) long17++;
+        if (screen === 'play' && !result && t - p95WarnedAt > 5000 && gapN >= 60) {
+          p95WarnedAt = t;
+          const sorted = Array.from(gaps.subarray(0, gapN)).sort((a, b) => a - b);
+          const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+          if (p95 > 18) report('perf', { warn: true, p95Ms: +p95.toFixed(1), long17, slug: cfg.slug });  // 帧预算告警（遥测留痕，不打断玩法）
+        }
+      }
+      lastFrameT = t;
+    }
+    function perfStat() {
+      const sorted = Array.from(gaps.subarray(0, gapN)).sort((a, b) => a - b);
+      const q = (p) => sorted.length ? +sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))].toFixed(1) : null;
+      const sum = sorted.reduce((a, b) => a + b, 0);
+      return {
+        frames: gapN, long17,
+        long17R: gapN ? +(long17 / gapN).toFixed(4) : null,
+        p95Ms: q(0.95), avgFrameMs: sorted.length ? +(sum / sorted.length).toFixed(1) : null,
+        inputN: inputN, inputMaxMs: inputMaxMs ? +inputMaxMs.toFixed(1) : null,
+        inputAvgMs: inputN ? +(inputSum / inputN).toFixed(1) : null,
+      };
+    }
+
+    /* --- 输入延迟（质量红线：输入→呈现 <100ms；事件 timeStamp → 下一呈现帧） --- */
+    const inputTs = [];
+    let inputN = 0, inputMaxMs = 0, inputSum = 0;
+    function noteInput(ts) { if (ts > 0) inputTs.push(ts); }
+
+    /* --- ?debug=1 QA 钩子（先注入后 report('boot')，见沉淀 183-87） --- */
+    const debugEvents = [];
+    let debugOn = false;
+    let paused = false;                                       // QA 暂停：截图等 CDP 停顿期间冻结引擎时序（E2E 确定性）
+    try { debugOn = /(^|&)debug=1/.test((window.location && window.location.search || '').slice(1)); } catch (e) { debugOn = false; }
+    if (debugOn) {
+      window.__GAMES_DEBUG__ = {
+        events: debugEvents,
+        start(level) { startLevel(level || 1); },
+        pause(v) { paused = !!v; },                           // 冻结/恢复引擎时序（渲染继续；QA 截图用）
+        fps() { const s = perfStat(); return s.avgFrameMs ? +(1000 / s.avgFrameMs).toFixed(1) : null; },
+        state() {
+          return { screen, level: curLevel, tier: cfg.tier, hud: hudParts, result: result && { level: result.level, win: result.win, score: result.score, stars: result.stars }, engine: engine && engine.__state ? engine.__state() : null };
+        },
+        perf() { return perfStat(); },
+        base: 'native',
+      };
+    }
+    const dbg = (event, payload) => { if (debugOn) debugEvents.push({ t: Date.now(), event, payload }); };
+    const report2 = (event, payload) => { dbg(event, payload); report(event, payload); };
+
+    report2('boot', { slug: cfg.slug, version: cfg.version, specVersion: cfg.specVersion, base: 'native' });
 
     /* --- UI 帮助 --- */
-    function btn(r, label, cb) { // 命中检测+绘制合一（当前帧绘制时命中测试由 down 处理器完成）
+    let hitButtons = [];
+    function btn(r, label, cb) {
       g.fillStyle = '#3b4a6b'; roundRect(g, r.x, r.y, r.w, r.h, r.h / 2); g.fill();
       g.fillStyle = '#e8ecf3'; g.font = FONT(16, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1);
       hitButtons.push({ r, cb });
     }
-    let hitButtons = [];
     function drawStars(x, y, n, size) {
       for (let i = 0; i < 3; i++) {
         g.fillStyle = i < n ? '#ffd166' : '#3a4358'; g.font = FONT(size, 700); g.textAlign = 'left'; g.textBaseline = 'middle';
         g.fillText('★', x + i * (size + 2), y);
       }
     }
-    function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : '' + Math.floor(n); }
+    const fmt = (n) => n >= 10000 ? (n / 1000).toFixed(1) + 'k' : '' + Math.floor(n);
 
     /* --- 关卡流程（事件词表 §5.3） --- */
     function startLevel(L) {
-      curLevel = L; screen = 'play'; result = null; hudParts = []; levelT0 = performance.now();
+      curLevel = L; screen = 'play'; result = null; hudParts = []; toast = { text: '', t: 0 };
+      levelT0 = performance.now();
       if (!session) session = { score: 0, t0: performance.now() };
       engine = engineFactory({
         W, H, cfg, level: L,
-        area: { x: 0, y: TOP, w: W, h: H - TOP },
+        area: area(),
         rng: mulberry32(fnv1a32(`${cfg.slug}#${L}`)),
         setHud: (p) => { hudParts = p.slice(0, 3); },
         toast: (t) => { toast = { text: t, t: 1.4 }; },
@@ -211,7 +340,7 @@ const G = (function () {
         lose: (score) => finish(false, score, {}),
       });
       engine.startLevel();
-      report('start', { level: L });
+      report2('start', { level: L });
       snd('tap');
     }
     function finish(win, score, opt) {
@@ -229,29 +358,28 @@ const G = (function () {
         p.stars[curLevel - 1] = Math.max(p.stars[curLevel - 1] || 0, stars);
         store.mark('progress');
       }
-      report('levelEnd', { level: curLevel, win, score, stars, durMs });
-      if (all) { report('end', { reason: 'allClear', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) }); session = null; }
+      report2('levelEnd', { level: curLevel, win, score, stars, durMs });
+      if (all) { report2('end', { reason: 'allClear', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) }); session = null; }
       snd(win ? 'ok' : 'bad');
     }
-    let levelT0 = performance.now();
-
     function goHome() {
       if (screen === 'play' && session) {                     // 退出会话 → quit
-        report('end', { reason: 'quit', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) });
+        report2('end', { reason: 'quit', totalScore: session.score, durMs: Math.round(performance.now() - session.t0) });
         session = null;
       }
       screen = 'home'; result = null; engine = null; store.flushNow();
     }
 
-    /* --- 输入路由 --- */
+    /* --- 输入路由（tap/swipe 词表 §5.4；timeStamp 进延迟队列） --- */
     cvs.addEventListener('pointerdown', (e) => {
       e.preventDefault(); cvs.setPointerCapture && cvs.setPointerCapture(e.pointerId);
-      const p = toXY(e);
-      if (screen === 'play' && !result && engine) { engine.onDown(p.x, p.y); }
+      noteInput(e.timeStamp);
+      const p = toXY(cvs, e);
+      if (screen === 'play' && !result && engine) { engine.onDown(p.x, p.y); dbg('input', { kind: 'down', x: +p.x.toFixed(1), y: +p.y.toFixed(1) }); }
       dragFrom = { ...p, scroll: homeScroll, moved: false };
     });
     cvs.addEventListener('pointermove', (e) => {
-      const p = toXY(e);
+      const p = toXY(cvs, e);
       if (screen === 'play' && !result && engine) engine.onMove(p.x, p.y);
       if (dragFrom && screen === 'home' && gridMode) {
         const dy = p.y - dragFrom.y;
@@ -259,13 +387,13 @@ const G = (function () {
       }
     });
     const upHandler = (e) => {
-      const p = toXY(e);
+      noteInput(e.timeStamp);
+      const p = toXY(cvs, e);
       const wasDrag = dragFrom && dragFrom.moved; dragFrom = null;
       if (wasDrag) return;
-      /* 结算浮层按钮 */
       if (result) { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
       if (screen === 'home') { for (const b of hitButtons) if (hit(b.r, p)) { b.cb(); return; } return; }
-      if (engine) engine.onUp(p.x, p.y);
+      if (engine) { engine.onUp(p.x, p.y); dbg('input', { kind: 'up', x: +p.x.toFixed(1), y: +p.y.toFixed(1) }); }
     };
     cvs.addEventListener('pointerup', upHandler);
     cvs.addEventListener('pointercancel', upHandler);
@@ -276,18 +404,24 @@ const G = (function () {
     window.addEventListener('pagehide', () => store.flushNow());
     window.addEventListener('beforeunload', () => store.flushNow());
 
-    /* --- 主循环 --- */
-    let last = performance.now();
+    /* --- 主循环（dt 夹 0..0.05s；判定节奏由引擎内部 1/120 固定步长保证） --- */
     function frame(t) {
-      const dt = clamp((t - last) / 1000, 0, 0.05); last = t; animT += dt;
+      const dt = clamp((t - lastFrameT) / 1000, 0, 0.05);   // 先取上一帧间隔（noteFrame 会更新 lastFrameT）
+      noteFrame(t);
+      /* 输入→呈现延迟：事件 timeStamp → 本呈现帧 */
+      while (inputTs.length) {
+        const d = t - inputTs.shift();
+        if (d >= 0 && d < 10000) { inputN++; inputSum += d; if (d > inputMaxMs) inputMaxMs = d; }
+      }
       store.flushIfDue();
       hitButtons = [];
       g.setTransform(scale, 0, 0, scale, 0, 0);
       g.fillStyle = '#101522'; g.fillRect(0, 0, W, H);
       if (screen === 'home') drawHome();
-      else drawPlay(dt);
+      else drawPlay(paused ? 0 : dt);                         // QA 暂停：引擎时序冻结，画面保持
       requestAnimationFrame(frame);
     }
+    requestAnimationFrame(frame);
 
     function drawHome() {
       const p = store.progress;
@@ -328,13 +462,15 @@ const G = (function () {
       g.fillStyle = store.settings.sound ? '#ffd166' : '#5b6478'; g.font = FONT(18, 600);
       g.fillText(store.settings.sound ? '♪' : '×', sr.x + 20, sr.y + 21);
       hitButtons.push({ r: sr, cb: () => { store.settings.sound = !store.settings.sound; store.mark('settings'); snd('tap'); } });
-      g.fillStyle = '#3a4358'; g.font = FONT(11, 400); g.fillText(`${cfg.slug} v${cfg.version}`, W / 2, H - 16);
+      g.fillStyle = '#3a4358'; g.font = FONT(11, 400); g.fillText(`${cfg.slug} v${cfg.version} · GE`, W / 2, H - 16);
     }
 
+    /* --- 玩法态：引擎画布 + 顶栏（HUD 三组三等分；§7.2.A.4 脏检查在引擎源头做——
+     *     值变才 setHud，GE 侧每帧重画。教训：GE 侧再加缓存与"半透明底逐帧重刷"互斥——
+     *     93% α 底每帧盖掉旧墨 7%，低频值组（命/币）~1s 内被擦空；底改不透明 + 每帧重画） --- */
     function drawPlay(dt) {
       if (engine) { engine.update(dt); engine.render(g); }
-      /* 顶栏（状态区，§5.5） */
-      g.fillStyle = '#151b2eee'; g.fillRect(0, 0, W, TOP);
+      g.fillStyle = '#151b2e'; g.fillRect(0, 0, W, TOP);
       g.strokeStyle = '#232c42'; g.beginPath(); g.moveTo(0, TOP - .5); g.lineTo(W, TOP - .5); g.stroke();
       const back = { x: 8, y: 8, w: 44, h: 32 };
       g.fillStyle = '#2c3a5c'; roundRect(g, back.x, back.y, back.w, back.h, 8); g.fill();
@@ -342,14 +478,18 @@ const G = (function () {
       g.fillText('‹', back.x + 22, back.y + 17);
       hitButtons.push({ r: back, cb: goHome });
       g.textAlign = 'left'; g.font = FONT(12, 500); g.fillStyle = '#8b94a7';
-      let x = 64; g.fillText('第' + curLevel + '关', x, TOP / 2); x += 46;
-      g.textAlign = 'center'; g.font = FONT(13, 700); g.fillStyle = '#e8ecf3';
-      if (hudParts.length === 1) g.fillText(hudParts[0].t + ' ' + fmt(hudParts[0].v), (x + W) / 2, TOP / 2);
-      else if (hudParts.length === 2) {
-        g.textAlign = 'left';
-        g.fillText(hudParts[0].t, x + 6, TOP / 2 - 8); g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[0].v), x + 6, TOP / 2 + 9);
-        g.fillStyle = '#8b94a7'; g.font = FONT(12, 500); g.fillText(hudParts[1].t, W / 2 + 24, TOP / 2 - 8);
-        g.font = FONT(14, 700); g.fillStyle = '#9fc0ff'; g.fillText(fmt(hudParts[1].v), W / 2 + 24, TOP / 2 + 9);
+      g.fillText('第' + curLevel + '关', 64, TOP / 2);
+      /* HUD ≤3 组三等分（修复旧壳只画 1/2 组的历史缺陷） */
+      const n = hudParts.length;
+      if (n) {
+        const x0 = 112, span = (W - 8 - x0) / n, cw = Math.floor(span);
+        g.textAlign = 'center';
+        for (let i = 0; i < n; i++) {
+          const part = hudParts[i];
+          const cx = x0 + i * span;
+          g.fillStyle = '#8b94a7'; g.font = FONT(11, 500); g.fillText(part.t, cx + cw / 2, TOP / 2 - 9);
+          g.fillStyle = '#9fc0ff'; g.font = FONT(14, 700); g.fillText(fmt(part.v), cx + cw / 2, TOP / 2 + 9);
+        }
       }
       /* toast */
       if (toast.t > 0) {
@@ -378,20 +518,28 @@ const G = (function () {
         else btn({ x: bx + bw + gap, y: cy + 178, w: bw, h: bh }, '首页', goHome);
       }
     }
-
-    fit(); window.addEventListener('resize', fit);
-    requestAnimationFrame(frame);
   }
 
-  return { fnv1a32, mulberry32, clamp, lerp, swipeDir, roundRect, FONT, TIER_CN, boot };
+  return {
+    W, H, TOP, area, fit, toXY, safeInsets,
+    fnv1a32, mulberry32, clamp, lerp, prog, lin, inv, tier, TIER_CN,
+    swipeDir, roundRect, FONT,
+    makeStore, makeReporter, makeSound, layer, boot,
+  };
 })();
 
 </script>
 <script>
+/* games/_shared/engines/lane-runner.js —— 逻辑引擎（判定确定性：每关 rng=mulberry32(fnv1a32(slug#level))） */
 'use strict';
 /* =====================================================================
  * 车道跑酷引擎（spec §9）：三纵向车道，左右滑换道、上滑跳，跑到终点线即胜；
  * 撞障碍耗 hearts，耗尽即败。
+ * GAMES-30 试点重构（原生基座黄金样本）：判定路径逐字保留（rng 消费序/步长/物理
+ * 与旧版一致——QA 确定性/可赢性断言原样可跑）；表现层按 GAMES-24 §7.2.A 强化：
+ *   A1 车道线/地面静态层离屏缓存（一次成图、主循环只 blit；bench 已证明可行），
+ *      无 document.createElement 环境（vm 桩/QA harness）自动回退直绘；
+ *   零 G./GE. 依赖（任何外壳/vm 桩可驱动）。
  * 曲线：speed(L)=speed×(1+0.35p)；obsRate(L)=min(0.50, obsRate×(1+0.25p))；
  *       distance(L)=round(distanceBase×(1+0.50p))；coinTarget(L)=ceil(15×(1+0.40p))，p=(L−1)/(Ln−1)。
  * 生成（§9）：车道按 120px 分段逐车道掷点障碍/金币；硬约束：任一横截面 ≥1 空车道、
@@ -407,6 +555,16 @@ const LaneRunnerEngine = (function () {
   const TALL_RATE = 0.35;   // 障碍中高障碍占比（seed 掷点）
   const STEP = 1 / 120;
 
+  /* 本地工具（判定路径零外部依赖；与 GE/common.js 实现逐字一致） */
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  function roundRect(g, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
+
   return function (game) {
     const { cfg, rng, area } = game;
     const t = Object.assign({ speed: 300, obsRate: 0.30, hearts: 3, coinRate: 0.10, distanceBase: 2000 }, cfg.typeExtra);
@@ -417,6 +575,31 @@ const LaneRunnerEngine = (function () {
     const coinTarget = Math.ceil(15 * (1 + 0.40 * p));
     const laneW = area.w / LANES;
     const playerY = area.y + area.h * 0.70;
+
+    /* --- §7.2.A.1 静态层：车道分隔线 + 地面底色（不变层一次成图，主循环只 blit） --- */
+    let laneLayer = null;                                     // { w, h, cvs|null }；cvs=null 回退直绘
+    function staticLayer() {
+      if (laneLayer && laneLayer.w === area.w && laneLayer.h === area.h) return laneLayer;
+      let ok = false;
+      try {
+        if (typeof document !== 'undefined' && document.createElement) {
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(area.w * 2)); c.height = Math.max(1, Math.round(area.h * 2));
+          const lg = c.getContext('2d');
+          if (lg) { lg.scale(2, 2); drawLanes(lg, 0); ok = true; laneLayer = { w: area.w, h: area.h, cvs: c }; }
+        }
+      } catch (e) { ok = false; }
+      if (!ok) laneLayer = { w: area.w, h: area.h, cvs: null };
+      return laneLayer;
+    }
+    /** 车道底色+分隔线（oy=层内 0 偏移 / 直绘 area.y） */
+    function drawLanes(g, oy) {
+      g.fillStyle = '#151a26'; g.fillRect(0, oy, area.w, area.h);
+      for (let l = 0; l <= LANES; l++) {
+        g.strokeStyle = '#1c2438'; g.lineWidth = l % LANES === 0 ? 2 : 1;
+        g.beginPath(); g.moveTo(laneW * l, oy); g.lineTo(laneW * l, oy + area.h); g.stroke();
+      }
+    }
 
     /* --- 关卡生成：lanes[seg][lane] = 0空 1矮障 2金币 3高障 --- */
     const segN = Math.ceil(distance / SEG);
@@ -450,12 +633,15 @@ const LaneRunnerEngine = (function () {
     let lane = 1, px = area.w / 2, jumpY = 0, vy = 0;
     let dist = 0, coins = 0, hearts = t.hearts, invuln = 0, done = false, score = 0;
     let down = null;
+    /* HUD 源头脏检查（§7.2.A.4）：值变才 setHud（里程显示量化 10px，消灭逐帧分配/GC churn） */
+    let hudD = -1, hudC = -1, hudH = -1;
+    let acc0 = 0;                                              // 固定步长余数跨帧携带（GAMES-30 修复：丢弃式累加器在 120Hz 帧到位≈STEP 时整帧丢步，引擎慢 ~17%）
 
     const laneX = (l) => laneW * (l + 0.5);
     function swipe(dx, dy) {
       if (done) return;
       if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
-      if (Math.abs(dx) >= Math.abs(dy)) { const nl = G.clamp(lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== lane) { lane = nl; } }
+      if (Math.abs(dx) >= Math.abs(dy)) { const nl = clamp(lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== lane) { lane = nl; } }
       else if (dy < 0 && jumpY <= 0) { vy = 560; }         // 上滑跳（§9）
     }
 
@@ -465,7 +651,7 @@ const LaneRunnerEngine = (function () {
       if (invuln > 0) invuln -= STEP;
       /* 换道平滑 */
       const tx = laneX(lane);
-      px += G.clamp(tx - px, -900 * STEP, 900 * STEP);
+      px += clamp(tx - px, -900 * STEP, 900 * STEP);
       /* 跳跃物理 */
       if (jumpY > 0 || vy > 0) { vy -= 1500 * STEP; jumpY += vy * STEP; if (jumpY <= 0) { jumpY = 0; vy = 0; } }
       /* 判定：与玩家 z 邻近分段交互 */
@@ -492,26 +678,29 @@ const LaneRunnerEngine = (function () {
     return {
       startLevel() { game.setHud([{ t: '程', v: 0 }, { t: '币', v: 0 }, { t: '命', v: hearts }]); },
       update(dt) {
-        let acc = dt;
-        while (acc >= STEP) { acc -= STEP; step(); if (done) break; }
+        acc0 += dt;
+        while (acc0 >= STEP) { acc0 -= STEP; step(); if (done) break; }
         score = coins * 20 + hearts * 50;
-        game.setHud([
-          { t: `/${(distance / 1000).toFixed(1)}k`, v: Math.min(distance, Math.round(dist)) },
-          { t: `/${coinTarget}币`, v: coins },
-          { t: '命', v: hearts },
-        ]);
+        const d10 = Math.round(dist / 10) * 10;
+        if (d10 !== hudD || coins !== hudC || hearts !== hudH) {
+          hudD = d10; hudC = coins; hudH = hearts;
+          game.setHud([
+            { t: `/${(distance / 1000).toFixed(1)}k`, v: Math.min(distance, d10) },
+            { t: `/${coinTarget}币`, v: coins },
+            { t: '命', v: hearts },
+          ]);
+        }
       },
       onDown(x, y) { down = { x, y }; },
       onMove() { },
       onUp(x, y) { if (down) { swipe(x - down.x, y - down.y); down = null; } },
       render(g) {
-        /* 车道与地面 */
-        for (let l = 0; l <= LANES; l++) {
-          g.strokeStyle = '#1c2438'; g.lineWidth = l % LANES === 0 ? 2 : 1;
-          g.beginPath(); g.moveTo(laneW * l, area.y); g.lineTo(laneW * l, area.y + area.h); g.stroke();
-        }
+        /* 车道与地面：§7.2.A.1 静态层 blit（vm 桩回退直绘） */
+        const layer = staticLayer();
+        if (layer.cvs) g.drawImage(layer.cvs, 0, area.y, area.w, area.h);
+        else drawLanes(g, area.y);
         /* 顶栏下进度条 */
-        const pr = G.clamp(dist / distance, 0, 1);
+        const pr = clamp(dist / distance, 0, 1);
         g.fillStyle = '#1a2133'; g.fillRect(20, area.y + 6, area.w - 40, 4);
         g.fillStyle = '#7bd88f'; g.fillRect(20, area.y + 6, (area.w - 40) * pr, 4);
         /* 障碍/金币（z→screenY：物品在玩家前方 dist 之上方） */
@@ -523,13 +712,13 @@ const LaneRunnerEngine = (function () {
           for (let l = 0; l < LANES; l++) {
             const v = lanes[s][l];
             const x = laneX(l);
-            if (v === 1) { g.fillStyle = '#3b4a6b'; G.roundRect(g, x - 34, y - OB_LOW, 68, OB_LOW, 6); g.fill(); }
+            if (v === 1) { g.fillStyle = '#3b4a6b'; roundRect(g, x - 34, y - OB_LOW, 68, OB_LOW, 6); g.fill(); }
             else if (v === 3) {
-              g.fillStyle = '#5b3b6b'; G.roundRect(g, x - 36, y - OB_TALL, 72, OB_TALL, 6); g.fill();
+              g.fillStyle = '#5b3b6b'; roundRect(g, x - 36, y - OB_TALL, 72, OB_TALL, 6); g.fill();
               g.fillStyle = '#ff8fa3'; g.fillRect(x - 36, y - OB_TALL, 72, 6);
             } else if (v === 2) {
               g.beginPath(); g.arc(x, y - 26, 9, 0, 7); g.fillStyle = '#ffd166'; g.fill();
-              g.fillStyle = '#b8860b'; g.font = G.FONT(10, 700); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('¥', x, y - 26);
+              g.fillStyle = '#b8860b'; g.font = FONT(10, 700); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('¥', x, y - 26);
             }
           }
         }
@@ -543,7 +732,7 @@ const LaneRunnerEngine = (function () {
         const blink = invuln > 0 && Math.floor(invuln * 10) % 2 === 0;
         if (!blink) {
           g.fillStyle = '#9fc0ff';
-          G.roundRect(g, px - 17, playerY - 46 - jumpY, 34, 46, 9); g.fill();
+          roundRect(g, px - 17, playerY - 46 - jumpY, 34, 46, 9); g.fill();
           g.fillStyle = '#e8ecf3'; g.beginPath(); g.arc(px, playerY - 34 - jumpY, 6, 0, 7); g.fill();
         }
       },
@@ -561,7 +750,7 @@ const LaneRunnerEngine = (function () {
 
 </script>
 <script>
-G.boot(CONFIG, LaneRunnerEngine);
+GE.boot(CONFIG, LaneRunnerEngine);
 </script>
 </body>
 </html>
