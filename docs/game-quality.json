@@ -1004,6 +1004,18 @@
    "visual": "pending",
    "iterations": 0,
    "notes": ""
+  },
+  "multiplayer:net-tank": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 2,
+   "net": {
+    "tech": "S1",
+    "bot": "三档(休闲/均衡/竞技)+真人让位"
+   },
+   "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
   }
  }
 }
