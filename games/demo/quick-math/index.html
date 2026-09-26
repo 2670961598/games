@@ -8,18 +8,22 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
-    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif;
+    background: #101522; color: #e8ecf3; font-family: -apple-system, 'PingFang SC', sans-serif; }
+  /* GAMES-31：375px 严格口径——#wrap 定宽列居中，取代 html/body 上的 flex 收缩适配
+     （body 曾随内容收缩适配，宽视口/字体替换下可超宽且 unsafe 居中会双侧裁切）。
+     内部一律容器相对宽度，无 vw、无固定 px 列宽。 */
+  #wrap { width: 100%; max-width: 375px; margin: 0 auto; height: 100%;
     display: flex; flex-direction: column; align-items: center; }
   header { width: 100%; display: flex; justify-content: space-between; padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
     font-size: 14px; color: #8b94a7; }
   header b { color: #e8ecf3; font-size: 18px; }
-  main { flex: 1; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+  main { flex: 1; width: 100%; padding: 0 26px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
   #q { font-size: 52px; font-weight: 800; letter-spacing: .06em; }
   #q.flash { animation: shake .3s; }
   @keyframes shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
-  /* GAMES-23：单行 flex 只有 3 选项且右缘余量偏紧，识图终审判裁切；对齐 color-strike 范式改 2×2 grid。
-     minmax(0,1fr) 零 min-content 下限——任意内容宽度都不会撑破 375px 视口（结构性防溢出）。 */
-  #opts { width: min(86vw, 380px); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  /* GAMES-23：2×2 grid（对齐 color-strike 范式）；minmax(0,1fr) 零 min-content 下限——
+     任意内容宽度都不会撑破容器（结构性防溢出）。GAMES-31：宽度改 100% 随 #wrap 列。 */
+  #opts { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   #opts button { padding: 18px 0; border-radius: 16px; border: 0; font-size: 24px; font-weight: 700;
     color: #fff; background: #26304a; }
   #opts button:active { background: #33415f; }
@@ -33,12 +37,14 @@
 </style>
 </head>
 <body>
+<div id="wrap">
 <header><span>⏱ <b id="time">30</b>s</span><span>极速心算</span><span>💎 <b id="score">0</b></span></header>
 <main>
   <div id="q"></div>
   <div id="opts"></div>
   <div id="combo"></div>
 </main>
+</div>
 <div id="over"><h2>时间到！</h2><div class="s" id="final">0</div><button id="again">再来一局</button></div>
 <script>
   const qEl = document.getElementById('q')
