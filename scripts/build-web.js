@@ -133,17 +133,31 @@ async function main() {
   await copyDir(join(SRC, 'src'), join(TMP, 'src'), files)
   await copyDir(join(SRC, 'public'), TMP, files) // 可选目录
 
+  // 根级其余 .html（第二界面等独立页面，GAMES-40 起）：原样入产物根
+  const rootHtml = []
+  for (const e of await readdir(SRC, { withFileTypes: true })) {
+    if (e.isFile() && e.name.endsWith('.html') && e.name !== 'index.html') rootHtml.push(e.name)
+  }
+  for (const name of rootHtml) {
+    const content = await readFile(join(SRC, name), 'utf8')
+    await writeFile(join(TMP, name), content)
+    files.push({ path: name, bytes: Buffer.byteLength(content) })
+  }
+
   if (!files.some((f) => f.path === 'src/main.js')) {
     throw new Error('web/src/main.js 缺失')
   }
 
-  // 2. index.html 本地引用必须落在产物里（裸相对路径按 index.html 所在层级解析）
-  for (const ref of localRefs(indexHtml)) {
-    const rel = ref.startsWith('/') ? ref.slice(1) : ref.replace(/^\.\//, '')
-    const target = join(TMP, rel)
-    await stat(target).catch(() => {
-      throw new Error(`index.html 引用缺失: ${ref}（期望产物 ${target}）`)
-    })
+  // 2. 各根级 html 本地引用必须落在产物里（裸相对路径按所在层级解析）
+  for (const [name, html] of [['index.html', indexHtml], ...rootHtml.map((n) => [n, null])]) {
+    const content = html !== null ? html : await readFile(join(SRC, name), 'utf8')
+    for (const ref of localRefs(content)) {
+      const rel = ref.startsWith('/') ? ref.slice(1) : ref.replace(/^\.\//, '')
+      const target = join(TMP, rel)
+      await stat(target).catch(() => {
+        throw new Error(`${name} 引用缺失: ${ref}（期望产物 ${target}）`)
+      })
+    }
   }
 
   // 3. 产物 JS 语法检查

@@ -1,0 +1,156 @@
+/* =====================================================================
+ * 联机实时网关（GAMES-40 · E6/M0）——独立进程 :4400，与 :4399 完全隔离
+ * （绝不触碰/重启 :4399；两进程互不依赖）。
+ *
+ *   HTTP  GET /healthz     → {ok:true}（验活）
+ *         GET /api/matches → live 房间 feed（CORS *，大厅跨端口轮询）
+ *   WS    upgrade 任意路径（约定 /ws）→ 房间协议（docs/net-protocol.md）
+ *
+ * 组成：lib/ws.js（自研最小 RFC6455，零新依赖）+ rooms.js（房间管理）
+ *      + bothost.js（Bot 宿主，常驻 bot 房）+ sims/（每游戏 sim 适配器）。
+ * 启动（docs/net-protocol.md §8 附录）：
+ *   HOST=0.0.0.0 nohup node server/gateway/index.js > server/data/gateway.log 2>&1 &
+ * ===================================================================== */
+import http from 'node:http'
+import { writeFileSync, mkdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { RoomManager } from './rooms.js'
+import { BotHost } from './bothost.js'
+import { netTankSim } from './sims/net-tank.js'
+import { attachWs } from './lib/ws.js'
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const PORT = Number(process.env.PORT) || 4400
+const HOST = process.env.HOST || '0.0.0.0'
+const DATA_DIR = join(ROOT, 'server', 'data')
+const LOG_FILE = process.env.GATEWAY_LOG || join(DATA_DIR, 'gateway.log')
+const PID_FILE = join(DATA_DIR, 'gateway.pid')
+const TICKER_MS = 50           // 全局驱动精度；房间自身按 tickMs(100ms) 定频
+const MAX_MSG_BYTES = 16 * 1024
+
+/* ---------- JSONL 日志（房间生命周期/连接/错误；一行一 JSON） ---------- */
+mkdirSync(DATA_DIR, { recursive: true })
+const logOut = process.stdout // nohup 重定向到 gateway.log；stdout 仍打一份便于前台调试
+function log(obj) {
+  const line = JSON.stringify({ ts: Date.now(), ...obj })
+  logOut.write(line + '\n')
+}
+
+/* ---------- 房间管理 + Bot 宿主 ---------- */
+const rooms = new RoomManager({ log })
+rooms.register(netTankSim)
+
+const bothost = new BotHost({ rooms, log })
+bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
+rooms.onEnded = () => bothost.ensure()
+
+/* ---------- HTTP ---------- */
+const server = http.createServer((req, res) => {
+  const url = (req.url || '/').split('?')[0]
+  if (req.method === 'GET' && (url === '/healthz' || url === '/api/health')) {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({ ok: true, ts: Date.now(), rooms: rooms.rooms.size }))
+    return
+  }
+  if (req.method === 'GET' && url === '/api/matches') {
+    const body = JSON.stringify({ ok: true, serverTime: Date.now(), matches: rooms.matches() })
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*', // 大厅（:4399）跨端口拉取（协议 §1）
+      'Cache-Control': 'no-store',
+    })
+    res.end(body)
+    return
+  }
+  if (req.method === 'OPTIONS' && url === '/api/matches') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'content-type',
+      'Access-Control-Max-Age': '86400',
+    })
+    res.end()
+    return
+  }
+  res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify({ ok: false, error: 'not found' }))
+})
+
+/* ---------- WS 会话 ---------- */
+function makeCtx(conn) {
+  return { conn, room: null, seat: -1, role: null }
+}
+
+attachWs(server, (conn, req) => {
+  const ctx = makeCtx(conn)
+  rooms.attach(ctx)
+  log({ k: 'ws-open', from: req.socket.remoteAddress })
+
+  conn.on('message', (text) => {
+    if (text.length > MAX_MSG_BYTES) { conn.send(JSON.stringify({ t: 'error', code: 'bad-msg', message: 'too large' })); return }
+    let msg
+    try { msg = JSON.parse(text) } catch { conn.send(JSON.stringify({ t: 'error', code: 'bad-msg', message: 'invalid json' })); return }
+    if (!msg || typeof msg.t !== 'string') { conn.send(JSON.stringify({ t: 'error', code: 'bad-msg', message: 'missing t' })); return }
+
+    switch (msg.t) {
+      case 'hello':
+        if (msg.v !== 1) conn.send(JSON.stringify({ t: 'error', code: 'version', message: 'supported: 1' }))
+        break
+      case 'ping':
+        conn.send(JSON.stringify({ t: 'pong', c: msg.c, s: Date.now() }))
+        break
+      case 'join': {
+        if (typeof msg.roomId !== 'string') { conn.send(JSON.stringify({ t: 'error', code: 'bad-msg', message: 'roomId required' })); break }
+        const r = rooms.join(ctx, { roomId: msg.roomId, mode: msg.mode, resume: msg.resume, name: typeof msg.name === 'string' ? msg.name.slice(0, 12) : undefined })
+        if (r && r.error) conn.send(JSON.stringify({ t: 'error', code: r.error, message: r.error }))
+        break
+      }
+      case 'quick': {
+        const r = rooms.quick(ctx, { gameId: msg.gameId, maxTicks: msg.maxTicks })
+        if (r && r.error) conn.send(JSON.stringify({ t: 'error', code: r.error, message: r.error }))
+        break
+      }
+      case 'input':
+        rooms.input(ctx, msg)
+        break
+      case 'sync': {
+        // 客户端缺帧自救：全量 state 重同步（协议 §4.1）
+        if (ctx.room) conn.send(JSON.stringify({ t: 'state', frame: ctx.room.frame, state: ctx.room.state }))
+        break
+      }
+      case 'leave':
+        rooms.leave(ctx)
+        break
+      default:
+        conn.send(JSON.stringify({ t: 'error', code: 'bad-msg', message: `unknown t: ${msg.t}` }))
+    }
+  })
+
+  conn.on('close', () => {
+    rooms.detach(ctx)
+    log({ k: 'ws-close' })
+  })
+})
+
+/* ---------- 全局帧驱动 ---------- */
+const ticker = setInterval(() => rooms.tickAll(Date.now()), TICKER_MS)
+
+/* ---------- 启动/停机 ---------- */
+writeFileSync(PID_FILE, String(process.pid))
+server.listen(PORT, HOST, () => {
+  log({ k: 'gateway-up', port: PORT, host: HOST, pid: process.pid })
+  bothost.start(3000)
+})
+
+function shutdown(sig) {
+  log({ k: 'gateway-down', sig })
+  bothost.stop()
+  clearInterval(ticker)
+  for (const room of [...rooms.rooms.values()]) rooms.dispose(room, 'shutdown')
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 1500).unref()
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('uncaughtException', (err) => log({ k: 'uncaught', error: String(err && err.stack || err) }))
