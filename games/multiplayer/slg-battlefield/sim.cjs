@@ -468,6 +468,7 @@
    * ===================================================================== */
   const FIRST = { casual: 150, balanced: 30, competitive: 8 };      // 首行动 tick
   const DECIDE = { casual: 50, balanced: 20, competitive: 10 };     // 决策间隔
+  const SAVE_WIN = 300;                                             // F2：competitive 克制储蓄窗口上限（tick）
   const NOOP = { cmd: { k: 'noop' } };
 
   const botMem = new WeakMap();
@@ -478,7 +479,8 @@
     if (!s) {
       s = { lastDecide: -1, seenTick: -1, seen: new Set(), enemyLog: [], wanted: null,
             rot: 0, laneFlip: 0, openerInf: 0, openerRallied: false, towerHad: [null, null],
-            retowerUntil: -1, retowerIdx: -1, rallySet: [false, false, false], lastRallyRow: [-9, -9, -9] };
+            retowerUntil: -1, retowerIdx: -1, rallySet: [false, false, false], lastRallyRow: [-9, -9, -9],
+            saveFor: null, saveSince: -1, saveSpawned: -1 };
       m[seat] = s;
     }
     return s;
@@ -625,10 +627,16 @@
     } else if (level === 'competitive') {
       if (s.tier === 1 && state.tick >= 400 && !s.research) {
         if (s.cp >= RESEARCH[2].cost) return { cmd: { k: 'research', tier: 2 } };
-        saving = 2;
-      } else if (s.tier === 2 && state.tick >= 900 && !s.research) {
-        if (s.cp >= RESEARCH[3].cost) return { cmd: { k: 'research', tier: 3 } };
-        saving = 3;
+        /* F2 补（GAMES-45）：敌方众数非 inf（razor/arty/heavy 压场）时 T2 储蓄让位——
+           被克制压制期零出兵攒 150CP ≈ 整段战线白给（razor 铺场探针：恰逢储蓄窗被拆家），
+           优先走 F2b 克制储蓄应对；敌无情报/主 inf（未被针对）时照旧攒 T2 */
+        const mode = enemyMode(mem, 3);
+        if (!mode || mode === 'inf') saving = 2;
+      } else if (s.tier === 2 && state.tick >= 900 && !s.research && s.cp >= RESEARCH[3].cost) {
+        /* F2 补（GAMES-45）：T3 改机会式升阶——原硬储蓄 300CP 在基础收入下 ≈1250 tick 零出兵，
+           对会玩对手等于后半局弃权（QA 实证 t1900 起双塔尽失被 score 反杀 400-300）。
+           T2 储蓄保留（前期经济封闭、QA 实测 @1028 达成）；T3 只在 CP 恰好攒够时升，其余照常出兵。 */
+        return { cmd: { k: 'research', tier: 3 } };
       }
     }
 
@@ -636,10 +644,14 @@
     if (saving) return NOOP;                       // 研发储蓄期不出兵（研究期间出兵照常是 sim 规则，此处是策略）
     let spawnCode = null, spawnLane = 0;
     if (level === 'casual') {
-      // 解锁池内 rng 均匀；攒到 2× 造价才出
+      // 解锁池内 rng 均匀；攒到 2× 造价才出。
+      // F1 修复（GAMES-45）：闸门夹取 CP 上限内——heavy 2×110=220 > 上限 200 时原闸门永不可达，
+      // wanted 只在成功出兵后重掷 → 掷中即整局零出兵、CP 顶死（QA bots-casual g3 seat2 实证）。
+      // 夹到 CP_MAX−1000 后任意兵种闸门必可达，"攒 2×"的慢节奏意图不变。
       if (!mem.wanted) mem.wanted = UNIT_CODES[(rng() * 6) | 0];
       const cost = UNITS[mem.wanted].costs[s.tier - 1] * 1000;
-      if (s.cp >= cost * 2 && popOfSeat(state, seat) < POP_MAX) { spawnCode = mem.wanted; mem.wanted = null; }
+      const gate = Math.min(cost * 2, CP_MAX - 1000);
+      if (s.cp >= gate && popOfSeat(state, seat) < POP_MAX) { spawnCode = mem.wanted; mem.wanted = null; }
       spawnLane = (rng() * 3) | 0;
     } else if (level === 'balanced') {
       // 固定轮换 inf→razor→arty；开局 2×inf 试探（tick 30/50）
@@ -664,9 +676,47 @@
       } else {
         const mode = enemyMode(mem, 3);
         spawnCode = mode ? COUNTER_PICK[mode] : TIER_PICK[s.tier - 1];
-        if (!affordable(state, seat, spawnCode)) spawnCode = 'inf';   // 有 CP 即花（永不过手）
-        spawnLane = weakestLane(state, foe);
-        if (!affordable(state, seat, spawnCode) || popOfSeat(state, seat) >= POP_MAX) spawnCode = null;
+        /* 保命压顶（GAMES-45）：敌方单位逼近己方基地（5 行内）→ 出兵车道让位协防
+           （razor 铺场探针实证：保塔弃中路被穿透拆家）。只改车道不停克制储蓄——
+           克制兵恰是守家主力（arty 120px 射程覆盖基地前沿），攒够即送防区 */
+        let threatLane = -1;
+        for (let i = 0; i < state.units.length; i++) {
+          const u = state.units[i];
+          if (u.hp <= 0 || u.drop > 0 || u.team !== foe) continue;
+          if (Math.abs(u.y - myBase.y) <= 5 * ROW_M) { threatLane = u.lane; break; }
+        }
+        /* F2a 争塔（GAMES-45）：未持有的信号塔且点上己方不足 2 → 出兵优先送塔。
+           原版只有"己方持有后被夺"的 10s 反攻窗（下方集结段），从未持有则永久弃塔 →
+           让出双信号塔被积分通道推平（QA competitive-probe 实证）。塔=CP 收入+积分双通道。
+           阈值取 <2 而非 <1：添油式单 inf 会被"驻军 1 + 补位"的对手逐个吃掉（macro-push
+           实测后半局 14 连 inf 白给），攒够局部 2v1 才动手；inf 占点 ×2、克制兵清守军，编队互补。 */
+        let contestLane = -1;
+        for (let ti = 0; ti < state.towers.length && contestLane < 0; ti++) {
+          const tw = state.towers[ti];
+          if (tw.owner === my) continue;
+          let near = 0;
+          for (let i = 0; i < state.units.length; i++) { const u = state.units[i]; if (u.seat === seat && u.hp > 0 && laneDist2(tw.lane, tw.y, u.lane, u.y) <= CAP_R2) near++; }
+          if (near < 2) contestLane = tw.lane;
+        }
+        if (!affordable(state, seat, spawnCode)) {
+          /* F2b 克制储蓄（GAMES-45）：目标兵买不起 → 停手攒钱，不再"有 CP 即花"直接降 inf
+             （原互锁：2CP/s 收入下 45/70CP 克制兵永攒不齐，5 局 0 次非 inf 出兵，
+             克制表名存实亡——QA bots-competitive 实证）。储蓄期零出兵零花费（cp 只进不出，
+             集结段照常执行）；被动期由 SAVE_WIN=300 tick 封顶，超窗/攒钱目标不可达
+             （T3 heavy 210 > CP 上限 200）/己方全灭/敌迫家门（保命压顶）→ 降级 inf 保底
+             （支付档降级：inf 先出、攒够换克制）。期间一旦出兵（spawned 计数变动，
+             含争塔 inf）→ 窗口重开续攒；情报目标切换（mode 变）→ 窗口随 saveFor 重置。
+             储蓄与争塔不互斥：攒够的克制兵直送争塔车道。 */
+          const reachable = UNITS[spawnCode].costs[s.tier - 1] * 1000 <= CP_MAX - 1000;
+          const saveOk = spawnCode !== 'inf' && reachable && popOfSeat(state, seat) > 0;
+          if (saveOk && (mem.saveFor !== spawnCode || mem.saveSpawned !== s.spawned)) {
+            mem.saveFor = spawnCode; mem.saveSince = state.tick; mem.saveSpawned = s.spawned;
+          }
+          if (saveOk && state.tick - mem.saveSince <= SAVE_WIN) spawnCode = null;   // 储蓄中：不出兵（落到下方集结段）
+          else spawnCode = 'inf';                                                   // 超窗/不可达/全灭 → 支付档降级
+        }
+        spawnLane = threatLane >= 0 ? threatLane : contestLane >= 0 ? contestLane : weakestLane(state, foe);
+        if (!spawnCode || !affordable(state, seat, spawnCode) || popOfSeat(state, seat) >= POP_MAX) spawnCode = null;
       }
     }
     if (spawnCode) return { cmd: { k: 'spawn', unit: spawnCode, lane: spawnLane } };
@@ -700,12 +750,22 @@
       if (mem.retowerIdx >= 0 && state.tick <= mem.retowerUntil && state.towers[mem.retowerIdx].owner !== my) {
         rallyLane = state.towers[mem.retowerIdx].lane; rallyRow = state.towers[mem.retowerIdx].row;
       } else {
-        // 动态：随战团位置（各车道己方最前单位行）
-        for (let l = 0; l < 3; l++) {
-          let front = -1;
-          for (let i = 0; i < state.units.length; i++) { const u = state.units[i]; if (u.seat === seat && u.hp > 0 && u.lane === l) { const r = rowOf(u.y); if (front < 0 || (my === 'A' ? r < front : r > front)) front = r; } }
-          const target = front >= 0 ? front : enemyBaseRow(my);
-          if (Math.abs(target - mem.lastRallyRow[l]) >= 2) { rallyLane = l; rallyRow = target; break; }
+        /* F2c 持续争塔（GAMES-45）：还有未持有的信号塔（含从未持有——原版反攻窗只覆盖
+           "己方持有后被夺"）→ 该塔车道集结到塔位，单位驻点争塔（与出兵段 F2a 的争塔 inf、
+           技能段 drop 抢点三路配合）；双塔在手才转动态前线推进 */
+        let contesting = false;
+        for (let ti = 0; ti < state.towers.length && !contesting; ti++) {
+          const tw = state.towers[ti];
+          if (tw.owner !== my) { rallyLane = tw.lane; rallyRow = tw.row; contesting = true; }
+        }
+        if (!contesting) {
+          // 动态：随战团位置（各车道己方最前单位行）
+          for (let l = 0; l < 3; l++) {
+            let front = -1;
+            for (let i = 0; i < state.units.length; i++) { const u = state.units[i]; if (u.seat === seat && u.hp > 0 && u.lane === l) { const r = rowOf(u.y); if (front < 0 || (my === 'A' ? r < front : r > front)) front = r; } }
+            const target = front >= 0 ? front : enemyBaseRow(my);
+            if (Math.abs(target - mem.lastRallyRow[l]) >= 2) { rallyLane = l; rallyRow = target; break; }
+          }
         }
       }
       if (rallyLane >= 0 && (rallyRow !== s.rally[rallyLane])) {
