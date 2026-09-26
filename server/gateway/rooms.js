@@ -36,12 +36,15 @@ export class RoomManager {
   register(sim) { this.sims.set(sim.META.gameId, sim) }
 
   /* ---------- 建房 ---------- */
-  create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp }) {
+  // opts.seed：确定性 seed 覆盖（测试 API 钉死地图用；缺省仍按 roomId 派生）；
+  // opts.test：隔离测试房标记——不进 feed（matches）、不被 quick 命中、不计 BotHost 配额；
+  // opts.timeScale：测试房假时钟倍速（仅影响 live 帧推进节奏，帧内容与真人房逐字节同构）。
+  create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp, seed, test = false, timeScale = 1 }) {
     const sim = this.sims.get(gameId)
     if (!sim) throw new Error(`game-unknown: ${gameId}`)
     const roomId = genId(gameId.split('-')[0])
-    const seed = sim.fnv1a32(roomId + ':' + randomBytes(2).toString('hex'))
-    const state = sim.create(seed, { maxTicks, hp })
+    const seedVal = Number.isInteger(seed) ? (seed >>> 0) : sim.fnv1a32(roomId + ':' + randomBytes(2).toString('hex'))
+    const state = sim.create(seedVal, { maxTicks, hp })
     const seats = []
     for (let i = 0; i < sim.META.seats; i++) {
       const botCfg = bots[i] || null // {level} | null → 空位等人
@@ -60,9 +63,11 @@ export class RoomManager {
       hadHuman: false, lastHumanAt: 0,
       name: name || `${sim.META.title}房`,
       disposeAt: 0,
+      test: !!test, timeScale: test ? (Number(timeScale) > 0 ? Number(timeScale) : 1) : 1,
+      result: null,
     }
     this.rooms.set(roomId, room)
-    this.log({ k: 'room-create', roomId, gameId, name: room.name, bots: bots.length })
+    this.log({ k: 'room-create', roomId, gameId, name: room.name, bots: bots.length, test: room.test })
     return room
   }
 
@@ -70,6 +75,8 @@ export class RoomManager {
   join(connCtx, { roomId, mode = 'play', resume = null, name } = {}) {
     const room = this.rooms.get(roomId)
     if (!room || room.phase === 'ended') return { error: 'room-gone' }
+    // 测试房只对测试会话开放（WS 面按不存在处理，roomId 不泄露）
+    if (room.test && !connCtx.isTest) return { error: 'room-gone' }
 
     // 重连：席位在保留窗内且 token 匹配 → 直接复席
     if (resume && Number.isInteger(resume.seat)) {
@@ -131,7 +138,7 @@ export class RoomManager {
     const sim = this.sims.get(gameId)
     if (!sim) return { error: 'game-unknown' }
     const joinable = [...this.rooms.values()]
-      .filter((r) => r.gameId === gameId && r.phase !== 'ended' && this.humanCount(r) < r.seats.length)
+      .filter((r) => r.gameId === gameId && !r.test && r.phase !== 'ended' && this.humanCount(r) < r.seats.length)
       .sort((a, b) => (b.phase === 'live' ? 1 : 0) - (a.phase === 'live' ? 1 : 0) || b.createdAt - a.createdAt)
     if (joinable.length > 0) return this.join(connCtx, { roomId: joinable[0].id, mode: 'play' })
     const bots = []
@@ -204,7 +211,7 @@ export class RoomManager {
         room.lastFrameAt = now
         this.broadcast(room, { t: 'started', frame: 0, state: room.state })
         this.log({ k: 'room-live', roomId: room.id })
-      } else if (this.humanCount(room) === 0 && room.spectators.size === 0 && now - room.createdAt > WAITING_EMPTY_MS) {
+      } else if (!room.test && this.humanCount(room) === 0 && room.spectators.size === 0 && now - room.createdAt > WAITING_EMPTY_MS) {
         this.dispose(room, 'empty')
       }
       return
@@ -216,14 +223,17 @@ export class RoomManager {
         this.finish(room, { winner: 'draw', scores: { ...room.state.kills }, reason: 'abandon' })
         return
       }
+      // 帧距/追帧上限随 timeScale 缩放（测试房假时钟倍速；timeScale=1 与原语义逐字节一致）
+      const dueMs = room.sim.META.tickMs / (room.timeScale || 1)
+      const stepCap = Math.max(2, Math.ceil(2 * (room.timeScale || 1)))
       let steps = 0
-      while (now - room.lastFrameAt >= room.sim.META.tickMs && steps < 2) {
-        room.lastFrameAt += room.sim.META.tickMs
+      while (now - room.lastFrameAt >= dueMs && steps < stepCap) {
+        room.lastFrameAt += dueMs
         steps++
         const over = this.doFrame(room, now)
         if (over) break
       }
-      if (steps === 2) room.lastFrameAt = now // 欠帧过多（调试器暂停等）：跳齐，不追账
+      if (steps === stepCap) room.lastFrameAt = now // 欠帧过多（调试器暂停等）：跳齐，不追账
       return
     }
     if (room.phase === 'ended' && now >= room.disposeAt) this.dispose(room, 'ended')
@@ -266,6 +276,7 @@ export class RoomManager {
     room.phase = 'ended'
     room.endedAt = nowMs()
     room.disposeAt = room.endedAt + ENDED_LINGER_MS
+    room.result = result // 终局留档（测试 API 快照/断言读取；协议 §4.2 end 同形）
     this.broadcast(room, { t: 'end', frame: room.frame, result })
     this.log({ k: 'room-end', roomId: room.id, result })
     if (this.onEnded) { try { this.onEnded(room, result) } catch { /* 钩子异常不拖垮房间 */ } }
@@ -316,7 +327,7 @@ export class RoomManager {
     const now = nowMs()
     const out = []
     for (const room of this.rooms.values()) {
-      if (room.phase === 'ended') continue
+      if (room.phase === 'ended' || room.test) continue // ended 不见客；测试房隔离（GAMES-41）
       let humans = 0, bots = 0
       for (const s of room.seats) { if (s.kind === 'human') humans++; else if (s.kind === 'bot') bots++ }
       out.push({

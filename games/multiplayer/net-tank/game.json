@@ -24,6 +24,49 @@
     "tech": "S1",
     "gameId": "net-tank",
     "mode": "2v2-team",
-    "seats": 4
+    "seats": 4,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "ctrl": {
+          "ws": "input",
+          "keys": ["mx", "my", "fire"],
+          "desc": "全量输入向量：mx/my ∈ [-100,100] 整数驾驶向量 + fire ∈ {0,1}（协议 §4.1 input；payload 即 keys，可选 payload.frame 预约目标帧，缺省沿用至下一条）"
+        }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "快照 result 字段（协议 §4.2 end 同形）",
+        "winner": "'A'=偶数席队(0,2) ｜ 'B'=奇数席队(1,3) ｜ 'draw'",
+        "teams": { "A": [0, 2], "B": [1, 3] },
+        "reason": "eliminated ｜ timeout ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live 状态迁移",
+        "A2 能赢：剧本胜方达成终态",
+        "A3 能输：剧本败方终态达成",
+        "A4 操作注入→帧反映 <100ms",
+        "A5 断线重连 <10s 恢复续玩"
+      ],
+      "script": {
+        "seed": 20260926,
+        "timeScale": 4,
+        "startDelayMs": 600,
+        "maxTicks": 1200,
+        "scenarios": {
+          "win": {
+            "botLevels": [null, "casual", "competitive", "casual"],
+            "expectWinner": "A",
+            "policy": "hunt-nearest"
+          },
+          "lose": {
+            "botLevels": [null, "competitive", "casual", "competitive"],
+            "expectWinner": "B",
+            "policy": "idle"
+          }
+        }
+      }
+    }
   }
 }

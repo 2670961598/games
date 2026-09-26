@@ -1,9 +1,9 @@
-# 联机协议规范（net-protocol v1 · M0 冻结）
+# 联机协议规范（net-protocol v1.1 · M0 冻结）
 
-> 单据 GAMES-40（E6/M0 联机基座）。本文是联机基座的**唯一协议事实源**：房间生命周期、feed schema、
-> WS 消息格式、S1 帧协议完整定义、S2-S7 预留扩展位。
+> 单据 GAMES-40（E6/M0 联机基座）+ GAMES-41（M1 测试 API/net.api 规范，§8）。本文是联机基座的
+> **唯一协议事实源**：房间生命周期、feed schema、WS 消息格式、S1 帧协议完整定义、S2-S7 预留扩展位。
 > **冻结纪律**：后续 21 款联机游戏一律按本文接入；任何字段/语义变更需 PM 批（开单走协议变更流程，
-> 版本号 +1 并在 §9 变更记录留痕）。事实源上游：docs/multiplayer-roadmap.md。
+> 版本号 +1 并在 §10 变更记录留痕）。事实源上游：docs/multiplayer-roadmap.md。
 
 ## 1. 拓扑与端口
 
@@ -144,7 +144,73 @@ session.close() / session.rttMs / session.offsetMs / session.status
 - 时钟同步：每 2s ping/pong，RTT 与偏移取近 5 次中位数；`offsetMs` 供 HUD 对时。
 - 自动重连：意外断开即退避重试（0.5/1/2/4s），带 resume 凭证；10s 窗内恢复自动续局，超窗回调 `onStatus('lost')`。
 
-## 8. 网关启动运维（附录）
+## 8. 测试 API 与 net.api 声明规范（GAMES-41 · v1.1）
+
+> 制作人指令：**操作全 API 注入可驱动整局，可玩性可程序验证**（roadmap §4.2「API 可玩」红线）。
+> 每款联机游戏 DEV 单自跑 `scripts/api-check.js <gameId>` 通过才可交付；QA 单必跑。
+
+### 8.1 网关测试管理端点（实现：server/gateway/testapi.js）
+
+| 端点 | 请求 | 应答/语义 |
+|---|---|---|
+| `POST /api/test/room` | `{gameId, seed?, botLevels[]?, timeScale?, startDelayMs?, maxTicks?, hp?}` | 建隔离测试房 + API 玩家自动入座首个 `null` 席（botLevels 按 seat 下标：`null`=API 席，档位字符串=bot 席）；返回快照（§8.1 末） |
+| `POST /api/test/input` | `{roomId, seat?, op, payload?}` | 注入一条操作。`op` ∈ net.api.ops（游戏操作）∪ 框架控制 op（§8.2）；返回 `{receivedAt}` 供延迟断言 |
+| `GET /api/test/state` | `?roomId=&since=<cursor>` | 状态快照 + 下行消息账本增量（`events:[{ts,msg}]`，`cursor` 前移；单次至多 512 条） |
+| `DELETE /api/test/room` | `{roomId}` 或 `?roomId=` | 立即回收测试房（正常/异常路径都必须清理） |
+
+- **鉴权（唯一）**：仅监听来自 `127.0.0.1`/`::1`/`::ffff:127.0.0.1` 的请求；其余来源（局域网/公网）一律 `403 local-only`。端点**不发 CORS 头**——浏览器跨源天然不可达，测试面不暴露公网。
+- **隔离**：测试房（`room.test` 标记）不进 `/api/matches` feed、不被 `quick` 命中（WS join 按 `room-gone` 处理）、不计 BotHost 常驻配额；并发上限 8 房。
+- **与真人同路径（红线）**：API 玩家是一条虚拟会话（`conn.send` 只记账本），入房走 `RoomManager.join`、操作注入走 `RoomManager.input`（同一条 sanitize/lastInput/pending 帧入口）、掉线走 `detach`——与 WS 会话逐字节同一条代码路径（§4/§5）。
+- **假时钟倍速**：`timeScale`（0.25–16）只缩放 live 帧推进节奏（`tickMs/timeScale` 定频、追帧上限同倍放大），帧内容与真人房同构；`timeScale=1` 时与原语义逐字节一致。`seed` 钉死确定性地图（缺省仍按 roomId 派生）。
+- **快照字段**：`{ok, roomId, gameId, phase, frame, tick, timeScale, playerSeat, token, seats, state, result, events, cursor, lastInject}`；`result` 与协议 `end` 消息同形（`{winner, scores, reason}`），终局后仍可读（8s 展示窗内）。
+
+### 8.2 框架控制 op（连接生命周期也走 API）
+
+| op | payload | 语义 |
+|---|---|---|
+| `$disconnect` | — | 模拟掉线（与 WS close 同路径：席位进入 10s 重连窗，`goneAt` 计时） |
+| `$reconnect` | `{token}` | 凭 welcome 下发的 token 复席（与 `join resume` 同路径）；席位已转 bot 托管或 token 不符 → `409 resume-rejected` |
+| `$sync` | — | 全量重同步（与 WS `sync` 同形，账本入一条 `state` 消息） |
+
+游戏 op 的 payload 即对应 WS 消息体（S1：`{mx,my,fire}` 输入向量，可包 `keys` 壳/可选 `frame` 预约帧）。
+
+### 8.3 net.api 声明规范（game.json `net.api` 节）
+
+每款联机游戏在 game.json 声明（范式见 `games/multiplayer/net-tank/game.json`）：
+
+```json
+"net": { "tech": "S1", "gameId": "…", "mode": "…", "seats": 4,
+  "api": {
+    "spec": 1,
+    "ops":        { "<op名>": { "ws": "input", "keys": ["mx","my","fire"], "desc": "…" } },
+    "ctlOps":     ["$disconnect", "$reconnect", "$sync"],
+    "endState":   { "phase": "ended", "winner": "'A'|'B'|'draw' 语义", "teams": { "A": [0,2], "B": [1,3] }, "reason": "…" },
+    "assertions": ["A1…A5 摘要"],
+    "script": {
+      "seed": 20260926, "timeScale": 4, "startDelayMs": 600, "maxTicks": 1200,
+      "scenarios": {
+        "win":  { "botLevels": [null, "casual", "competitive", "casual"], "expectWinner": "A", "policy": "hunt-nearest" },
+        "lose": { "botLevels": [null, "competitive", "casual", "competitive"], "expectWinner": "B", "policy": "idle" }
+      }
+    }
+  } }
+```
+
+- `ops`：op 清单 → WS 消息映射（S1 即 `input` 输入向量；S5 回合制游戏未来映射 `op` 消息，扩展位）。
+- `endState`：胜负终态断言依据（`teams` 给出席位→队伍映射，供报告标注 API 席所属队）。
+- `script.scenarios`：至少 `win`/`lose` 两剧本——deterministic seed + bot 档位 + 假时钟倍速 + 期望胜方 + 玩家策略 `policy`。策略注册表在 `scripts/api-check.js`（`idle`/`hunt-nearest`…，新游戏在此登记或复用）。
+- 缺 `net.api` = 不可 API 验证，DEV 单不得交付（api-check 退出码 2 拒跑）。
+
+### 8.4 api-check / net-check 分工
+
+| 工具 | 面 | 覆盖 |
+|---|---|---|
+| `scripts/api-check.js <gameId>` | **API 面**（零浏览器，逻辑可玩性） | L1 仅本机 + A1 能开始 + A2 能赢 + A3 能输 + A4 注入→帧反映 <100ms + A5 断线重连 <10s；JSON 报告落盘 kernel 证据路径；退出码可挂闸门 |
+| `scripts/net-check.js` | **浏览器面**（真 Chromium） | 大厅渲染/点击入房 <2s/bot 让位/feed 新鲜度/满员旁观/断线重连复席/识图截图（375×667） |
+
+浏览器仅用于 visual 支柱（识图终审协议 v2）；可玩性判定以 api-check 为准（更快、确定性、可入 CI 闸门）。
+
+## 9. 网关启动运维（附录）
 
 与 :4399 同口径 nohup 常驻（**绝不触碰/重启 :4399**；两进程互不依赖）：
 
@@ -160,8 +226,9 @@ HOST=0.0.0.0 nohup node server/gateway/index.js > server/data/gateway.log 2>&1 &
   终局后 3s 自动补房，总量上限 4 房/游戏。
 - 日志：`server/data/gateway.log`（一行一 JSON：房间事件/连接/错误）；pid 文件 `server/data/gateway.pid`。
 
-## 9. 变更记录
+## 10. 变更记录
 
 | 版本 | 日期 | 单据 | 变更 |
 |---|---|---|---|
+| v1.1 | 2026-09-26 | GAMES-41 | 新增 §8 测试 API（仅回环鉴权的测试房管理端点/框架控制 op/net.api 声明规范/api-check 与 net-check 分工）；房间管理器支持 seed/test/timeScale，测试房隔离（不进 feed/quick/BotHost 配额）。v1 全部既有语义不变（timeScale=1 逐字节一致） |
 | v1 | 2026-09-26 | GAMES-40 | 首版冻结：生命周期/feed/WS/S1 帧协议/S2-S7 预留/SDK/运维 |
