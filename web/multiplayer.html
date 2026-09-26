@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0e14">
+  <link rel="icon" href="data:,">
+  <title>联机大厅 · GAMES</title>
+  <link rel="stylesheet" href="/src/multiplayer.css">
+</head>
+<body>
+  <div id="mp">
+    <header class="mp-head">
+      <a class="mp-back" href="/">‹ 首页</a>
+      <div class="mp-title">联机大厅</div>
+      <div class="mp-net" id="mp-net">…</div>
+    </header>
+
+    <section class="mp-sec">
+      <div class="mp-sec__title">正在对战 <span class="mp-live" id="mp-live">●</span></div>
+      <div class="mp-feed" id="mp-feed">
+        <div class="mp-empty" id="mp-feed-empty">正在连接网关…</div>
+      </div>
+    </section>
+
+    <section class="mp-sec">
+      <div class="mp-sec__title">联机游戏 <span class="mp-sec__sub" id="mp-count"></span></div>
+      <div class="mp-grid" id="mp-grid"></div>
+    </section>
+
+    <footer class="mp-foot">实时对局由 AI 房间撑起 · 点击卡片立即加入</footer>
+  </div>
+  <script type="module" src="/src/multiplayer.js"></script>
+</body>
+</html>

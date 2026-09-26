@@ -199,6 +199,27 @@ body.feed-active #mine-btn {
   display: none; /* 玩游戏时让路 */
 }
 
+/* feed 的“多人”入口（GAMES-40：联机大厅第二界面，底中） */
+#multiplayer-btn {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: none;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(37, 99, 235, 0.32);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+body[data-view='feed'] #multiplayer-btn {
+  display: block;
+}
+body.feed-active #multiplayer-btn {
+  display: none; /* 玩游戏时让路 */
+}
+
 /* feed 的“游戏大全”入口（左下，与“我的”对称） */
 #catalog-btn {
   position: fixed;

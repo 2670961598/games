@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>净斗坦克</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0b0e14; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+  #wrap { position: relative; }
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px; background: rgba(11,14,20,.72); z-index: 10; }
+  #joining { color: #e8ecf3; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  #banner { display: none; position: absolute; top: 46px; left: 0; right: 0; text-align: center;
+    color: #fbbf24; font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
+  .rbox { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .rtitle { color: #e8ecf3; font: 700 30px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  .rsub { color: #8b93a7; font: 14px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  .rbox button { padding: 10px 34px; border-radius: 999px; border: 0; background: #2563eb; color: #fff;
+    font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  .rbox button.ghost { background: transparent; border: 1px solid rgba(255,255,255,.2); color: #8b93a7; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="banner"></div>
+  <div id="joining" class="overlay">正在加入对局…</div>
+  <div id="result" class="overlay"></div>
+</div>
+<script>
+/* =====================================================================
+ * 净斗坦克 net-tank —— S1 帧同步共享确定性模拟（GAMES-40）
+ * 单一事实源：服务端（server/gateway/sims/net-tank.js 经 require 载入本文件）
+ * 与客户端（构建期内联进 index.html，设 window.NTSim）跑同一份代码。
+ *
+ * 确定性纪律（docs/net-protocol.md §5，红线）：
+ *   - 判定路径零 Math.random；布局随机源 = mulberry32(fnv1a32(roomSeed))（§5.6 逐字实现）；
+ *   - 模拟状态全整数（位置/速度为 milli-px），运算只用 + - * 与 Math.floor/trunc/sqrt/sign
+ *     （IEEE754 确定性运算），除法结果立即取整；
+ *   - 输入向量量化为整数后入模拟：mx/my ∈ [-100,100]，fire ∈ {0,1}。
+ *
+ * 场地：15×25 格（cell 25px → 375×625），四角出生位，对称墙；
+ * 4 席 2v2（team = seat % 2，A=偶 B=奇）；HP 3；子弹 1 伤害；无友伤；无复活。
+ * 终局：一队全灭（eliminated）或 maxTicks 到点按存活 HP 总和判胜（平则 draw）。
+ *
+ * Bot 三档（brain）：casual 慢反应随机游走 / balanced 保持距离索敌 / competitive 预判+侧移躲避。
+ * brain 只在服务端 Bot 宿主与客户端离线练习模式调用；其随机源不入帧协议（输入即产物）。
+ * ===================================================================== */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api; // Node（.cjs）
+  root.NTSim = api;                                                        // 浏览器内联（classic script）
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  /* ---------- §5.6 PRNG 参考实现（与 games/_shared/common.js 逐字一致，冻结） ---------- */
+  function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  /* ---------- 常量（全整数，milli-px 单位） ---------- */
+  const COLS = 15, ROWS = 25, CELL = 25;
+  const CELL_M = CELL * 1000;             // 25000
+  const W_M = COLS * CELL_M, H_M = ROWS * CELL_M;
+  const HALF_M = 9000;                    // 坦克半边（18px 判定盒）
+  const BHALF_M = 4000;                   // 子弹半边（8px 判定盒）
+  const SPEED_M = 11000;                  // 坦克 110 px/tick(100ms)
+  const BSPEED_M = 32000;                 // 子弹 320 px/tick
+  const COOLDOWN = 6;                     // 开火冷却 6 tick（600ms）
+  const LIFE = 16;                        // 子弹存活 16 tick（1.6s）
+  const HP = 3;
+  const SEATS = 4;
+  const MAX_TICKS = 1200;                 // 120s
+
+  const META = {
+    gameId: 'net-tank', title: '净斗坦克', seats: SEATS, tickMs: 100, maxTicks: MAX_TICKS,
+    cols: COLS, rows: ROWS, cell: CELL, W: COLS * CELL, H: ROWS * CELL,
+    hpMax: HP, mode: '2v2-team', teams: { A: [0, 2], B: [1, 3] },
+  };
+
+  /* 出生位：四角（A 左上/右下，B 右上/左下），格子坐标 */
+  const SPAWNS = [
+    { c: 1, r: 1 }, { c: 13, r: 1 }, { c: 13, r: 23 }, { c: 1, r: 23 },
+  ];
+
+  const clamp100 = (v) => (v < -100 ? -100 : v > 100 ? 100 : v | 0);
+
+  /* ---------- 场地生成（对称墙 + 出生区净空 + 连通性保险） ---------- */
+  function genWalls(rng) {
+    // 先边框；再左半场随机块镜像到右半（轴对称，出生区 3×3 净空）
+    const g = [];
+    for (let r = 0; r < ROWS; r++) {
+      const row = new Array(COLS).fill(0);
+      for (let c = 0; c < COLS; c++) {
+        if (r === 0 || r === ROWS - 1 || c === 0 || c === COLS - 1) row[c] = 1;
+      }
+      g.push(row);
+    }
+    const clear = (c0, r0) => {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const c = c0 + dc, r = r0 + dr;
+        if (c > 0 && c < COLS - 1 && r > 0 && r < ROWS - 1) g[r][c] = 0;
+      }
+    };
+    for (let s = 0; s < SEATS; s++) clear(SPAWNS[s].c, SPAWNS[s].r);
+    for (let r = 2; r < ROWS - 2; r++) {
+      for (let c = 2; c <= 7; c++) {
+        if (rng() < 0.14) {
+          const ok = SPAWNS.every((s) => Math.abs(s.c - c) > 1 || Math.abs(s.r - r) > 1)
+            && SPAWNS.every((s) => Math.abs(s.c - (COLS - 1 - c)) > 1 || Math.abs(s.r - r) > 1);
+          if (ok) { g[r][c] = 1; g[r][COLS - 1 - c] = 1; }
+        }
+      }
+    }
+    return g.map((row) => row.join('').replace(/0/g, '0').replace(/1/g, '1'));
+  }
+
+  /** 出生点互相可达（BFS，确定性）；不可达返回 false */
+  function connected(walls) {
+    const seen = new Array(ROWS * COLS).fill(0);
+    const q = [SPAWNS[0].r * COLS + SPAWNS[0].c];
+    seen[q[0]] = 1;
+    let head = 0;
+    while (head < q.length) {
+      const p = q[head++], r = (p / COLS) | 0, c = p % COLS;
+      const nb = [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]];
+      for (const [nc, nr] of nb) {
+        if (nc < 0 || nr < 0 || nc >= COLS || nr >= ROWS) continue;
+        const i = nr * COLS + nc;
+        if (seen[i] || walls[nr].charCodeAt(nc) === 49) continue;
+        seen[i] = 1; q.push(i);
+      }
+    }
+    return SPAWNS.every((s) => seen[s.r * COLS + s.c]);
+  }
+
+  const solid = (walls, c, r) => (c < 0 || r < 0 || c >= COLS || r >= ROWS) ? true : walls[r].charCodeAt(c) === 49;
+
+  /* ---------- 初始态 ---------- */
+  function create(seed, opts) {
+    const maxTicks = (opts && opts.maxTicks) || MAX_TICKS;
+    const rng = mulberry32(seed >>> 0);
+    let walls = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const w = genWalls(rng);
+      if (connected(w)) { walls = w; break; }
+    }
+    if (!walls) walls = genWalls(() => 0); // 兜底：仅边框（连通性必然成立）
+    const cx = ((COLS / 2) | 0) * CELL_M + (CELL_M >> 1);
+    const cy = ((ROWS / 2) | 0) * CELL_M + (CELL_M >> 1);
+    const tanks = SPAWNS.map((s, seat) => {
+      const x = s.c * CELL_M + CELL_M / 2 | 0;
+      const y = s.r * CELL_M + CELL_M / 2 | 0;
+      return {
+        seat, team: seat % 2 === 0 ? 'A' : 'B', x, y,
+        fx: x < cx ? 100 : -100, fy: y < cy ? 100 : -100, // 初始朝向场地中心
+        hp: (opts && opts.hp) || HP, alive: true, cool: 0, lvx: 0, lvy: 0,
+      };
+    });
+    return { v: 1, seed: seed >>> 0, tick: 0, maxTicks, walls, tanks, bullets: [], kills: { A: 0, B: 0 } };
+  }
+
+  /* ---------- 碰撞（轴分离 + 贴边吸附；坦克 < 1 格宽，前沿单列检测充分） ---------- */
+  function moveX(walls, t, d) {
+    if (!d) return;
+    let nx = t.x + d;
+    const edge = nx + (d > 0 ? HALF_M : -HALF_M);
+    const c = Math.floor(edge / CELL_M);
+    const r0 = Math.floor((t.y - HALF_M + 1) / CELL_M);
+    const r1 = Math.floor((t.y + HALF_M - 1) / CELL_M);
+    if (solid(walls, c, r0) || solid(walls, c, r1)) {
+      nx = d > 0 ? c * CELL_M - HALF_M - 1 : (c + 1) * CELL_M + HALF_M + 1;
+    }
+    t.x = nx;
+  }
+  function moveY(walls, t, d) {
+    if (!d) return;
+    let ny = t.y + d;
+    const edge = ny + (d > 0 ? HALF_M : -HALF_M);
+    const r = Math.floor(edge / CELL_M);
+    const c0 = Math.floor((t.x - HALF_M + 1) / CELL_M);
+    const c1 = Math.floor((t.x + HALF_M - 1) / CELL_M);
+    if (solid(walls, c0, r) || solid(walls, c1, r)) {
+      ny = d > 0 ? r * CELL_M - HALF_M - 1 : (r + 1) * CELL_M + HALF_M + 1;
+    }
+    t.y = ny;
+  }
+
+  /** 输入向量 → 整数速度（milli-px/tick）；对角超长归一（sqrt 为 IEEE754 确定性运算） */
+  function velocity(mx, my) {
+    let nx = clamp100(mx | 0), ny = clamp100(my | 0);
+    const len = Math.sqrt(nx * nx + ny * ny);
+    if (len > 100) {
+      const s = 100 / len;
+      nx = Math.trunc(nx * s); ny = Math.trunc(ny * s);
+    }
+    return { vx: Math.trunc(nx * SPEED_M / 100), vy: Math.trunc(ny * SPEED_M / 100), nx, ny };
+  }
+
+  /* ---------- 单帧推进（inputs: {<seat>:{mx,my,fire}}，缺席按零输入） ---------- */
+  function step(state, inputs) {
+    const ev = [];
+    const { walls, tanks, bullets } = state;
+
+    // 1) 坦克移动/开火
+    for (let i = 0; i < tanks.length; i++) {
+      const t = tanks[i];
+      if (!t.alive) continue;
+      const inp = inputs[t.seat] || { mx: 0, my: 0, fire: 0 };
+      const { vx, vy, nx, ny } = velocity(inp.mx, inp.my);
+      t.lvx = vx; t.lvy = vy;
+      moveX(walls, t, vx);
+      moveY(walls, t, vy);
+      if (nx !== 0 || ny !== 0) { t.fx = nx; t.fy = ny; }
+      if (t.cool > 0) t.cool--;
+      if (inp.fire && t.cool === 0) {
+        const fl = Math.sqrt(t.fx * t.fx + t.fy * t.fy) || 1;
+        const s = BSPEED_M / fl;
+        const dx = Math.trunc(t.fx * s), dy = Math.trunc(t.fy * s);
+        bullets.push({ x: t.x + Math.trunc(t.fx * 12), y: t.y + Math.trunc(t.fy * 12), dx, dy, team: t.team, by: t.seat, life: LIFE });
+        t.cool = COOLDOWN;
+        ev.push({ k: 'shot', seat: t.seat });
+      }
+    }
+
+    // 2) 子弹推进（数组序稳定，filter 保序）
+    const live = [];
+    for (let i = 0; i < bullets.length; i++) {
+      const b = bullets[i];
+      b.x += b.dx; b.y += b.dy;
+      if (--b.life <= 0) continue;
+      const c0 = Math.floor((b.x - BHALF_M) / CELL_M), c1 = Math.floor((b.x + BHALF_M) / CELL_M);
+      const r0 = Math.floor((b.y - BHALF_M) / CELL_M), r1 = Math.floor((b.y + BHALF_M) / CELL_M);
+      if (solid(walls, c0, r0) || solid(walls, c1, r0) || solid(walls, c0, r1) || solid(walls, c1, r1)) continue;
+      let hit = -1;
+      for (let j = 0; j < tanks.length; j++) {
+        const t = tanks[j];
+        if (!t.alive || t.team === b.team) continue; // 无友伤
+        const dx = b.x - t.x, dy = b.y - t.y;
+        if (dx < 0 ? -dx < HALF_M + BHALF_M : dx < HALF_M + BHALF_M) {
+          if (dy < 0 ? -dy < HALF_M + BHALF_M : dy < HALF_M + BHALF_M) { hit = j; break; }
+        }
+      }
+      if (hit >= 0) {
+        const t = tanks[hit];
+        t.hp--;
+        ev.push({ k: 'hit', seat: t.seat, by: b.by, hp: t.hp });
+        if (t.hp <= 0) {
+          t.alive = false;
+          state.kills[b.team === 'A' ? 'A' : 'B']++;
+          ev.push({ k: 'die', seat: t.seat, by: b.by });
+        }
+        continue;
+      }
+      live.push(b);
+    }
+    state.bullets = live;
+    state.tick++;
+
+    // 3) 终局判定（服务端权威；客户端同码复核）
+    let aliveA = 0, aliveB = 0, hpA = 0, hpB = 0;
+    for (let i = 0; i < tanks.length; i++) {
+      const t = tanks[i];
+      if (!t.alive) continue;
+      if (t.team === 'A') { aliveA++; hpA += t.hp; } else { aliveB++; hpB += t.hp; }
+    }
+    if (aliveA === 0 || aliveB === 0) {
+      return { events: ev, over: true, result: { winner: aliveA === 0 && aliveB === 0 ? 'draw' : (aliveA === 0 ? 'B' : 'A'), scores: { ...state.kills }, reason: 'eliminated' } };
+    }
+    if (state.tick >= state.maxTicks) {
+      return { events: ev, over: true, result: { winner: hpA === hpB ? 'draw' : (hpA > hpB ? 'A' : 'B'), scores: { ...state.kills }, reason: 'timeout' } };
+    }
+    return { events: ev, over: false };
+  }
+
+  const serialize = (state) => JSON.stringify(state);
+  const deserialize = (json) => JSON.parse(json);
+
+  /* =====================================================================
+   * Bot 决策 brain(state, seat, level, rng) → {mx,my,fire}
+   * rng 由调用方持有（服务端每 bot 一个 mulberry32；离线模式客户端自持）。
+   * 输出即输入向量，走与真人完全相同的帧通道。
+   * ===================================================================== */
+  function nearestEnemy(state, me) {
+    let best = null, bd = Infinity; // milli-px 平方距离可达 ~4e11，不可用 1<<30 当上界
+    for (let i = 0; i < state.tanks.length; i++) {
+      const t = state.tanks[i];
+      if (!t.alive || t.team === me.team) continue;
+      const dx = t.x - me.x, dy = t.y - me.y;
+      const d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best ? { t: best, d: Math.sqrt(bd) | 0 } : null;
+  }
+
+  function brain(state, seat, level, rng) {
+    const me = state.tanks[seat];
+    if (!me || !me.alive) return { mx: 0, my: 0, fire: 0 };
+    const target = nearestEnemy(state, me);
+
+    // casual：每 5 tick 决策一次的短记忆（用 tick 相位 + 确定性伪随机替代记忆）
+    if (level === 'casual') {
+      if (!target) return { mx: 0, my: 0, fire: 0 };
+      const phase = (state.tick + seat * 5) % 5;
+      const r = rng();
+      let mx = 0, my = 0;
+      if (phase === 0) {
+        // 换一个游走/追击方向：70% 朝敌带 ±45° 抖动，30% 随机向
+        if (r < 0.7) {
+          const dx = target.t.x - me.x, dy = target.t.y - me.y;
+          const jx = (rng() - 0.5) * Math.abs(dx) * 0.8 | 0;
+          const jy = (rng() - 0.5) * Math.abs(dy) * 0.8 | 0;
+          mx = clamp100(dx / 100 | 0); my = clamp100(dy / 100 | 0);
+          mx = clamp100(mx + jx / 100 | 0); my = clamp100(my + jy / 100 | 0);
+        } else {
+          const a = (rng() * 4) | 0;
+          mx = a === 0 ? 100 : a === 1 ? -100 : 0;
+          my = a === 2 ? 100 : a === 3 ? -100 : 0;
+        }
+      }
+      const fire = target.d < 26000 * 10 && rng() < 0.25 ? 1 : 0; // 260px 内 25% 概率开火
+      return { mx, my, fire };
+    }
+
+    if (level === 'balanced') {
+      if (!target) return { mx: 0, my: 0, fire: 0 };
+      const dx = target.t.x - me.x, dy = target.t.y - me.y;
+      const d = target.d; // milli-px
+      let mx = 0, my = 0;
+      if (d > 220000) { mx = clamp100(dx / 2000 | 0); my = clamp100(dy / 2000 | 0); }
+      else if (d < 140000) { mx = clamp100(-dx / 2000 | 0); my = clamp100(-dy / 2000 | 0); }
+      else { // 环绕：切向移动
+        mx = clamp100(-dy / 2000 | 0); my = clamp100(dx / 2000 | 0);
+      }
+      // 大致朝敌才开火（方向叉积小于阈值）
+      const cross = me.fx * dy - me.fy * dx;
+      const dot = me.fx * dx + me.fy * dy;
+      const aligned = dot > 0 && (cross < 0 ? -cross : cross) < (dot / 2 | 0 ? (dot / 2 | 0) : 1);
+      const fire = target.d < 260000 && aligned && rng() < 0.85 ? 1 : 0;
+      return { mx, my, fire };
+    }
+
+    // competitive：预判提前量 + 来弹垂直躲避 + 近距缠斗
+    if (!target) return { mx: 0, my: 0, fire: 0 };
+    const t = target.t;
+    const dx = t.x - me.x, dy = t.y - me.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) | 0;
+    const eta = dist / BSPEED_M | 0; // 子弹飞行 tick 数
+    const ax = t.x + (t.lvx * eta | 0) - me.x; // 预判点
+    const ay = t.y + (t.lvy * eta | 0) - me.y;
+    // 躲避：检查己方来袭子弹（敌队、且弹道将在 2 tick 内经过附近）
+    let dodge = null;
+    for (let i = 0; i < state.bullets.length; i++) {
+      const b = state.bullets[i];
+      if (b.team === me.team) continue;
+      const relx = me.x - b.x, rely = me.y - b.y;
+      const ahead = relx * b.dx + rely * b.dy; // >0 = 朝我来
+      if (ahead <= 0) continue;
+      const bx = b.x + b.dx * 2, by = b.y + b.dy * 2;
+      if ((bx - me.x < 0 ? -(bx - me.x) : bx - me.x) < 60000 && (by - me.y < 0 ? -(by - me.y) : by - me.y) < 60000) {
+        dodge = b; break;
+      }
+    }
+    let mx, my;
+    if (dodge) {
+      // 垂直于弹道方向侧移（代价：暂时丢失瞄准轴——朝向绑定移动方向的 lite 模型）
+      mx = clamp100(dodge.dy / 320 | 0); my = clamp100(-dodge.dx / 320 | 0);
+    } else {
+      // 直压预判点：移动方向即朝向 → 边接近边对轴（贴脸 bump 亦保持对轴，换弹互射）
+      mx = clamp100(ax / 2000 | 0); my = clamp100(ay / 2000 | 0);
+    }
+    // 开火：当前朝向对预判点的偏差 < 8%
+    const fl = Math.sqrt(me.fx * me.fx + me.fy * me.fy) || 1;
+    const ux = me.fx / fl, uy = me.fy / fl;
+    const tl = Math.sqrt(ax * ax + ay * ay) || 1;
+    const tx = ax / tl, ty = ay / tl;
+    const aimDot = ux * tx + uy * ty;
+    const fire = dist < 300000 && aimDot > 0.92 ? 1 : 0;
+    return { mx, my, fire };
+  }
+
+  const LEVELS = ['casual', 'balanced', 'competitive'];
+
+  return { META, create, step, serialize, deserialize, brain, fnv1a32, mulberry32, LEVELS, clamp100 };
+});
+
+</script>
+<script>
+/* =====================================================================
+ * GAMES 联机客户端 SDK（games/_shared/net.js · GAMES-40）——联机游戏页唯一网络出口。
+ * 职责（docs/net-protocol.md §7）：连接/入房（含快速匹配）/输入上报/S1 帧与快照接收/
+ * 时钟同步（ping/pong 偏移）/ping 显示/自动重连（10s 重连窗内凭 token 复席）。
+ *
+ * 形态：classic script（构建期内联进游戏页，server 对 /games/_* 一律 404，无外链可能），
+ *       暴露全局 GNet。零依赖、单文件；协议 JSON 文本帧。
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+
+  var GW_PORT = 4400; // 网关默认端口（协议 §1）
+
+  /** 网关 origin：<scheme>://<hostname>:4400；?gw=<origin> 可覆盖（LAN/调试） */
+  function gwOrigin() {
+    var o = null;
+    try { o = new URL(root.location.href).searchParams.get('gw'); } catch (e) { /* 非浏览器环境 */ }
+    if (o) return o.replace(/\/+$/, '');
+    if (!root.location) return 'ws://127.0.0.1:' + GW_PORT;
+    var scheme = root.location.protocol === 'https:' ? 'wss' : 'ws';
+    return scheme + '://' + root.location.hostname + ':' + GW_PORT;
+  }
+
+  /** 会话 sessionStorage 的重连凭证（刷新/崩溃后 ?room= 直达自动复席） */
+  function saveResume(roomId, seat, token) {
+    try { root.sessionStorage.setItem('gnet:resume:' + roomId, JSON.stringify({ seat: seat, token: token })); } catch (e) { /* 隐私模式 */ }
+  }
+  function getResume(roomId) {
+    try {
+      var raw = root.sessionStorage.getItem('gnet:resume:' + roomId);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function clearResume(roomId) {
+    try { root.sessionStorage.removeItem('gnet:resume:' + roomId); } catch (e) { /* 忽略 */ }
+  }
+
+  var median = function (arr) {
+    var a = arr.slice().sort(function (x, y) { return x - y; });
+    var m = a.length >> 1;
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  };
+
+  /**
+   * connect(opts) → session
+   *   opts: { url?, roomId?|quick:true, gameId, mode?, level?, maxTicks?, resume?,
+   *           onWelcome, onStarted, onFrame, onState, onSeat, onEnd, onClosed,
+   *           onError, onStatus(status) }
+   *   status: connecting → open → live → reconnecting → lost / closed
+   */
+  function connect(opts) {
+    var url = (opts.url || gwOrigin()).replace(/^http/, 'ws') + '/ws';
+    var session = {
+      rttMs: 0, offsetMs: 0, status: 'connecting',
+      seat: -1, role: null, token: null, roomId: null, frame: 0, tickMs: 100,
+      sendInput: function (keys) { sendInput(keys); },
+      sync: function () { send({ t: 'sync' }); }, // 缺帧时请求全量重同步（协议 §4.1）
+      close: function () { userClose = true; try { ws.close(); } catch (e) { /* 已断 */ } },
+    };
+
+    var ws = null;
+    var userClose = false;
+    var lastFrame = 0;             // 最近收到的帧号（输入自动标 lastFrame+1）
+    var rtts = [], offsets = [];
+    var pingTimer = 0, backoffIdx = 0, retryTimer = 0;
+    var lostAt = 0;                // 断线时刻（10s 重连窗）
+    var BACKOFF = [500, 1000, 2000, 4000];
+
+    function setStatus(s) {
+      session.status = s;
+      if (opts.onStatus) opts.onStatus(s);
+    }
+    function emit(name, arg) {
+      var fn = opts[name];
+      if (fn) fn(arg);
+    }
+    function send(obj) {
+      if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(obj)); return true; } catch (e) { return false; } }
+      return false;
+    }
+
+    function open() {
+      setStatus(session.status === 'reconnecting' ? 'reconnecting' : 'connecting');
+      try {
+        ws = new root.WebSocket(url);
+      } catch (e) {
+        emit('onError', { code: 'no-ws', message: String(e) });
+        setStatus('lost');
+        return;
+      }
+      ws.onopen = function () {
+        backoffIdx = 0;
+        setStatus('open');
+        var resume = opts.resume || (opts.roomId ? getResume(opts.roomId) : null);
+        if (opts.quick) send({ t: 'quick', gameId: opts.gameId, level: opts.level, maxTicks: opts.maxTicks });
+        else send({ t: 'join', roomId: opts.roomId, mode: opts.mode || 'play', resume: resume || undefined, name: opts.name });
+        pingTimer = root.setInterval(function () { send({ t: 'ping', c: root.Date.now() }); }, 2000);
+      };
+      ws.onmessage = function (ev) {
+        var msg = null;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (!msg || typeof msg.t !== 'string') return;
+        switch (msg.t) {
+          case 'welcome':
+            session.roomId = msg.roomId;
+            session.role = msg.role;
+            session.seat = msg.role === 'player' ? msg.seat : -1;
+            session.token = msg.token || null;
+            session.frame = msg.frame;
+            session.tickMs = msg.tickMs || 100;
+            lastFrame = msg.frame;
+            if (msg.role === 'player') saveResume(msg.roomId, msg.seat, msg.token);
+            setStatus('live');
+            emit('onWelcome', msg);
+            break;
+          case 'started':
+            emit('onStarted', msg);
+            break;
+          case 'frame':
+            lastFrame = msg.frame;
+            session.frame = msg.frame;
+            emit('onFrame', msg);
+            break;
+          case 'state':
+            session.frame = msg.frame;
+            lastFrame = msg.frame;
+            emit('onState', msg);
+            break;
+          case 'seat':
+            emit('onSeat', msg);
+            break;
+          case 'end':
+            if (session.roomId) clearResume(session.roomId);
+            emit('onEnd', msg);
+            break;
+          case 'closed':
+            if (session.roomId) clearResume(session.roomId);
+            emit('onClosed', msg);
+            break;
+          case 'pong':
+            var now = root.Date.now();
+            var rtt = now - msg.c;
+            if (rtt >= 0 && rtt < 10000) {
+              rtts.push(rtt); if (rtts.length > 5) rtts.shift();
+              session.rttMs = Math.round(median(rtts));
+              var off = msg.s + rtt / 2 - now;
+              offsets.push(off); if (offsets.length > 5) offsets.shift();
+              session.offsetMs = Math.round(median(offsets));
+            }
+            emit('onPong', { rttMs: session.rttMs, offsetMs: session.offsetMs });
+            break;
+          case 'error':
+            emit('onError', msg);
+            break;
+        }
+      };
+      ws.onclose = function () {
+        root.clearInterval(pingTimer);
+        if (userClose) { setStatus('closed'); return; }
+        if (session.status === 'lost') return;
+        if (!lostAt) lostAt = root.Date.now();
+        if (root.Date.now() - lostAt > 10000) { // 10s 重连窗（协议 §2）
+          setStatus('lost');
+          emit('onError', { code: 'reconnect-timeout', message: '10s 未能重连' });
+          return;
+        }
+        setStatus('reconnecting');
+        retryTimer = root.setTimeout(open, BACKOFF[Math.min(backoffIdx++, BACKOFF.length - 1)]);
+      };
+      ws.onerror = function () { /* onclose 跟进，重连逻辑在那边 */ };
+    }
+
+    function sendInput(keys) {
+      if (session.role !== 'player') return false;
+      return send({ t: 'input', frame: lastFrame + 1, keys: keys });
+    }
+
+    open();
+    return session;
+  }
+
+  root.GNet = {
+    gwOrigin: gwOrigin,
+    connect: connect,
+    getResume: getResume,
+    clearResume: clearResume,
+    GW_PORT: GW_PORT,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* =====================================================================
+ * 净斗坦克 net-tank 客户端逻辑（GAMES-40）——构建期内联进 index.html。
+ * 依赖前置内联：sim.cjs（window.NTSim）+ _shared/net.js（window.GNet）。
+ * 模式：
+ *   online —— ?room=<id> 指定房或快速匹配（GNet 唯一网络出口，S1 帧驱动本地镜像模拟）；
+ *   offline —— 网关不可达/无房参数时的离线练习（同 sim 同 brain，本地 10Hz 推进）；
+ *   debug —— ?debug=1 强制离线 + __GAMES_DEBUG__ 钩子（perf-smoke/play-check 口径同 GAMES-30）。
+ * 单机规范沿用：375×667 安全区（DPR 夹 1..3）、上报协议（boot/start/levelEnd/end，
+ * 宿主 __GAMES_HOOK__ 优先、本地 telemetry 兜底）、判定路径零 Math.random。
+ * ===================================================================== */
+(function () {
+  'use strict';
+
+  /* ---------- 常量 ---------- */
+  var S = window.NTSim, G = window.GNet;
+  var W = 375, H = 667, HUD_H = 42;
+  var FIELD_H = S.META.H; // 625
+  var TEAM_COLOR = { A: '#38bdf8', B: '#fb923c' };
+  var BG = '#0d1117', WALL = '#2a3247', WALL_EDGE = '#39466a', PAGE_BG = '#0b0e14';
+  var FONT = "-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',Roboto,sans-serif";
+
+  /* ---------- 上报（§5.3 契约：宿主钩子优先，本地兜底） ---------- */
+  var telQueue = [];
+  function report(event, payload) {
+    try {
+      if (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) window.__GAMES_HOOK__.report(event, payload);
+      else {
+        telQueue.push({ t: Date.now(), event: event, payload: payload });
+        if (telQueue.length > 50) telQueue.shift();
+      }
+    } catch (e) { /* 上报永不抛 */ }
+    if (window.__GAMES_DEBUG__) window.__GAMES_DEBUG__.events.push({ event: event, payload: payload, at: Date.now() });
+  }
+
+  /* ---------- 画布（安全区 + DPR 夹 1..3） ---------- */
+  var canvas = document.getElementById('cv'), ctx = canvas.getContext('2d');
+  var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  function fit() {
+    var vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+    var scale = Math.min(vw / W, vh / H);
+    var cw = Math.round(W * scale), ch = Math.round(H * scale);
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', fit);
+
+  /* ---------- 静态层离屏缓存（A1 纪律：墙一次成图，主循环只 blit） ---------- */
+  var wallLayer = null;
+  function buildWallLayer(state) {
+    wallLayer = document.createElement('canvas');
+    wallLayer.width = W * dpr; wallLayer.height = FIELD_H * dpr;
+    var g = wallLayer.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = BG; g.fillRect(0, 0, W, FIELD_H);
+    g.fillStyle = WALL; g.strokeStyle = WALL_EDGE; g.lineWidth = 1;
+    var cell = S.META.cell;
+    for (var r = 0; r < state.walls.length; r++) {
+      for (var c = 0; c < state.walls[r].length; c++) {
+        if (state.walls[r].charCodeAt(c) === 49) {
+          g.fillRect(c * cell + 1, r * cell + 1, cell - 2, cell - 2);
+          g.strokeRect(c * cell + 1.5, r * cell + 1.5, cell - 3, cell - 3);
+        }
+      }
+    }
+  }
+
+  /* ---------- 对局状态 ---------- */
+  var mode = null;            // 'online' | 'offline'
+  var simState = null;        // 本地镜像模拟（确定性，与服务端同码）
+  var prevPos = null;         // 插值用：上一帧坦克位置 {seat:{x,y}}
+  var lastTickAt = 0;         // 上次 sim 推进时刻（插值 alpha）
+  var mySeat = -1, myTeam = null, session = null, rosterMap = {};
+  var fx = [];                // 表现性特效 {k,x,y,seat,ttl}
+  var matchOver = false, started = false;
+  var bots = null;            // offline：{seat: rng}
+  var offlineTimer = 0;
+  var inputMaxMs = 0, lastInputTs = 0;
+
+  function snapshotPrev() {
+    prevPos = {};
+    for (var i = 0; i < simState.tanks.length; i++) {
+      var t = simState.tanks[i];
+      prevPos[t.seat] = { x: t.x, y: t.y };
+    }
+  }
+
+  /* ---------- 输入（触摸摇杆 + 右半开火 + 键盘） ---------- */
+  var stick = { active: false, ox: 0, oy: 0, x: 0, y: 0, id: -1 };
+  var fireTouch = false, keys = {}, kbFire = false;
+
+  function currentInput() {
+    var mx = 0, my = 0;
+    if (stick.active) {
+      var dx = stick.x - stick.ox, dy = stick.y - stick.oy;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 8) { var m = Math.min(100, (d - 8) * 1.6); mx = Math.round(dx / d * m); my = Math.round(dy / d * m); }
+    }
+    if (keys.ArrowLeft || keys.a) mx = -100;
+    if (keys.ArrowRight || keys.d) mx = 100;
+    if (keys.ArrowUp || keys.w) my = -100;
+    if (keys.ArrowDown || keys.s) my = 100;
+    var fire = (fireTouch || kbFire) ? 1 : 0;
+    return { mx: mx, my: my, fire: fire };
+  }
+
+  function markInput(ts) { if (ts) lastInputTs = ts; }
+  canvas.addEventListener('touchstart', function (e) {
+    e.preventDefault(); markInput(e.timeStamp);
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      var p = toCanvas(t);
+      if (p.x < W / 2 && !stick.active) { stick.active = true; stick.id = t.identifier; stick.ox = p.x; stick.oy = p.y; stick.x = p.x; stick.y = p.y; }
+      else fireTouch = true;
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      if (stick.active && t.identifier === stick.id) { var p = toCanvas(t); stick.x = p.x; stick.y = p.y; }
+    }
+  }, { passive: false });
+  function endTouch(e) {
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      if (stick.active && t.identifier === stick.id) stick.active = false;
+      else fireTouch = false;
+    }
+  }
+  canvas.addEventListener('touchend', endTouch);
+  canvas.addEventListener('touchcancel', endTouch);
+  window.addEventListener('keydown', function (e) {
+    keys[e.key] = true;
+    if (e.key === ' ') { kbFire = true; markInput(e.timeStamp); e.preventDefault(); }
+  });
+  window.addEventListener('keyup', function (e) { keys[e.key] = false; if (e.key === ' ') kbFire = false; });
+
+  function toCanvas(t) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (t.clientX - r.left) / r.width * W, y: (t.clientY - r.top) / r.height * H };
+  }
+
+  /* ---------- 渲染 ---------- */
+  var fpsN = 0, fpsAt = 0, fpsV = 0;
+  function render(now) {
+    requestAnimationFrame(render);
+    fpsN++;
+    if (now - fpsAt > 500) { fpsV = Math.round(fpsN * 1000 / (now - fpsAt)); fpsN = 0; fpsAt = now; }
+    if (lastInputTs) { inputMaxMs = Math.max(inputMaxMs, now - lastInputTs); lastInputTs = 0; }
+    if (!simState) { drawBoot(); return; }
+
+    var alpha = started && !matchOver ? Math.min(1, (now - lastTickAt) / S.META.tickMs) : 1;
+    ctx.fillStyle = PAGE_BG; ctx.fillRect(0, 0, W, H);
+    if (wallLayer) ctx.drawImage(wallLayer, 0, HUD_H, W, FIELD_H);
+
+    // 特效（表现层，非判定）
+    for (var i = fx.length - 1; i >= 0; i--) {
+      var f = fx[i];
+      f.ttl -= 16;
+      if (f.ttl <= 0) { fx.splice(i, 1); continue; }
+      if (f.k === 'hit') { ctx.fillStyle = 'rgba(251,146,60,' + (f.ttl / 300 * 0.8) + ')'; ctx.beginPath(); ctx.arc(f.x / 1000, HUD_H + f.y / 1000, 10 + (300 - f.ttl) / 20, 0, 7); ctx.fill(); }
+      if (f.k === 'shot') { ctx.fillStyle = 'rgba(232,236,243,.5)'; ctx.fillRect(f.x / 1000 - 2, HUD_H + f.y / 1000 - 2, 4, 4); }
+    }
+
+    // 坦克（插值）
+    for (var ti = 0; ti < simState.tanks.length; ti++) {
+      var t = simState.tanks[ti];
+      var px = t.x / 1000, py = t.y / 1000;
+      if (prevPos && prevPos[t.seat] && t.alive && alpha < 1) {
+        px = prevPos[t.seat].x / 1000 + (t.x / 1000 - prevPos[t.seat].x / 1000) * alpha;
+        py = prevPos[t.seat].y / 1000 + (t.y / 1000 - prevPos[t.seat].y / 1000) * alpha;
+      }
+      var cx = px, cy = HUD_H + py;
+      if (!t.alive) { // 残骸
+        ctx.fillStyle = 'rgba(90,96,120,.55)';
+        ctx.fillRect(cx - 9, cy - 9, 18, 18);
+        continue;
+      }
+      var col = TEAM_COLOR[t.team];
+      if (t.seat === mySeat) { ctx.strokeStyle = '#e8ecf3'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 13, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = col;
+      ctx.fillRect(cx - 9, cy - 9, 18, 18);
+      ctx.fillStyle = 'rgba(11,14,20,.5)';
+      ctx.fillRect(cx - 9, cy - 9, 18, 6);
+      // 炮管（朝向 fx/fy）
+      var fl = Math.sqrt(t.fx * t.fx + t.fy * t.fy) || 1;
+      ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + t.fx / fl * 14, cy + t.fy / fl * 14);
+      ctx.stroke();
+      // 血量
+      for (var hp = 0; hp < S.META.hpMax; hp++) {
+        ctx.fillStyle = hp < t.hp ? '#e8ecf3' : 'rgba(232,236,243,.18)';
+        ctx.fillRect(cx - 9 + hp * 7, cy + 10, 5, 2);
+      }
+      // 冷却环
+      if (t.cool > 0 && t.seat === mySeat) {
+        ctx.strokeStyle = 'rgba(232,236,243,.4)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, 16, -Math.PI / 2, -Math.PI / 2 + (1 - t.cool / 6) * Math.PI * 2); ctx.stroke();
+      }
+    }
+    // 子弹
+    ctx.fillStyle = '#fde68a';
+    for (var bi = 0; bi < simState.bullets.length; bi++) {
+      var b = simState.bullets[bi];
+      ctx.beginPath(); ctx.arc(b.x / 1000, HUD_H + b.y / 1000, 3, 0, 7); ctx.fill();
+    }
+    drawHud();
+    drawStick();
+  }
+
+  function drawBoot() {
+    ctx.fillStyle = PAGE_BG; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#5b657d'; ctx.font = '14px ' + FONT; ctx.textAlign = 'center';
+    ctx.fillText('正在加入对局…', W / 2, H / 2);
+  }
+
+  function drawHud() {
+    ctx.fillStyle = 'rgba(15,19,28,.96)'; ctx.fillRect(0, 0, W, HUD_H);
+    ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.moveTo(0, HUD_H + .5); ctx.lineTo(W, HUD_H + .5); ctx.stroke();
+    // 双队存活/击杀
+    var alive = { A: 0, B: 0 }, hpSum = { A: 0, B: 0 };
+    for (var i = 0; i < simState.tanks.length; i++) {
+      var t = simState.tanks[i];
+      if (!t.alive) continue;
+      alive[t.team]++; hpSum[t.team] += t.hp;
+    }
+    ctx.font = '12px ' + FONT; ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left'; ctx.fillStyle = TEAM_COLOR.A;
+    ctx.fillText('A 存活' + alive.A + ' 击杀' + simState.kills.A, 10, HUD_H / 2);
+    ctx.textAlign = 'right'; ctx.fillStyle = TEAM_COLOR.B;
+    ctx.fillText('击杀' + simState.kills.B + ' 存活' + alive.B + ' B', W - 10, HUD_H / 2);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#e8ecf3';
+    var secLeft = Math.max(0, Math.ceil((simState.maxTicks - simState.tick) / 10));
+    ctx.fillText(mmss(secLeft), W / 2, HUD_H / 2 - 7);
+    var ping = mode === 'online' && session ? (session.rttMs ? session.rttMs + 'ms' : '--') : '离线';
+    ctx.font = '10px ' + FONT; ctx.fillStyle = '#5b657d';
+    ctx.fillText(ping + ' · ' + S.META.mode, W / 2, HUD_H / 2 + 8);
+  }
+
+  function mmss(s) { var m = (s / 60) | 0; return (m < 10 ? '0' : '') + m + ':' + ((s % 60) < 10 ? '0' : '') + (s % 60); }
+
+  function drawStick() {
+    if (!stick.active) return;
+    ctx.strokeStyle = 'rgba(232,236,243,.25)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(stick.ox, stick.oy, 34, 0, 7); ctx.stroke();
+    var dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.sqrt(dx * dx + dy * dy);
+    var m = Math.min(d, 34);
+    ctx.fillStyle = 'rgba(232,236,243,.4)';
+    ctx.beginPath(); ctx.arc(stick.ox + (d ? dx / d * m : 0), stick.oy + (d ? dy / d * m : 0), 14, 0, 7); ctx.fill();
+  }
+
+  /* ---------- 对局事件 → 特效 ---------- */
+  function applyEvents(events) {
+    for (var i = 0; i < events.length; i++) {
+      var e = events[i];
+      if (e.k === 'shot') { var t = simState.tanks[e.seat]; if (t) fx.push({ k: 'shot', x: t.x, y: t.y, ttl: 120 }); }
+      if (e.k === 'hit') fx.push({ k: 'hit', x: simState.tanks[e.seat] ? simState.tanks[e.seat].x : 0, y: simState.tanks[e.seat] ? simState.tanks[e.seat].y : 0, ttl: 300 });
+    }
+    if (fx.length > 40) fx.splice(0, fx.length - 40);
+  }
+
+  /* ---------- 终局 ---------- */
+  function finish(result) {
+    if (matchOver) return;
+    matchOver = true;
+    var win = myTeam ? (result.winner === myTeam ? 1 : result.winner === 'draw' ? 0.5 : 0) : 0.5;
+    report('levelEnd', { win: win, score: (simState.kills[myTeam || 'A'] || 0), reason: result.reason });
+    report('end', { win: win, score: (simState.kills[myTeam || 'A'] || 0) });
+    showResult(result);
+  }
+
+  function showResult(result) {
+    var title, sub;
+    if (!myTeam) { title = '对局结束'; sub = '旁观视角'; }
+    else if (result.winner === 'draw') { title = '平局'; sub = '势均力敌'; }
+    else if (result.winner === myTeam) { title = '胜利'; sub = '击杀 ' + simState.kills.A + ' : ' + simState.kills.B; }
+    else { title = '失败'; sub = '击杀 ' + simState.kills.A + ' : ' + simState.kills.B; }
+    var el = document.getElementById('result');
+    el.style.display = 'flex';
+    el.innerHTML =
+      '<div class="rbox"><div class="rtitle">' + title + '</div><div class="rsub">' + sub + '</div>' +
+      '<button id="again" type="button">再来一局</button>' +
+      '<button id="tolobby" type="button" class="ghost">回大厅</button></div>';
+    document.getElementById('again').onclick = function () {
+      el.style.display = 'none';
+      location.href = location.pathname + (mode === 'offline' ? '?debug=1&again=1' : '?quick=1');
+    };
+    document.getElementById('tolobby').onclick = function () { location.href = '/multiplayer.html'; };
+  }
+
+  /* ---------- 离线练习（同 sim 同 brain；判定路径零 Math.random——bot 随机源用房间 seed 派生） ---------- */
+  function startOffline(opts) {
+    opts = opts || {};
+    mode = 'offline';
+    var seed = S.fnv1a32('offline-' + (opts.seedSalt || '0'));
+    var levels = opts.bots || ['balanced', 'casual', 'balanced'];
+    simState = S.create(seed, { hp: opts.hp, maxTicks: opts.maxTicks });
+    buildWallLayer(simState);
+    mySeat = 0; myTeam = 'A';
+    rosterMap = { 0: { kind: 'human', name: '你' } };
+    for (var i = 1; i < 4; i++) rosterMap[i] = { kind: 'bot', name: 'Bot·' + ({ casual: '休闲', balanced: '均衡', competitive: '竞技' })[levels[i - 1]] };
+    bots = {};
+    for (var j = 1; j < 4; j++) bots[j] = { rng: S.mulberry32((seed ^ (j * 0x9e3779b9)) >>> 0), level: levels[j - 1] };
+    beginMatch();
+    if (offlineTimer) clearInterval(offlineTimer);
+    offlineTimer = setInterval(function () {
+      if (matchOver) { clearInterval(offlineTimer); return; }
+      var inputs = {};
+      inputs[0] = currentInput();
+      for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng);
+      stepLocal(inputs);
+    }, S.META.tickMs);
+  }
+
+  function stepLocal(inputs) {
+    snapshotPrev();
+    var r = S.step(simState, inputs);
+    lastTickAt = performance.now();
+    applyEvents(r.events);
+    if (r.over) { clearInterval(offlineTimer); finish(r.result); }
+  }
+
+  function beginMatch() {
+    started = true; matchOver = false; lastTickAt = performance.now();
+    document.getElementById('joining').style.display = 'none';
+    report('start', { mode: mode, room: session ? session.roomId : 'offline' });
+  }
+
+  /* ---------- 在线（S1：服务端帧驱动本地镜像） ---------- */
+  function startOnline(roomId) {
+    mode = 'online';
+    document.getElementById('joining').style.display = 'flex';
+    session = G.connect({
+      roomId: roomId || undefined,
+      quick: !roomId,
+      gameId: 'net-tank',
+      maxTicks: new URLSearchParams(location.search).get('maxTicks') ? Number(new URLSearchParams(location.search).get('maxTicks')) : undefined,
+      onWelcome: function (m) {
+        mySeat = m.seat; myTeam = m.seat >= 0 ? (m.seat % 2 === 0 ? 'A' : 'B') : null;
+        simState = m.state;
+        buildWallLayer(simState);
+        for (var i = 0; i < m.room.seats.length; i++) rosterMap[m.room.seats[i].seat] = m.room.seats[i];
+        if (m.room.state === 'live') beginMatch();
+        else document.getElementById('joining').textContent = '开赛中 ' + Math.ceil(m.room.countdownMs / 1000) + 's';
+      },
+      onStarted: function (m) {
+        simState = m.state;
+        buildWallLayer(simState);
+        beginMatch();
+      },
+      onFrame: function (m) {
+        if (!simState) return;
+        if (m.frame !== simState.tick + 1) {
+          if (m.frame <= simState.tick) return;          // 重复帧忽略
+          session.sync();                                 // 缺帧：请求全量重同步（协议 §4.1）
+          return;
+        }
+        snapshotPrev();
+        var r = S.step(simState, m.inputs);
+        lastTickAt = performance.now();
+        applyEvents(r.events);
+        if (m.over && r.over) finish(r.result);
+        // 本地输入随帧上行（input delay=1）
+        if (!matchOver) session.sendInput(currentInput());
+      },
+      onState: function (m) { simState = m.state; buildWallLayer(simState); },
+      onSeat: function (m) { for (var i = 0; i < m.seats.length; i++) rosterMap[m.seats[i].seat] = m.seats[i]; },
+      onEnd: function (m) { finish(m.result); },
+      onClosed: function () { if (!matchOver) showResult({ winner: 'draw', reason: 'abandon' }); },
+      onError: function (m) {
+        if (m.code === 'reconnect-timeout' || m.code === 'room-gone') fallbackOffline('对局已结束');
+      },
+      onStatus: function (st) {
+        var el = document.getElementById('joining');
+        if (st === 'reconnecting') { el.style.display = 'flex'; el.textContent = '重连中…'; }
+      },
+    });
+    // 网关不可达兜底：4s 仍无 welcome → 离线练习
+    setTimeout(function () {
+      if (!started && session && session.status !== 'live') fallbackOffline('网关不可达，已切换离线练习');
+    }, 4000);
+  }
+
+  var fellBack = false;
+  function fallbackOffline(reason) {
+    if (started && !matchOver) return; // 对局进行中断线：保持画面（重连窗内自动恢复）
+    if (fellBack) return;
+    fellBack = true;
+    if (session) { try { session.close(); } catch (e) { /* 已断 */ } }
+    session = null;
+    var el = document.getElementById('banner');
+    el.textContent = reason; el.style.display = 'block';
+    startOffline();
+  }
+
+  /* ---------- 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑） ---------- */
+  window.__GAMES_DEBUG__ = {
+    events: [],
+    start: function (level, opts) { startOffline(Object.assign({ seedSalt: String(level || 1) }, opts || {})); },
+    state: function () { return JSON.parse(JSON.stringify(simState)); },
+    fps: function () { return fpsV; },
+    perf: function () { return { inputMaxMs: Math.round(inputMaxMs), fps: fpsV }; },
+  };
+
+  /* ---------- 启动 ---------- */
+  fit();
+  report('boot', { slug: 'net-tank', version: '1.0.0', mode: 'net' });
+  var q = new URLSearchParams(location.search);
+  requestAnimationFrame(render);
+  if (q.get('debug') === '1') startOffline({ seedSalt: q.get('again') ? String(Date.now() % 97) : '1' });
+  else if (q.get('room')) startOnline(q.get('room'));
+  else startOnline(null); // 快速匹配
+})();
+
+</script>
+</body>
+</html>

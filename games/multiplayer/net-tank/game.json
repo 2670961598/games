@@ -1,0 +1,29 @@
+{
+  "slug": "net-tank",
+  "title": "净斗坦克",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "swipe-any",
+    "secondary": "tap-zone"
+  },
+  "avgDurationSec": 120,
+  "scoring": {
+    "win": "歼灭敌队（团队 2v2）",
+    "lose": "己方全灭",
+    "s2": "击杀+1 每人",
+    "s3": "超时按存活血量判定"
+  },
+  "description": "2v2 双队坦克对战（联机参考游戏）：左侧滑动驾驶、右侧按住开火；Bot 三档补位，真人加入即刻接管席位",
+  "net": {
+    "tech": "S1",
+    "gameId": "net-tank",
+    "mode": "2v2-team",
+    "seats": 4
+  }
+}

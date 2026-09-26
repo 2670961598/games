@@ -355,6 +355,10 @@ function wireGlobal() {
   document.getElementById('catalog-btn').addEventListener('click', () => {
     location.hash = '#/catalog'
   })
+  // 联机大厅（GAMES-40 第二界面）：独立页面，不进 SPA 视图
+  document.getElementById('multiplayer-btn').addEventListener('click', () => {
+    location.href = '/multiplayer.html'
+  })
   document.getElementById('rotate-ok').addEventListener('click', () => {
     document.body.classList.add('wide-ok')
     store.set('wideOk', true)
