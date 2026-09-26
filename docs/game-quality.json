@@ -406,44 +406,44 @@
    "notes": ""
   },
   "lane-runner:lane-runner-dash-01": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "lane-runner:lane-runner-dash-02": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "lane-runner:lane-runner-dash-03": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "lane-runner:lane-runner-dash-04": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "lane-runner:lane-runner-dash-05": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "match3:match3-candy-01": {
    "stage": "backlog",
@@ -886,44 +886,44 @@
    "notes": ""
   },
   "tap-burst:tap-burst-pop-01": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "tap-burst:tap-burst-pop-02": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "tap-burst:tap-burst-pop-03": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "tap-burst:tap-burst-pop-04": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "tap-burst:tap-burst-pop-05": {
-   "stage": "testing",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pending",
    "visual": "pending",
    "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL"
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
   },
   "tap-jump:tap-jump-flap-01": {
    "stage": "backlog",

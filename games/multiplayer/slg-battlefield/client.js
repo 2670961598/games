@@ -35,6 +35,32 @@
     if (window.__GAMES_DEBUG__) window.__GAMES_DEBUG__.events.push({ event: event, payload: payload, at: Date.now() });
   }
 
+  /* ---------- 音效预留（GAMES-47）：静音占位 + 音量分组 + 平台音效协议预留接口 ----------
+   * 全部交互挂 audio 位但静默不出声——统一走宿主注入的音效协议（__GAMES_HOOK__.audio
+   * 优先，平台接入前本地兜底为 no-op），槽位/分组即协议契约，接入时只需实现
+   * audio(slot, groupVolume)。音量分组：bgm（对局氛围）/ battle（战斗结算）/ ui（操作反馈）。 */
+  var AUDIO_SLOTS = {
+    'ui:card': 'ui', 'ui:aim': 'ui', 'ui:spawn': 'ui', 'ui:skill': 'ui', 'ui:ready': 'ui',
+    'ui:rally': 'ui', 'ui:research': 'ui', 'ui:result': 'ui',
+    'battle:hit': 'battle', 'battle:die': 'battle', 'battle:kill': 'battle', 'battle:skill': 'battle',
+    'battle:warn': 'battle', 'battle:boom': 'battle', 'battle:basehit': 'battle',
+    'battle:cap': 'battle', 'battle:final': 'battle',
+    'bgm:countdown': 'bgm', 'bgm:match': 'bgm', 'bgm:start': 'bgm',
+  };
+  var AUDIO_GROUPS = { bgm: .5, battle: .8, ui: .6 };
+  var audioLog = [];
+  function audio(slot) {
+    var g = AUDIO_SLOTS[slot] || 'ui';
+    try {
+      if (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.audio) window.__GAMES_HOOK__.audio(slot, AUDIO_GROUPS[g]);
+    } catch (e) { /* 音效永不抛 */ }
+    audioLog.push({ slot: slot, group: g, at: Date.now() });
+    if (audioLog.length > 64) audioLog.shift();
+  }
+  function haptic(ms) {                                   // 振动预留（安卓 Chrome 生效，iOS/桌面静默）
+    try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* 永不抛 */ }
+  }
+
   /* ---------- 画布（安全区 + DPR 夹 1..3） ---------- */
   var canvas = document.getElementById('cv'), ctx = canvas.getContext('2d');
   var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
@@ -78,6 +104,12 @@
   var inputMaxMs = 0, lastInputTs = 0;
   var killStreak = 0, killStreakAt = 0, bannerTtl = 0, bannerTxt = '';
   var shakeT = 0, shakeAmp = 0, slowmoUntil = 0;
+  var pressFx = {};               // 按压/确认动效时间戳（'card0'..'card5'/'skill0'..'skill3'/'research'）
+  var popPulseT = 0;              // 出兵后兵力数字 +1 跳动（乐观表现，权威帧纠正）
+  var energyPulseT = 0;           // 能量环脉冲（击杀 +能 的 HUD 反馈）
+  var baseJitter = { A: 0, B: 0 }; // 基地血条抖动截止时刻（受击 240ms）
+  var lastCd = [0, 0, 0, 0];      // 技能冷却差分（>0 → 0 转好瞬间触发 ready 微闪）
+  var introUntil = 0, introBeat = -2;  // 进场倒计时截止时刻 / 当前拍（纯客户端演出层）
 
   function mySeatState() { return simState && simState.seats[mySeat]; }
   function snapshotPrev() {
@@ -95,7 +127,20 @@
     if (cmd.k === 'spawn') {
       var spec = S.UNITS[cmd.unit], cost = spec.costs[mySeatState() ? mySeatState().tier - 1 : 0];
       pendingCost += cost * 1000;
-      addFloat(W / 2, BOT_Y + 30, '-' + cost, '#f87171');
+      pressFx['card' + UNIT_ORDER.indexOf(cmd.unit)] = performance.now();   // 卡片确认脉冲（下一呈现帧 ≤80ms）
+      popPulseT = performance.now();                  // 兵力 +1 跳动（乐观表现）
+      addFloat(46, ROW1_Y + 2, '-' + cost, '#f87171'); // CP 扣减飘字（贴 CP 数字位上浮）
+      audio('ui:spawn');
+    } else if (cmd.k === 'skill') {
+      shakeT = Math.max(shakeT, 200); shakeAmp = Math.max(shakeAmp, 5);    // 释放轻震（渲染层 shake ~2px 衰减）
+      haptic(10);                                     // 振动预留（安卓 Chrome）
+      audio('ui:skill');
+      if (cmd.id === 0 && cmd.lane != null) spawnWarn(cmd.lane, cmd.row, 1);  // 自施法：输入即预警（领先权威帧 1-2 tick）
+    } else if (cmd.k === 'rally') {
+      audio('ui:rally');
+    } else if (cmd.k === 'research') {
+      pressFx.research = performance.now();
+      audio('ui:research');
     }
   }
   function markInput(ts) { if (ts) lastInputTs = ts; }
@@ -114,9 +159,12 @@
       if (p.y >= CARDS_Y && p.y < CARDS_Y + CARD_H) {           // 拖出兵卡
         var ci = Math.max(0, Math.min(5, ((p.x - 4) / (CARD_W + 3)) | 0));
         drag = { unit: UNIT_ORDER[ci], x: p.x, y: p.y, id: t.identifier, fromCard: true };
+        pressFx['card' + ci] = performance.now();               // 卡片按压动效（0.92× 弹回 120ms，§3.2）
+        audio('ui:card');
       } else if (p.y >= SKILL_Y && p.y < SKILL_Y + SKILL_H) {   // 点技能钮
         var si = Math.max(0, Math.min(3, ((p.x - 4) / (SKILL_W + 6)) | 0));
-        if (AIM_SKILL[si]) { aiming = aiming === si ? -1 : si; }
+        pressFx['skill' + si] = performance.now();              // 技能钮按压动效
+        if (AIM_SKILL[si]) { aiming = aiming === si ? -1 : si; audio('ui:aim'); }
         else { queueCmd({ k: 'skill', id: si }); aiming = -1; fxSkillBtn(si); }
       } else if (p.y >= ROW1_Y && p.y < ROW1_Y + ROW1_H && p.x >= researchRect.x) {  // 研究钮
         var st = mySeatState();
@@ -176,6 +224,62 @@
   function fxSkillBtn(id) { fx.push({ k: 'skillbtn', id: id, ttl: 180, max: 180 }); }
   function addFloat(x, y, txt, color) { fx.push({ k: 'float', x: x, y: y, txt: txt, color: color, ttl: 700, max: 700 }); }
 
+  /* ---------- 按压动效（GAMES-47，≤80ms 呈现）：60ms 压到 0.92×，130ms 内弹回 ---------- */
+  function pressOf(key, now) {
+    var t0 = pressFx[key];
+    if (!t0) return 0;
+    if (now - t0 > 130) { delete pressFx[key]; return 0; }
+    return now - t0;
+  }
+  function pressScale(el) {
+    if (!el) return 1;
+    var d = el < 60 ? el / 60 : Math.max(0, 1 - (el - 60) / 70);
+    return 1 - .08 * d;
+  }
+
+  /* ---------- 粒子对象池（GAMES-47 性能守护：固定容量环形分配，渲染层零 GC 压力） ---------- */
+  var P_N = 96;
+  var parts = [];
+  for (var pi = 0; pi < P_N; pi++) parts.push({ on: 0, x: 0, y: 0, vx: 0, vy: 0, ttl: 0, max: 0, col: '', sz: 2 });
+  var pCursor = 0;
+  function burst(x, y, team, n) {                        // 单位碎裂粒子（阵营色，抛物散落）
+    var col = team === 'A' ? '232,163,61' : '61,200,232';
+    for (var i = 0; i < n; i++) {
+      var p = parts[pCursor]; pCursor = (pCursor + 1) % P_N;
+      var a = (i / n) * 6.283 + (x * .01);
+      var v = .5 + ((i * 37) % 10) / 14;
+      p.on = 1; p.x = x; p.y = y;
+      p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v - .35;
+      p.ttl = p.max = 340; p.col = col; p.sz = 1.6 + ((i * 53) % 7) / 4;
+    }
+  }
+  function drawParts() {
+    for (var i = 0; i < P_N; i++) {
+      var p = parts[i];
+      if (!p.on) continue;
+      p.ttl -= 16;
+      if (p.ttl <= 0) { p.on = 0; continue; }
+      p.x += p.vx; p.y += p.vy; p.vy += .04;            // 碎片重力散落（纯渲染层）
+      var q = p.ttl / p.max;
+      ctx.fillStyle = 'rgba(' + p.col + ',' + (q * .9) + ')';
+      ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz);
+    }
+  }
+
+  /* ---------- barrage 落点预警圈（GAMES-47：渲染层预测，不改协议）----------
+   * 自施法在输入时点即预警（领先权威帧 1-2 tick），权威 skill 事件到场按同点短窗去重；
+   * 持续 1000ms（≥10 tick）覆盖 0/+2/+4 三轮落弹并逐轮爆闪——sim 落弹与 cast 同 tick 起
+   * （BARR_STAGGER=2，判定路径冻结），预警提前量以本地输入时点计，另叠加镜像 state.shells
+   * 的在途收缩环（见 drawShellWarn）双通道呈现。 */
+  function spawnWarn(lane, row, own) {
+    for (var i = 0; i < fx.length; i++) {
+      var f = fx[i];
+      if (f.k === 'warn' && f.lane === lane && f.row === row && f.max - f.ttl < 500) return;
+    }
+    fx.push({ k: 'warn', lane: lane, row: row, own: !!own, ttl: 1000, max: 1000, boomN: 0 });
+    audio('battle:warn');
+  }
+
   /* ---------- 事件 → 特效（零 diff 触发，协议 §5） ---------- */
   /* die 事件不带坐标（协议形状冻结）——step 前快照单位坐标，step 后按阵亡序对位 */
   var posById = {};
@@ -198,19 +302,33 @@
       } else if (e.k === 'die') {
         var p = deadPos && deadPos[di++] || { x: W / 2, y: H / 2 };
         fx.push({ k: 'boom', x: p.x, y: p.y, team: e.seat % 2 === 0 ? 'A' : 'B', ttl: 300, max: 300 });
+        burst(p.x, p.y, e.seat % 2 === 0 ? 'A' : 'B', 7);    // 单位碎裂粒子（对象池，渲染层）
+        audio('battle:die');
         if (e.by === mySeat && simState.seats[mySeat]) {
           if (now - killStreakAt < 5000) killStreak++; else killStreak = 1;
           killStreakAt = now;
+          addFloat(p.x, p.y - 12, '×' + simState.seats[mySeat].kills, '#fde68a');  // 击杀数飘字（累计歼击数）
+          energyPulseT = now;                                 // 能量环脉冲（击杀 +能 的 HUD 反馈）
+          audio('battle:kill');
           if (killStreak >= 3) { bannerTxt = '连续歼击 ×' + killStreak; bannerTtl = 1200; }
         }
       } else if (e.k === 'skill') {
         fx.push({ k: 'cast', seat: e.seat, id: e.id, ttl: 350, max: 350 });
-        if (e.id === 0) fx.push({ k: 'barrage-in', lane: e.lane, row: e.row, ttl: 400, max: 400 });
+        audio('battle:skill');
+        if (e.id === 0) spawnWarn(e.lane, e.row, 0);          // 权威预警（自施法已开则同点去重）
       } else if (e.k === 'cap') {
-        if (e.alpha >= 100) { bannerTxt = (e.owner === (myTeam || 'A') ? '信号塔占领' : '信号塔失守'); bannerTtl = 900; }
+        if (e.alpha >= 100) {
+          bannerTxt = (e.owner === (myTeam || 'A') ? '信号塔占领' : '信号塔失守'); bannerTtl = 900;
+          fx.push({ k: 'flag', tower: e.tower, team: e.owner, ttl: 520, max: 520 });  // 占点翻转旗帜动效
+          audio('battle:cap'); haptic(14);
+        }
       } else if (e.k === 'basehp' && e.hp === 0) {
         slowmoUntil = now + 2000; shakeT = 500; shakeAmp = 6;
+        audio('battle:final'); haptic([30, 40, 60]);
       }
+    }
+    for (var hi = 0; hi < events.length; hi++) {
+      if (events[hi].k === 'hit') { audio('battle:hit'); break; }   // 命中音效位（批聚合，每权威帧至多 1 次）
     }
     if (fx.length > 90) fx.splice(0, fx.length - 90);
   }
@@ -258,6 +376,16 @@
     drawRallies();
     drawUnits(alpha);
     drawFx(now);
+    drawShellWarn();                                   // 在途 barrage 弹预测环（镜像 shells 直读）
+    drawParts();                                       // 碎裂粒子（对象池）
+    if (press && !press.moved && !press.longfired && started && !matchOver && inField(press)) {
+      var held = now - (press.t || now);
+      if (held > 140) {                                // 长按聚集：半径圈渐起（400ms 满触发集结）
+        var prd = Math.min(34, 8 + (held - 140) * .12);
+        ctx.strokeStyle = 'rgba(253,230,138,.5)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(press.x, press.y, prd, 0, 7); ctx.stroke();
+      }
+    }
     ctx.restore();
     drawTop();
     drawBottom(now);
@@ -267,9 +395,46 @@
       ctx.fillStyle = '#e8ecf3'; ctx.font = '700 13px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(bannerTxt, W / 2, TOP_H + 143);
     }
+    if (introUntil) {                                  // 进场倒计时（纯客户端演出层，GAMES-47）
+      if (now < introUntil) drawIntro(now);
+      else if (introBeat !== -2) { introBeat = -2; bannerTxt = '战斗开始！'; bannerTtl = 900; haptic(15); audio('bgm:start'); }
+    }
     if (drag && drag.fromCard) drawDragCard();
     if (aiming >= 0) drawAiming();
     if (mode !== 'online' || !started) drawSelLane();
+  }
+
+  /* 进场倒计时（3s，3→2→1 每拍砸落缩放）：离线/调试档专用——期间模拟不推进
+   * （offlineTimer 门控），sim.step 调用序与 bot rng 流零改变；在线档不延迟帧。 */
+  function drawIntro(now) {
+    var left = introUntil - now;
+    if (left <= 0) return;
+    var n = Math.ceil(left / 1000);
+    var ph = 1 - (left - (n - 1) * 1000) / 1000;       // 拍内进度 0→1
+    if (n !== introBeat) { introBeat = n; audio('bgm:countdown'); haptic(8); }
+    ctx.fillStyle = 'rgba(11,14,20,.55)'; ctx.fillRect(0, 0, W, H);
+    var sc = 1.35 - .35 * Math.min(1, ph * 1.6);
+    ctx.save();
+    ctx.translate(W / 2, TOP_H + FIELD_H / 2 - 10);
+    ctx.scale(sc, sc);
+    ctx.fillStyle = 'rgba(232,236,243,' + (1 - Math.max(0, ph - .7) / .3 * .8) + ')';
+    ctx.font = '700 64px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), 0, 0);
+    ctx.restore();
+    ctx.fillStyle = '#8b93a7'; ctx.font = '12px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('指挥官，准备接防', W / 2, TOP_H + FIELD_H / 2 + 42);
+  }
+
+  /* 在途 shell 预测环：镜像 state.shells 直读（零协议改动），landAt 倒数收缩环 */
+  function drawShellWarn() {
+    for (var i = 0; i < simState.shells.length; i++) {
+      var sh = simState.shells[i];
+      var x = 62.5 + sh.lane * 125, y = TOP_H + sh.y / 1000;
+      var left = sh.landAt - simState.tick;
+      var r = 12 + left * 8;                           // 4 tick 内 44→12px 收缩
+      ctx.strokeStyle = 'rgba(248,113,113,' + (.35 + .15 * left) + ')'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+    }
   }
 
   function drawBoot() {
@@ -351,13 +516,23 @@
           else { ctx.moveTo(x0, BOT_Y); ctx.lineTo(x0 + 8, BOT_Y - 10); ctx.lineTo(x0 + 2, BOT_Y - 20); }
           ctx.stroke();
         }
-        /* 基地血条（战场内缘） */
-        ctx.fillStyle = 'rgba(255,255,255,.15)';
+        /* 基地血条（战场内缘；受击 240ms 内抖动 ±1.5px） */
         var by = b.team === 'B' ? TOP_H + 24 : BOT_Y - 30;
-        ctx.fillRect(67, by, 240, 4);
-        ctx.fillStyle = TEAM_COLOR[b.team]; ctx.fillRect(67, by, 240 * Math.max(0, b.hp) / b.max, 4);
-        /* 受击脉冲（表现层差分） */
-        if (lastBaseHp[b.team] > b.hp) { fx.push({ k: 'basehit', team: b.team, ttl: 260, max: 260 }); if (b.team === myTeam) { shakeT = Math.max(shakeT, 160); shakeAmp = 3; } }
+        var jt = baseJitter[b.team] > performance.now() ? (Math.random() - .5) * 3 : 0;
+        ctx.fillStyle = 'rgba(255,255,255,.15)';
+        ctx.fillRect(67 + jt, by + Math.abs(jt) * .6, 240, 4);
+        ctx.fillStyle = TEAM_COLOR[b.team]; ctx.fillRect(67 + jt, by + Math.abs(jt) * .6, 240 * Math.max(0, b.hp) / b.max, 4);
+        /* 受击脉冲（表现层差分）→ 边缘红晕 + 血条抖动 + 振动（GAMES-47） */
+        if (lastBaseHp[b.team] > b.hp) {
+          fx.push({ k: 'basehit', team: b.team, ttl: 260, max: 260 });
+          baseJitter[b.team] = performance.now() + 240;
+          audio('battle:basehit');
+          if (b.team === myTeam) {
+            shakeT = Math.max(shakeT, 160); shakeAmp = 3;
+            fx.push({ k: 'vig', ttl: 420, max: 420 });   // 我方受击：屏幕边缘红晕（受击方视角）
+            haptic(22);
+          }
+        }
         lastBaseHp[b.team] = b.hp;
       } else {                                          // dtower：中车道方块塔 + 血条
         ctx.fillStyle = '#2a3247'; ctx.strokeStyle = TEAM_COLOR[b.team]; ctx.lineWidth = 1.5;
@@ -379,7 +554,17 @@
       if (tw.cap > 0 && tw.cap < 100) col = tw.capTeam ? TEAM_COLOR[tw.capTeam] : col;
       ctx.strokeStyle = col; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, 15, -Math.PI / 2, -Math.PI / 2 + (tw.cap / 100) * Math.PI * 2); ctx.stroke();
-      if (tw.owner) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y - 12, 3, 0, 7); ctx.fill(); }
+      if (tw.owner) {                                    // 持有方旗帜（持续小幅波动，纯渲染层）
+        var wt = performance.now() / 300 + tw.i * 2;
+        ctx.strokeStyle = 'rgba(232,236,243,.8)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, y - 12); ctx.lineTo(x, y - 22); ctx.stroke();
+        ctx.fillStyle = TEAM_COLOR[tw.owner];
+        ctx.beginPath();
+        ctx.moveTo(x, y - 22);
+        ctx.lineTo(x + 8, y - 22 + 2.5 + Math.sin(wt) * 1.2);
+        ctx.lineTo(x, y - 22 + 5);
+        ctx.closePath(); ctx.fill();
+      }
       ctx.font = '9px ' + FONT; ctx.fillStyle = 'rgba(139,147,167,.9)'; ctx.textAlign = 'center';
       ctx.fillText(i === 0 ? 'Alpha' : 'Bravo', x, y + 20);
     }
@@ -467,10 +652,55 @@
         ctx.fillText(f.txt, f.x, f.y - (1 - p) * 18); ctx.globalAlpha = 1;
       } else if (f.k === 'cast') {
         ctx.fillStyle = 'rgba(253,230,138,' + (p * .25) + ')'; ctx.fillRect(0, 0, W, H);
-      } else if (f.k === 'barrage-in') {
-        var bx = 62.5 + f.lane * 125, by = TOP_H + f.row * ROW_PX + 12;
-        ctx.strokeStyle = 'rgba(248,113,113,' + (p * .8) + ')'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(bx, by, 45 * (1 - p * .4), 0, 7); ctx.stroke();
+      } else if (f.k === 'rallyring') {                 // 集结半径圈展开（长按落点）
+        var rgr = 4 + (1 - p) * 36;
+        ctx.strokeStyle = 'rgba(232,236,243,' + (p * .8) + ')'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(f.x, f.y, rgr, 0, 7); ctx.stroke();
+        ctx.strokeStyle = 'rgba(253,230,138,' + (p * .5) + ')';
+        ctx.beginPath(); ctx.arc(f.x, f.y, rgr * .55, 0, 7); ctx.stroke();
+      } else if (f.k === 'warn') {                      // barrage 落点预警圈（≥10 tick 窗 + 三轮落弹爆闪）
+        var wx = 62.5 + f.lane * 125, wy = TOP_H + f.row * ROW_PX + 12;
+        var wph = f.max - f.ttl;
+        ctx.strokeStyle = 'rgba(248,113,113,' + (.45 + .3 * Math.abs(Math.sin(wph / 90))) + ')'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(wx, wy, 45, 0, 7); ctx.stroke();
+        ctx.fillStyle = 'rgba(248,113,113,' + (.08 + .05 * Math.abs(Math.sin(wph / 90))) + ')';
+        ctx.beginPath(); ctx.arc(wx, wy, 45, 0, 7); ctx.fill();
+        while (f.boomN < 3 && wph >= f.boomN * 200) {   // 落弹帧 0/+2/+4（tick 对齐 200ms）
+          if (f.boomN === 0) audio('battle:boom');
+          f.boomN++;
+        }
+        for (var wk = 0; wk < 3; wk++) {
+          var ip = wph - wk * 200;
+          if (ip >= 0 && ip < 160) {
+            ctx.strokeStyle = 'rgba(253,230,138,' + (1 - ip / 160) + ')'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(wx, wy, 45 * (.4 + ip / 160 * .6), 0, 7); ctx.stroke();
+          }
+        }
+      } else if (f.k === 'vig') {                       // 我方基地受击：屏幕边缘红晕（径向渐变）
+        var vg = ctx.createRadialGradient(W / 2, H / 2, H * .3, W / 2, H / 2, H * .72);
+        vg.addColorStop(0, 'rgba(248,113,113,0)');
+        vg.addColorStop(1, 'rgba(248,113,113,' + (p * .5) + ')');
+        ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+      } else if (f.k === 'flag') {                      // 占点翻转：旗帜升起 + 旗面波动（520ms）
+        var twf = simState.towers[f.tower];
+        if (twf) {
+          var fxp = 62.5 + twf.lane * 125, fyp = TOP_H + twf.y / 1000 - 12;
+          var hoist = Math.min(1, (1 - p) * 1.8);       // 前 ~290ms 升旗
+          var ftop = fyp + 10 - 16 * hoist;
+          ctx.strokeStyle = 'rgba(232,236,243,.9)'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(fxp, fyp + 10); ctx.lineTo(fxp, ftop); ctx.stroke();
+          ctx.fillStyle = TEAM_COLOR[f.team] || '#8b93a7';
+          var wob = Math.sin((f.max - f.ttl) / 60) * 1.5;
+          ctx.beginPath();
+          ctx.moveTo(fxp, ftop);
+          ctx.lineTo(fxp + 10 * hoist, ftop + 3 * hoist + wob);
+          ctx.lineTo(fxp, ftop + 6 * hoist);
+          ctx.closePath(); ctx.fill();
+        }
+      } else if (f.k === 'ready') {                     // 技能冷却转好：金色微闪扩散环
+        var rq = skillRect(f.id);
+        ctx.strokeStyle = 'rgba(253,230,138,' + p + ')'; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(rq.x + rq.w / 2, rq.y + rq.h / 2, 14 + (1 - p) * 10, 0, 7); ctx.stroke();
       } else if (f.k === 'aim') {
         ctx.strokeStyle = 'rgba(248,113,113,.9)'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(f.x, f.y, 8 + (1 - p) * 10, 0, 7); ctx.stroke();
@@ -486,7 +716,7 @@
         ctx.strokeRect(r2.x - 1, r2.y - 1, r2.w + 2, r2.h + 2);
       }
     }
-    /* barrage 落点爆闪（权威 shell 落弹帧）——由 events 驱动已入列 barrage-in */
+    /* barrage 落点呈现：'warn' 预警圈（事件/输入驱动）+ drawShellWarn 在途收缩环（镜像 shells） */
   }
 
   function drawDragCard() {
@@ -536,12 +766,17 @@
     ctx.font = '9px ' + FONT; ctx.fillStyle = '#8b93a7';
     ctx.fillText('CP +' + rate + '/s', 10 + String(cpShow).length * 10 + 4, ROW1_Y + 15);
     var pop = st ? simState.units.filter(function (u) { return u.seat === mySeat; }).length : 0;
-    ctx.fillStyle = pop >= 12 ? '#f87171' : '#8b93a7'; ctx.font = '10px ' + FONT; ctx.textAlign = 'center';
+    var popEl = popPulseT ? now - popPulseT : 0;         // 兵力 +1 跳动（260ms 回落）
+    if (popEl > 260) { popEl = 0; popPulseT = 0; }
+    ctx.fillStyle = pop >= 12 ? '#f87171' : '#8b93a7';
+    ctx.font = (popEl ? (10 + 2.2 * (1 - popEl / 260)) : 10) + 'px ' + FONT; ctx.textAlign = 'center';
     ctx.fillText('兵力 ' + pop + '/12', W - 120, ROW1_Y + 13);
-    /* 研究钮（当前阶徽记+进度；资源不足置灰） */
+    /* 研究钮（当前阶徽记+进度；资源不足置灰；按压缩放） */
     var rr = researchRect;
     var researching = st && st.research;
     var afford = st && !researching && ((tier === 1 && st.cp >= 150000) || (tier === 2 && st.cp >= 300000));
+    var rsc = pressScale(pressOf('research', now));
+    if (rsc !== 1) { ctx.save(); ctx.translate(rr.x + rr.w / 2, rr.y + rr.h / 2); ctx.scale(rsc, rsc); ctx.translate(-(rr.x + rr.w / 2), -(rr.y + rr.h / 2)); }
     ctx.fillStyle = researching ? 'rgba(253,230,138,.25)' : afford ? 'rgba(253,230,138,.14)' : 'rgba(255,255,255,.06)';
     ctx.fillRect(rr.x, rr.y, rr.w, rr.h);
     ctx.strokeStyle = afford || researching ? '#fde68a' : 'rgba(255,255,255,.15)'; ctx.lineWidth = 1;
@@ -553,12 +788,15 @@
       var done = Math.min(total, total - (st.research.due - simState.tick));
       ctx.fillStyle = '#fde68a'; ctx.fillRect(rr.x, rr.y + rr.h - 3, rr.w * done / total, 3);
     }
-    /* 行 2：6 出兵卡 */
+    if (rsc !== 1) ctx.restore();
+    /* 行 2：6 出兵卡（按压 0.92× 弹回，§3.2） */
     for (var i = 0; i < 6; i++) {
       var code = UNIT_ORDER[i], spec = S.UNITS[code];
       var r = cardRect(i);
       var cost = spec.costs[tier - 1];
       var usable = st && (st.cp - pendingCost) >= cost * 1000 && st.spawnCd <= 0 && pop < 12;
+      var csc = pressScale(pressOf('card' + i, now));
+      if (csc !== 1) { ctx.save(); ctx.translate(r.x + r.w / 2, r.y + r.h / 2); ctx.scale(csc, csc); ctx.translate(-(r.x + r.w / 2), -(r.y + r.h / 2)); }
       ctx.fillStyle = usable ? '#1c2333' : '#141927';
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.strokeStyle = usable ? 'rgba(232,236,243,.35)' : 'rgba(232,236,243,.1)'; ctx.lineWidth = 1;
@@ -571,12 +809,20 @@
       ctx.fillStyle = 'rgba(139,147,167,.8)';
       ctx.fillText(COUNTER_TXT[code], r.x + r.w / 2, r.y + 36);
       if (drag && drag.unit === code) { ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 2; ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2); }
+      if (csc !== 1) ctx.restore();
     }
-    /* 行 3：4 技能钮（能量环 + 冷却扇形遮罩） */
+    /* 行 3：4 技能钮（能量环 + 冷却扇形遮罩 + 按压缩放 + 转好微闪） */
     for (var s2 = 0; s2 < 4; s2++) {
       var sk = S.SKILLS[s2];
       var sr = skillRect(s2);
       var castable = st && st.energy >= sk.cost && st.cd[s2] <= 0;
+      if (started && !matchOver && lastCd[s2] > 0 && st && st.cd[s2] <= 0) {
+        fx.push({ k: 'ready', id: s2, ttl: 260, max: 260 });   // 冷却转好瞬间（状态差分，渲染层）
+        audio('ui:ready');
+      }
+      lastCd[s2] = st ? st.cd[s2] : 0;
+      var ssc = pressScale(pressOf('skill' + s2, now));
+      if (ssc !== 1) { ctx.save(); ctx.translate(sr.x + sr.w / 2, sr.y + sr.h / 2); ctx.scale(ssc, ssc); ctx.translate(-(sr.x + sr.w / 2), -(sr.y + sr.h / 2)); }
       ctx.fillStyle = castable ? '#233046' : '#141927';
       ctx.fillRect(sr.x, sr.y, sr.w, sr.h);
       /* 冷却扇形遮罩 */
@@ -595,25 +841,32 @@
       ctx.font = '8px ' + FONT; ctx.fillStyle = castable ? '#3dc8e8' : '#5b657d';
       ctx.fillText(sk.cost + '能', sr.x + sr.w / 2, sr.y + 24);
       if (aiming === s2) { ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2; ctx.strokeRect(sr.x + 1, sr.y + 1, sr.w - 2, sr.h - 2); }
+      if (ssc !== 1) ctx.restore();
     }
-    /* 能量条（指挥官能量，行 1 右侧环） */
+    /* 能量条（指挥官能量，行 1 右侧环；击杀 +能 脉冲 500ms） */
     if (st) {
+      var eEl = energyPulseT ? now - energyPulseT : 0;
+      if (eEl > 500) { eEl = 0; energyPulseT = 0; }
       ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(W - 165, ROW1_Y + 13, 8, 0, 7); ctx.stroke();
       ctx.strokeStyle = '#3dc8e8';
       ctx.beginPath(); ctx.arc(W - 165, ROW1_Y + 13, 8, -Math.PI / 2, -Math.PI / 2 + (st.energy / 100) * Math.PI * 2); ctx.stroke();
+      if (eEl) {
+        ctx.strokeStyle = 'rgba(61,200,232,' + (.9 - eEl / 500 * .6) + ')'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(W - 165, ROW1_Y + 13, 11.5, 0, 7); ctx.stroke();
+      }
       ctx.fillStyle = '#8b93a7'; ctx.font = '8px ' + FONT; ctx.textAlign = 'center';
       ctx.fillText(String(st.energy), W - 165, ROW1_Y + 14);
     }
   }
 
-  /* ---------- 长按集结（≥400ms，§1.4） ---------- */
+  /* ---------- 长按集结（≥400ms，§1.4）---------- 落点半径圈展开（GAMES-47） */
   setInterval(function () {
     if (press && !press.moved && !press.longfired && performance.now() - (press.t || 0) >= LONGPRESS_MS && started && !matchOver) {
       press.longfired = true;
       var lane = laneAt(press.x), row = rowAt(press.y);
       queueCmd({ k: 'rally', lane: lane, row: row });
-      fx.push({ k: 'ripple', x: 62.5 + lane * 125, y: TOP_H + row * ROW_PX + 12, ttl: 300, max: 300 });
+      fx.push({ k: 'rallyring', x: 62.5 + lane * 125, y: TOP_H + row * ROW_PX + 12, ttl: 340, max: 340 });
     }
   }, 80);
 
@@ -622,6 +875,8 @@
     if (matchOver) return;
     matchOver = true;
     var win = myTeam ? (result.winner === myTeam ? 1 : result.winner === 'draw' ? 0.5 : 0) : 0.5;
+    audio('ui:result');
+    haptic(win === 1 ? [20, 30, 20, 30, 60] : 40);      // 胜利号角节奏 / 失败单震（振动预留）
     report('levelEnd', { win: win, score: (simState.score[myTeam || 'A'] || 0), reason: result.reason });
     report('end', { win: win, score: (simState.score[myTeam || 'A'] || 0) });
     showResult(result);
@@ -676,7 +931,8 @@
     if (offlineTimer) clearInterval(offlineTimer);
     offlineTimer = setInterval(function () {
       if (matchOver) { clearInterval(offlineTimer); return; }
-      var inputs = {};
+      if (introUntil && performance.now() < introUntil) return;   // 进场倒计时：模拟暂不推进（演出层门控，
+      var inputs = {};                                            // sim.step 调用序/bot rng 流零改变）
       inputs[0] = { cmd: cmdQueue.shift() || { k: 'noop' } };
       /* 席位名册 env（GAMES-46）：seat0=真人——同队 casual bot 走陪玩模式（带躺不抢戏） */
       var env = { kinds: ['human', 'bot', 'bot', 'bot'] };
@@ -698,6 +954,9 @@
   function beginMatch() {
     started = true; matchOver = false; lastTickAt = performance.now();
     document.getElementById('joining').style.display = 'none';
+    audio('bgm:match');
+    if (mode !== 'online') { introUntil = performance.now() + 3000; introBeat = -1; }  // 离线：3s 倒计时（演出层门控模拟）
+    else { bannerTxt = '战斗开始！'; bannerTtl = 900; haptic(12); }                     // 在线：不延迟帧，仅报幕（帧同步零感知）
     report('start', { mode: mode, room: session ? session.roomId : 'offline' });
   }
 
@@ -779,11 +1038,19 @@
     fps: function () { return fpsV; },
     perf: function () { return { inputMaxMs: Math.round(inputMaxMs), fps: fpsV }; },
     cmd: function (cmd) { queueCmd(cmd); },              // QA 注入通道（本地指令队列）
+    audioLog: function () { return audioLog.slice(); },  // GAMES-47 QA：音效位触发流水（与输入配对 ≤80ms 核验）
+    fxProbe: function () {                               // GAMES-47 QA：动效在场上计数（输入→首帧呈现核验）
+      var pn = 0;
+      for (var j = 0; j < P_N; j++) if (parts[j].on) pn++;
+      var pr = {};
+      for (var k in pressFx) pr[k] = pressFx[k];
+      return { fx: fx.length, parts: pn, press: pr, intro: introUntil ? Math.max(0, introUntil - performance.now()) : 0 };
+    },
   };
 
   /* ---------- 启动 ---------- */
   fit();
-  report('boot', { slug: 'slg-battlefield', version: '1.0.0', mode: 'net' });
+  report('boot', { slug: 'slg-battlefield', version: '1.1.0', mode: 'net' });
   var q = new URLSearchParams(location.search);
   requestAnimationFrame(render);
   if (q.get('debug') === '1') startOffline({ seedSalt: q.get('again') ? String(Date.now() % 97) : '1' });
