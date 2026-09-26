@@ -9,7 +9,7 @@
  * 红线（单据 GAMES-30）：avgFps ≥55 且 掉帧率 <2%，违者 exit 1。
  * 浏览器不可用时降级为结构检查（4 段内联/GE 基座/GE.boot/零外链/体积），mode 字段注明，
  * REPORT 需说明降级原因。用法：
- *   node scripts/perf-smoke.js                # 试点 10 款（tap-burst + lane-runner 各 5 档）
+ *   node scripts/perf-smoke.js                # 已迁移波次 20 款（试点 10 + GAMES-49 block-drop/block-fit 10）
  *   node scripts/perf-smoke.js --all          # 全平台扫描
  *   node scripts/perf-smoke.js --slug xxx --ms 8000 --out perf.json
  * ===================================================================== */
@@ -32,12 +32,18 @@ const OUT = argOf('--out')
 const FPS_LINE = 55, JANK_LINE = 0.02            // 质量红线（单据冻结口径）
 
 /* ---------- 收集游戏清单 ---------- */
-const PILOT_TYPES = ['tap-burst', 'lane-runner']
+const WAVE_TYPES = ['tap-burst', 'lane-runner', 'block-drop', 'block-fit']   // 已迁移波次（GAMES-30 + GAMES-49）
 async function collectGames() {
-  const types = ALL ? (await readdir(join(ROOT, 'games'), { withFileTypes: true }))
-    .filter((d) => d.isDirectory() && !d.name.startsWith('_') && d.name !== 'demo')
-    .map((d) => d.name)
-    : PILOT_TYPES
+  let types
+  if (ALL) {
+    types = (await readdir(join(ROOT, 'games'), { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && !d.name.startsWith('_') && d.name !== 'demo')
+      .map((d) => d.name)
+  } else if (TYPE) types = [TYPE]
+  else if (SLUG) {                                         // --slug 可指向任意类型：全目录扫描（防清单外空集假绿）
+    types = (await readdir(join(ROOT, 'games'), { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && !d.name.startsWith('_') && d.name !== 'demo').map((d) => d.name)
+  } else types = WAVE_TYPES
   const list = []
   for (const type of types) {
     if (TYPE && type !== TYPE) continue
