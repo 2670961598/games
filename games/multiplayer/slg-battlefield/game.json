@@ -25,6 +25,18 @@
     "gameId": "slg-battlefield",
     "mode": "2v2-commander",
     "seats": 4,
+    "botTuning": {
+      "mercy": {
+        "triggerGap": 150,
+        "releaseGap": 75,
+        "level": "balanced",
+        "desc": "猎杀让力（GAMES-46）：competitive bot 己队分差 ≥ triggerGap → 整档收力至 level 档水平，分差回落 ≤ releaseGap 才恢复（滞回防抖）。分数为 milli 外整数累计，此阈值为积分通道口径（400 分制）"
+      },
+      "carry": {
+        "idleTicks": 150,
+        "desc": "陪玩模式（GAMES-46）：同队真人静默超此 tick 数（100ms/tick）→ casual bot 接管节奏；真人活跃期让资源让击杀（3× 出兵闸门、pop≤4、守势集结、不放抢头技能）"
+      }
+    },
     "api": {
       "spec": 1,
       "ops": {

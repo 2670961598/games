@@ -257,9 +257,12 @@ export class RoomManager {
     }
 
     const inputs = {}
+    // Bot 名册 env（GAMES-46）：把席位 kind 透传给 brain（陪玩模式判定"同队是否有真人"；
+    // 游戏 sim 可忽略第 5 参——net-tank 即如此，接口向后兼容）
+    const botEnv = { kinds: room.seats.map((s) => s.kind) }
     for (const s of room.seats) {
       if (s.kind === 'bot') {
-        inputs[s.seat] = room.sim.brain(room.state, s.seat, s.level || 'balanced', s.botRng)
+        inputs[s.seat] = room.sim.brain(room.state, s.seat, s.level || 'balanced', s.botRng, botEnv)
       } else {
         const pend = s.pending.get(room.frame)
         inputs[s.seat] = pend || s.lastInput
