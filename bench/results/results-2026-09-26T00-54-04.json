@@ -1,0 +1,5308 @@
+{
+ "meta": {
+  "ts": "2026-09-26T00:30:14.933Z",
+  "chromium": "153.0.8010.12",
+  "channel": "default-headless",
+  "gl": {
+   "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+   "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+  },
+  "cpus": 10,
+  "model": "Apple M4",
+  "platform": "Darwin 25.3.0",
+  "viewport": "375×667",
+  "glGpu": {
+   "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+   "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+  }
+ },
+ "start": [
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 12.6,
+   "dclCold": 12,
+   "respEndCold": 1,
+   "tReadyWarm": 3.4,
+   "dclWarm": 3,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 15.1,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 3,
+      "tScript": 6
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 13,
+      "respEnd": 1,
+      "tScript": 3.5
+     },
+     {
+      "tReady": 12.6,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.5
+     },
+     {
+      "tReady": 12.6,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.4,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 3.5,
+      "dcl": 4
+     },
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.3,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.5,
+      "dcl": 3
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 12.4,
+   "dclCold": 12,
+   "respEndCold": 1,
+   "tReadyWarm": 3.4,
+   "dclWarm": 3,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 12.4,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.3
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.3,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.3
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.4,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 3.5,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.3,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.3,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.5,
+      "dcl": 3
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 12.5,
+   "dclCold": 12,
+   "respEndCold": 1,
+   "tReadyWarm": 3.3,
+   "dclWarm": 3,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 13,
+      "dcl": 13,
+      "load": 13,
+      "respEnd": 1,
+      "tScript": 3.8
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 3.1,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.1,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.3,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.3,
+      "dcl": 3
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 12.5,
+   "dclCold": 12,
+   "respEndCold": 1,
+   "tReadyWarm": 3.4,
+   "dclWarm": 3,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.5,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.4
+     },
+     {
+      "tReady": 12.4,
+      "dcl": 12,
+      "load": 12,
+      "respEnd": 1,
+      "tScript": 3.2
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.5,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.4,
+      "dcl": 3
+     },
+     {
+      "tReady": 3.6,
+      "dcl": 3
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 131.8,
+   "dclCold": 117,
+   "respEndCold": 1,
+   "tReadyWarm": 141.3,
+   "dclWarm": 131,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 227.8,
+      "dcl": 136,
+      "load": 227,
+      "respEnd": 1,
+      "tScript": 43.4
+     },
+     {
+      "tReady": 124,
+      "dcl": 51,
+      "load": 123,
+      "respEnd": 1,
+      "tScript": 41.6
+     },
+     {
+      "tReady": 131.8,
+      "dcl": 116,
+      "load": 131,
+      "respEnd": 1,
+      "tScript": 41.6
+     },
+     {
+      "tReady": 133.5,
+      "dcl": 118,
+      "load": 133,
+      "respEnd": 2,
+      "tScript": 44
+     },
+     {
+      "tReady": 131.8,
+      "dcl": 117,
+      "load": 131,
+      "respEnd": 1,
+      "tScript": 43
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 146.5,
+      "dcl": 134
+     },
+     {
+      "tReady": 141.3,
+      "dcl": 131
+     },
+     {
+      "tReady": 143,
+      "dcl": 133
+     },
+     {
+      "tReady": 140.9,
+      "dcl": 131
+     },
+     {
+      "tReady": 140.6,
+      "dcl": 130
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 136.3,
+   "dclCold": 116,
+   "respEndCold": 1,
+   "tReadyWarm": 144.3,
+   "dclWarm": 132,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 136.2,
+      "dcl": 116,
+      "load": 135,
+      "respEnd": 1,
+      "tScript": 41.3
+     },
+     {
+      "tReady": 136.3,
+      "dcl": 114,
+      "load": 135,
+      "respEnd": 1,
+      "tScript": 41.8
+     },
+     {
+      "tReady": 136.1,
+      "dcl": 115,
+      "load": 135,
+      "respEnd": 1,
+      "tScript": 41.4
+     },
+     {
+      "tReady": 136.7,
+      "dcl": 116,
+      "load": 136,
+      "respEnd": 1,
+      "tScript": 42
+     },
+     {
+      "tReady": 137.3,
+      "dcl": 116,
+      "load": 136,
+      "respEnd": 1,
+      "tScript": 41.5
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 144.3,
+      "dcl": 132
+     },
+     {
+      "tReady": 144.2,
+      "dcl": 132
+     },
+     {
+      "tReady": 143.2,
+      "dcl": 131
+     },
+     {
+      "tReady": 145.1,
+      "dcl": 127
+     },
+     {
+      "tReady": 145,
+      "dcl": 132
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 126.2,
+   "dclCold": 50,
+   "respEndCold": 1,
+   "tReadyWarm": 141.5,
+   "dclWarm": 129,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 131.3,
+      "dcl": 115,
+      "load": 130,
+      "respEnd": 1,
+      "tScript": 42.1
+     },
+     {
+      "tReady": 126.7,
+      "dcl": 50,
+      "load": 125,
+      "respEnd": 1,
+      "tScript": 41.3
+     },
+     {
+      "tReady": 124.2,
+      "dcl": 49,
+      "load": 123,
+      "respEnd": 1,
+      "tScript": 40.6
+     },
+     {
+      "tReady": 126.2,
+      "dcl": 51,
+      "load": 125,
+      "respEnd": 1,
+      "tScript": 41.4
+     },
+     {
+      "tReady": 122.6,
+      "dcl": 49,
+      "load": 121,
+      "respEnd": 1,
+      "tScript": 40.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 142.1,
+      "dcl": 129
+     },
+     {
+      "tReady": 138.5,
+      "dcl": 124
+     },
+     {
+      "tReady": 139.7,
+      "dcl": 127
+     },
+     {
+      "tReady": 141.5,
+      "dcl": 131
+     },
+     {
+      "tReady": 144.4,
+      "dcl": 132
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 128,
+   "dclCold": 50,
+   "respEndCold": 1,
+   "tReadyWarm": 148.9,
+   "dclWarm": 131,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 138.5,
+      "dcl": 117,
+      "load": 137,
+      "respEnd": 1,
+      "tScript": 41.3
+     },
+     {
+      "tReady": 127.8,
+      "dcl": 50,
+      "load": 126,
+      "respEnd": 1,
+      "tScript": 41.6
+     },
+     {
+      "tReady": 523.8,
+      "dcl": 495,
+      "load": 522,
+      "respEnd": 1,
+      "tScript": 51.2
+     },
+     {
+      "tReady": 128,
+      "dcl": 50,
+      "load": 126,
+      "respEnd": 1,
+      "tScript": 41.1
+     },
+     {
+      "tReady": 127.4,
+      "dcl": 50,
+      "load": 126,
+      "respEnd": 1,
+      "tScript": 40.7
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 156.3,
+      "dcl": 138
+     },
+     {
+      "tReady": 148.9,
+      "dcl": 131
+     },
+     {
+      "tReady": 156.2,
+      "dcl": 138
+     },
+     {
+      "tReady": 145.5,
+      "dcl": 127
+     },
+     {
+      "tReady": 136.5,
+      "dcl": 123
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 131.9,
+   "dclCold": 125,
+   "respEndCold": 1,
+   "tReadyWarm": 138.5,
+   "dclWarm": 125,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 131.9,
+      "dcl": 61,
+      "load": 131,
+      "respEnd": 2,
+      "tScript": 51.8
+     },
+     {
+      "tReady": 132.9,
+      "dcl": 125,
+      "load": 132,
+      "respEnd": 1,
+      "tScript": 51.2
+     },
+     {
+      "tReady": 132.2,
+      "dcl": 125,
+      "load": 131,
+      "respEnd": 1,
+      "tScript": 50.7
+     },
+     {
+      "tReady": 131.8,
+      "dcl": 125,
+      "load": 131,
+      "respEnd": 1,
+      "tScript": 50.3
+     },
+     {
+      "tReady": 128.6,
+      "dcl": 115,
+      "load": 128,
+      "respEnd": 1,
+      "tScript": 50.6
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 138.7,
+      "dcl": 131
+     },
+     {
+      "tReady": 124.4,
+      "dcl": 121
+     },
+     {
+      "tReady": 138.5,
+      "dcl": 126
+     },
+     {
+      "tReady": 125.2,
+      "dcl": 122
+     },
+     {
+      "tReady": 138.7,
+      "dcl": 125
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 135.3,
+   "dclCold": 125,
+   "respEndCold": 1,
+   "tReadyWarm": 138.7,
+   "dclWarm": 127,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 135.3,
+      "dcl": 125,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 51.2
+     },
+     {
+      "tReady": 135.4,
+      "dcl": 125,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 51.3
+     },
+     {
+      "tReady": 135.2,
+      "dcl": 125,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 50.8
+     },
+     {
+      "tReady": 134,
+      "dcl": 124,
+      "load": 133,
+      "respEnd": 1,
+      "tScript": 50.6
+     },
+     {
+      "tReady": 135.3,
+      "dcl": 125,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 50.6
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 140.2,
+      "dcl": 128
+     },
+     {
+      "tReady": 138.4,
+      "dcl": 126
+     },
+     {
+      "tReady": 139.7,
+      "dcl": 126
+     },
+     {
+      "tReady": 138.4,
+      "dcl": 128
+     },
+     {
+      "tReady": 138.7,
+      "dcl": 127
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 136.1,
+   "dclCold": 66,
+   "respEndCold": 1,
+   "tReadyWarm": 142.1,
+   "dclWarm": 124,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 142.7,
+      "dcl": 131,
+      "load": 139,
+      "respEnd": 2,
+      "tScript": 56.1
+     },
+     {
+      "tReady": 136.1,
+      "dcl": 68,
+      "load": 115,
+      "respEnd": 1,
+      "tScript": 57.3
+     },
+     {
+      "tReady": 137.5,
+      "dcl": 66,
+      "load": 133,
+      "respEnd": 1,
+      "tScript": 56.1
+     },
+     {
+      "tReady": 133.2,
+      "dcl": 62,
+      "load": 129,
+      "respEnd": 1,
+      "tScript": 52.2
+     },
+     {
+      "tReady": 131.8,
+      "dcl": 60,
+      "load": 128,
+      "respEnd": 1,
+      "tScript": 50.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 142.3,
+      "dcl": 128
+     },
+     {
+      "tReady": 142.1,
+      "dcl": 124
+     },
+     {
+      "tReady": 142.8,
+      "dcl": 128
+     },
+     {
+      "tReady": 126.5,
+      "dcl": 118
+     },
+     {
+      "tReady": 124,
+      "dcl": 118
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 137.5,
+   "dclCold": 61,
+   "respEndCold": 1,
+   "tReadyWarm": 134.5,
+   "dclWarm": 127,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 137.6,
+      "dcl": 60,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 50.3
+     },
+     {
+      "tReady": 134.9,
+      "dcl": 60,
+      "load": 131,
+      "respEnd": 1,
+      "tScript": 51
+     },
+     {
+      "tReady": 137.9,
+      "dcl": 113,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 50.4
+     },
+     {
+      "tReady": 131.3,
+      "dcl": 61,
+      "load": 126,
+      "respEnd": 1,
+      "tScript": 51.1
+     },
+     {
+      "tReady": 137.5,
+      "dcl": 62,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 51.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 134.5,
+      "dcl": 127
+     },
+     {
+      "tReady": 133.7,
+      "dcl": 126
+     },
+     {
+      "tReady": 148.1,
+      "dcl": 135
+     },
+     {
+      "tReady": 126.3,
+      "dcl": 120
+     },
+     {
+      "tReady": 146.7,
+      "dcl": 127
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 190.5,
+   "dclCold": 193,
+   "respEndCold": 1,
+   "tReadyWarm": 25.4,
+   "dclWarm": 25,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 204.8,
+      "dcl": 207,
+      "load": 207,
+      "respEnd": 1,
+      "tScript": 28
+     },
+     {
+      "tReady": 187.3,
+      "dcl": 189,
+      "load": 189,
+      "respEnd": 1,
+      "tScript": 26.2
+     },
+     {
+      "tReady": 190.5,
+      "dcl": 193,
+      "load": 193,
+      "respEnd": 1,
+      "tScript": 26.4
+     },
+     {
+      "tReady": 188.8,
+      "dcl": 191,
+      "load": 191,
+      "respEnd": 1,
+      "tScript": 26.4
+     },
+     {
+      "tReady": 196.2,
+      "dcl": 198,
+      "load": 198,
+      "respEnd": 1,
+      "tScript": 27.3
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 25.6,
+      "dcl": 25
+     },
+     {
+      "tReady": 25.4,
+      "dcl": 25
+     },
+     {
+      "tReady": 25.3,
+      "dcl": 25
+     },
+     {
+      "tReady": 25.9,
+      "dcl": 26
+     },
+     {
+      "tReady": 25.1,
+      "dcl": 25
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 192.6,
+   "dclCold": 197,
+   "respEndCold": 1,
+   "tReadyWarm": 26.3,
+   "dclWarm": 26,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 192.7,
+      "dcl": 197,
+      "load": 197,
+      "respEnd": 1,
+      "tScript": 26.9
+     },
+     {
+      "tReady": 192.6,
+      "dcl": 197,
+      "load": 197,
+      "respEnd": 1,
+      "tScript": 27.9
+     },
+     {
+      "tReady": 189.7,
+      "dcl": 194,
+      "load": 194,
+      "respEnd": 1,
+      "tScript": 26.3
+     },
+     {
+      "tReady": 190.8,
+      "dcl": 195,
+      "load": 195,
+      "respEnd": 1,
+      "tScript": 26.2
+     },
+     {
+      "tReady": 232.3,
+      "dcl": 237,
+      "load": 237,
+      "respEnd": 1,
+      "tScript": 26.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 26,
+      "dcl": 26
+     },
+     {
+      "tReady": 26,
+      "dcl": 26
+     },
+     {
+      "tReady": 26.3,
+      "dcl": 26
+     },
+     {
+      "tReady": 173,
+      "dcl": 27
+     },
+     {
+      "tReady": 228.6,
+      "dcl": 228
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 187.6,
+   "dclCold": 315,
+   "respEndCold": 1,
+   "tReadyWarm": 28.5,
+   "dclWarm": 28,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 223.1,
+      "dcl": 353,
+      "load": 353,
+      "respEnd": 1,
+      "tScript": 31.7
+     },
+     {
+      "tReady": 187.6,
+      "dcl": 314,
+      "load": 314,
+      "respEnd": 1,
+      "tScript": 26.7
+     },
+     {
+      "tReady": 187.1,
+      "dcl": 314,
+      "load": 314,
+      "respEnd": 1,
+      "tScript": 26.4
+     },
+     {
+      "tReady": 186.7,
+      "dcl": 315,
+      "load": 315,
+      "respEnd": 1,
+      "tScript": 26.4
+     },
+     {
+      "tReady": 188.1,
+      "dcl": 318,
+      "load": 318,
+      "respEnd": 1,
+      "tScript": 26
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 172.3,
+      "dcl": 28
+     },
+     {
+      "tReady": 29,
+      "dcl": 29
+     },
+     {
+      "tReady": 28.5,
+      "dcl": 28
+     },
+     {
+      "tReady": 28.2,
+      "dcl": 28
+     },
+     {
+      "tReady": 27.5,
+      "dcl": 27
+     }
+    ]
+   }
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 192,
+   "dclCold": 329,
+   "respEndCold": 1,
+   "tReadyWarm": 37.7,
+   "dclWarm": 38,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 192.6,
+      "dcl": 332,
+      "load": 332,
+      "respEnd": 1,
+      "tScript": 26.6
+     },
+     {
+      "tReady": 190.7,
+      "dcl": 327,
+      "load": 327,
+      "respEnd": 1,
+      "tScript": 26.3
+     },
+     {
+      "tReady": 191.7,
+      "dcl": 329,
+      "load": 329,
+      "respEnd": 1,
+      "tScript": 27.2
+     },
+     {
+      "tReady": 192.7,
+      "dcl": 330,
+      "load": 330,
+      "respEnd": 1,
+      "tScript": 26.6
+     },
+     {
+      "tReady": 192,
+      "dcl": 328,
+      "load": 328,
+      "respEnd": 1,
+      "tScript": 26.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 37.7,
+      "dcl": 38
+     },
+     {
+      "tReady": 182.5,
+      "dcl": 38
+     },
+     {
+      "tReady": 37.6,
+      "dcl": 37
+     },
+     {
+      "tReady": 183.1,
+      "dcl": 38
+     },
+     {
+      "tReady": 37.7,
+      "dcl": 38
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "native-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 16,
+   "dclCold": 14,
+   "respEndCold": 1,
+   "tReadyWarm": 6.5,
+   "dclWarm": 5,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 23.4,
+      "dcl": 21,
+      "load": 21,
+      "respEnd": 2,
+      "tScript": 9.8
+     },
+     {
+      "tReady": 15.8,
+      "dcl": 14,
+      "load": 14,
+      "respEnd": 1,
+      "tScript": 4.2
+     },
+     {
+      "tReady": 16.3,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.9
+     },
+     {
+      "tReady": 14.4,
+      "dcl": 14,
+      "load": 14,
+      "respEnd": 1,
+      "tScript": 4.8
+     },
+     {
+      "tReady": 16,
+      "dcl": 14,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.9
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 16.3,
+      "dcl": 5
+     },
+     {
+      "tReady": 6.4,
+      "dcl": 5
+     },
+     {
+      "tReady": 7.5,
+      "dcl": 4
+     },
+     {
+      "tReady": 6.5,
+      "dcl": 5
+     },
+     {
+      "tReady": 6.5,
+      "dcl": 4
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "native-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 15.8,
+   "dclCold": 15,
+   "respEndCold": 1,
+   "tReadyWarm": 6.1,
+   "dclWarm": 4,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 15.9,
+      "dcl": 14,
+      "load": 14,
+      "respEnd": 1,
+      "tScript": 4.6
+     },
+     {
+      "tReady": 14.9,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.8
+     },
+     {
+      "tReady": 16,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.7
+     },
+     {
+      "tReady": 14.8,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.9
+     },
+     {
+      "tReady": 15.8,
+      "dcl": 14,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.7
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 6,
+      "dcl": 4
+     },
+     {
+      "tReady": 7.6,
+      "dcl": 4
+     },
+     {
+      "tReady": 6.1,
+      "dcl": 5
+     },
+     {
+      "tReady": 7.8,
+      "dcl": 4
+     },
+     {
+      "tReady": 5.6,
+      "dcl": 4
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "native-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 15.4,
+   "dclCold": 15,
+   "respEndCold": 1,
+   "tReadyWarm": 6.4,
+   "dclWarm": 4,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 15.4,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 2,
+      "tScript": 5.1
+     },
+     {
+      "tReady": 16.1,
+      "dcl": 14,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.7
+     },
+     {
+      "tReady": 14.6,
+      "dcl": 11,
+      "load": 11,
+      "respEnd": 1,
+      "tScript": 4.4
+     },
+     {
+      "tReady": 16.2,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.8
+     },
+     {
+      "tReady": 15.1,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 7.6,
+      "dcl": 4
+     },
+     {
+      "tReady": 6.4,
+      "dcl": 4
+     },
+     {
+      "tReady": 6.4,
+      "dcl": 4
+     },
+     {
+      "tReady": 4.9,
+      "dcl": 4
+     },
+     {
+      "tReady": 7.4,
+      "dcl": 4
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "native-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 15.5,
+   "dclCold": 15,
+   "respEndCold": 1,
+   "tReadyWarm": 6.6,
+   "dclWarm": 5,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 14.5,
+      "dcl": 14,
+      "load": 14,
+      "respEnd": 1,
+      "tScript": 4.9
+     },
+     {
+      "tReady": 15.5,
+      "dcl": 14,
+      "load": 14,
+      "respEnd": 1,
+      "tScript": 4.4
+     },
+     {
+      "tReady": 17.2,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 5
+     },
+     {
+      "tReady": 15,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.8
+     },
+     {
+      "tReady": 16,
+      "dcl": 15,
+      "load": 15,
+      "respEnd": 1,
+      "tScript": 4.7
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 6.1,
+      "dcl": 4
+     },
+     {
+      "tReady": 6.6,
+      "dcl": 5
+     },
+     {
+      "tReady": 8.7,
+      "dcl": 5
+     },
+     {
+      "tReady": 7.8,
+      "dcl": 5
+     },
+     {
+      "tReady": 6,
+      "dcl": 5
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 160.5,
+   "dclCold": 121,
+   "respEndCold": 1,
+   "tReadyWarm": 160,
+   "dclWarm": 135,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 1552.6,
+      "dcl": 375,
+      "load": 1552,
+      "respEnd": 2,
+      "tScript": 72.4
+     },
+     {
+      "tReady": 160.5,
+      "dcl": 66,
+      "load": 160,
+      "respEnd": 1,
+      "tScript": 54.9
+     },
+     {
+      "tReady": 159.6,
+      "dcl": 121,
+      "load": 158,
+      "respEnd": 1,
+      "tScript": 53.3
+     },
+     {
+      "tReady": 213.4,
+      "dcl": 180,
+      "load": 212,
+      "respEnd": 1,
+      "tScript": 53.4
+     },
+     {
+      "tReady": 158.2,
+      "dcl": 65,
+      "load": 157,
+      "respEnd": 1,
+      "tScript": 54.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 158.3,
+      "dcl": 128
+     },
+     {
+      "tReady": 180.8,
+      "dcl": 136
+     },
+     {
+      "tReady": 160,
+      "dcl": 135
+     },
+     {
+      "tReady": 159.4,
+      "dcl": 132
+     },
+     {
+      "tReady": 166.5,
+      "dcl": 139
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 162,
+   "dclCold": 65,
+   "respEndCold": 1,
+   "tReadyWarm": 166.8,
+   "dclWarm": 137,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 163.1,
+      "dcl": 125,
+      "load": 162,
+      "respEnd": 1,
+      "tScript": 52.6
+     },
+     {
+      "tReady": 165.6,
+      "dcl": 66,
+      "load": 165,
+      "respEnd": 1,
+      "tScript": 55
+     },
+     {
+      "tReady": 160.6,
+      "dcl": 63,
+      "load": 160,
+      "respEnd": 1,
+      "tScript": 52.7
+     },
+     {
+      "tReady": 157.8,
+      "dcl": 63,
+      "load": 157,
+      "respEnd": 1,
+      "tScript": 52.5
+     },
+     {
+      "tReady": 162,
+      "dcl": 65,
+      "load": 161,
+      "respEnd": 1,
+      "tScript": 53.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 633.1,
+      "dcl": 588
+     },
+     {
+      "tReady": 166.7,
+      "dcl": 137
+     },
+     {
+      "tReady": 161.4,
+      "dcl": 132
+     },
+     {
+      "tReady": 166.8,
+      "dcl": 136
+     },
+     {
+      "tReady": 169.4,
+      "dcl": 139
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 161.1,
+   "dclCold": 64,
+   "respEndCold": 1,
+   "tReadyWarm": 167.9,
+   "dclWarm": 141,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 161.3,
+      "dcl": 126,
+      "load": 159,
+      "respEnd": 2,
+      "tScript": 53.5
+     },
+     {
+      "tReady": 155.8,
+      "dcl": 63,
+      "load": 154,
+      "respEnd": 1,
+      "tScript": 52.7
+     },
+     {
+      "tReady": 158,
+      "dcl": 64,
+      "load": 156,
+      "respEnd": 2,
+      "tScript": 53.1
+     },
+     {
+      "tReady": 162.3,
+      "dcl": 64,
+      "load": 161,
+      "respEnd": 1,
+      "tScript": 53.6
+     },
+     {
+      "tReady": 161.1,
+      "dcl": 63,
+      "load": 160,
+      "respEnd": 1,
+      "tScript": 52.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 174.6,
+      "dcl": 148
+     },
+     {
+      "tReady": 160.9,
+      "dcl": 134
+     },
+     {
+      "tReady": 163.5,
+      "dcl": 136
+     },
+     {
+      "tReady": 186.4,
+      "dcl": 141
+     },
+     {
+      "tReady": 167.9,
+      "dcl": 141
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 161.9,
+   "dclCold": 64,
+   "respEndCold": 1,
+   "tReadyWarm": 164,
+   "dclWarm": 132,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 163.1,
+      "dcl": 64,
+      "load": 161,
+      "respEnd": 2,
+      "tScript": 53.4
+     },
+     {
+      "tReady": 161.7,
+      "dcl": 64,
+      "load": 160,
+      "respEnd": 1,
+      "tScript": 53.4
+     },
+     {
+      "tReady": 162.6,
+      "dcl": 64,
+      "load": 161,
+      "respEnd": 1,
+      "tScript": 53.7
+     },
+     {
+      "tReady": 161.8,
+      "dcl": 65,
+      "load": 160,
+      "respEnd": 1,
+      "tScript": 54.1
+     },
+     {
+      "tReady": 161.9,
+      "dcl": 64,
+      "load": 160,
+      "respEnd": 1,
+      "tScript": 53.5
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 180.1,
+      "dcl": 132
+     },
+     {
+      "tReady": 160.8,
+      "dcl": 132
+     },
+     {
+      "tReady": 164,
+      "dcl": 133
+     },
+     {
+      "tReady": 183.8,
+      "dcl": 139
+     },
+     {
+      "tReady": 161.7,
+      "dcl": 132
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 143.2,
+   "dclCold": 74,
+   "respEndCold": 1,
+   "tReadyWarm": 146.6,
+   "dclWarm": 134,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 150,
+      "dcl": 81,
+      "load": 149,
+      "respEnd": 2,
+      "tScript": 66.4
+     },
+     {
+      "tReady": 143.3,
+      "dcl": 73,
+      "load": 142,
+      "respEnd": 1,
+      "tScript": 62.4
+     },
+     {
+      "tReady": 143.2,
+      "dcl": 74,
+      "load": 142,
+      "respEnd": 1,
+      "tScript": 63.2
+     },
+     {
+      "tReady": 138.1,
+      "dcl": 72,
+      "load": 134,
+      "respEnd": 1,
+      "tScript": 61.5
+     },
+     {
+      "tReady": 142.6,
+      "dcl": 74,
+      "load": 141,
+      "respEnd": 1,
+      "tScript": 62.9
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 141.6,
+      "dcl": 134
+     },
+     {
+      "tReady": 147.4,
+      "dcl": 135
+     },
+     {
+      "tReady": 147.1,
+      "dcl": 133
+     },
+     {
+      "tReady": 146.6,
+      "dcl": 133
+     },
+     {
+      "tReady": 144.8,
+      "dcl": 138
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 143.6,
+   "dclCold": 121,
+   "respEndCold": 1,
+   "tReadyWarm": 146.1,
+   "dclWarm": 132,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 140.4,
+      "dcl": 74,
+      "load": 139,
+      "respEnd": 1,
+      "tScript": 62.5
+     },
+     {
+      "tReady": 143.6,
+      "dcl": 74,
+      "load": 142,
+      "respEnd": 2,
+      "tScript": 62.5
+     },
+     {
+      "tReady": 141.6,
+      "dcl": 121,
+      "load": 140,
+      "respEnd": 1,
+      "tScript": 62.1
+     },
+     {
+      "tReady": 145.8,
+      "dcl": 132,
+      "load": 145,
+      "respEnd": 1,
+      "tScript": 62.6
+     },
+     {
+      "tReady": 147.7,
+      "dcl": 137,
+      "load": 147,
+      "respEnd": 1,
+      "tScript": 63.7
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 146.1,
+      "dcl": 134
+     },
+     {
+      "tReady": 145.5,
+      "dcl": 136
+     },
+     {
+      "tReady": 138,
+      "dcl": 132
+     },
+     {
+      "tReady": 146.3,
+      "dcl": 131
+     },
+     {
+      "tReady": 146.7,
+      "dcl": 132
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 149.8,
+   "dclCold": 133,
+   "respEndCold": 1,
+   "tReadyWarm": 146.5,
+   "dclWarm": 133,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 222.6,
+      "dcl": 75,
+      "load": 144,
+      "respEnd": 2,
+      "tScript": 63.5
+     },
+     {
+      "tReady": 149.8,
+      "dcl": 135,
+      "load": 145,
+      "respEnd": 2,
+      "tScript": 63.1
+     },
+     {
+      "tReady": 148.3,
+      "dcl": 135,
+      "load": 144,
+      "respEnd": 1,
+      "tScript": 61.5
+     },
+     {
+      "tReady": 149.7,
+      "dcl": 74,
+      "load": 145,
+      "respEnd": 1,
+      "tScript": 63.4
+     },
+     {
+      "tReady": 149.8,
+      "dcl": 133,
+      "load": 145,
+      "respEnd": 1,
+      "tScript": 63.2
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 145.6,
+      "dcl": 138
+     },
+     {
+      "tReady": 147.7,
+      "dcl": 132
+     },
+     {
+      "tReady": 140.1,
+      "dcl": 133
+     },
+     {
+      "tReady": 146.5,
+      "dcl": 133
+     },
+     {
+      "tReady": 149.7,
+      "dcl": 133
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 151.1,
+   "dclCold": 138,
+   "respEndCold": 1,
+   "tReadyWarm": 144.7,
+   "dclWarm": 132,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 208.9,
+      "dcl": 194,
+      "load": 204,
+      "respEnd": 1,
+      "tScript": 65.6
+     },
+     {
+      "tReady": 151.1,
+      "dcl": 138,
+      "load": 146,
+      "respEnd": 1,
+      "tScript": 61.4
+     },
+     {
+      "tReady": 90.7,
+      "dcl": 77,
+      "load": 84,
+      "respEnd": 1,
+      "tScript": 65.4
+     },
+     {
+      "tReady": 612.3,
+      "dcl": 597,
+      "load": 607,
+      "respEnd": 2,
+      "tScript": 91.1
+     },
+     {
+      "tReady": 147.7,
+      "dcl": 75,
+      "load": 143,
+      "respEnd": 1,
+      "tScript": 64.2
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 140.9,
+      "dcl": 132
+     },
+     {
+      "tReady": 148.3,
+      "dcl": 135
+     },
+     {
+      "tReady": 83.5,
+      "dcl": 68
+     },
+     {
+      "tReady": 151.7,
+      "dcl": 143
+     },
+     {
+      "tReady": 144.7,
+      "dcl": 131
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 58.1,
+   "dclCold": 58,
+   "respEndCold": 1,
+   "tReadyWarm": 30.7,
+   "dclWarm": 30,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 213,
+      "dcl": 214,
+      "load": 214,
+      "respEnd": 2,
+      "tScript": 120.4
+     },
+     {
+      "tReady": 55.9,
+      "dcl": 57,
+      "load": 57,
+      "respEnd": 2,
+      "tScript": 36.5
+     },
+     {
+      "tReady": 57.2,
+      "dcl": 58,
+      "load": 58,
+      "respEnd": 1,
+      "tScript": 38.2
+     },
+     {
+      "tReady": 58.1,
+      "dcl": 55,
+      "load": 55,
+      "respEnd": 1,
+      "tScript": 34.4
+     },
+     {
+      "tReady": 62,
+      "dcl": 58,
+      "load": 58,
+      "respEnd": 1,
+      "tScript": 37.8
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 44.2,
+      "dcl": 44
+     },
+     {
+      "tReady": 39.5,
+      "dcl": 30
+     },
+     {
+      "tReady": 30.5,
+      "dcl": 30
+     },
+     {
+      "tReady": 30.7,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.1,
+      "dcl": 30
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-tap",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 56.6,
+   "dclCold": 55,
+   "respEndCold": 1,
+   "tReadyWarm": 31,
+   "dclWarm": 31,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 52,
+      "dcl": 53,
+      "load": 53,
+      "respEnd": 1,
+      "tScript": 32.7
+     },
+     {
+      "tReady": 56.6,
+      "dcl": 57,
+      "load": 57,
+      "respEnd": 1,
+      "tScript": 37
+     },
+     {
+      "tReady": 61.8,
+      "dcl": 55,
+      "load": 55,
+      "respEnd": 1,
+      "tScript": 35.3
+     },
+     {
+      "tReady": 54.1,
+      "dcl": 55,
+      "load": 55,
+      "respEnd": 1,
+      "tScript": 33.3
+     },
+     {
+      "tReady": 58.9,
+      "dcl": 60,
+      "load": 60,
+      "respEnd": 1,
+      "tScript": 39.4
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 31.1,
+      "dcl": 31
+     },
+     {
+      "tReady": 39.1,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.6,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.6,
+      "dcl": 31
+     },
+     {
+      "tReady": 31,
+      "dcl": 31
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "n": 5,
+   "tReadyCold": 62.6,
+   "dclCold": 56,
+   "respEndCold": 1,
+   "tReadyWarm": 30.7,
+   "dclWarm": 31,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 64.5,
+      "dcl": 56,
+      "load": 56,
+      "respEnd": 2,
+      "tScript": 36.2
+     },
+     {
+      "tReady": 61.9,
+      "dcl": 58,
+      "load": 58,
+      "respEnd": 1,
+      "tScript": 38.3
+     },
+     {
+      "tReady": 63.2,
+      "dcl": 54,
+      "load": 54,
+      "respEnd": 1,
+      "tScript": 34.9
+     },
+     {
+      "tReady": 55.6,
+      "dcl": 57,
+      "load": 57,
+      "respEnd": 1,
+      "tScript": 36.1
+     },
+     {
+      "tReady": 62.6,
+      "dcl": 55,
+      "load": 55,
+      "respEnd": 1,
+      "tScript": 34.7
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 30.4,
+      "dcl": 30
+     },
+     {
+      "tReady": 31.2,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.7,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.8,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.7,
+      "dcl": 31
+     }
+    ]
+   }
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-runner",
+   "dpr": 2,
+   "n": 5,
+   "tReadyCold": 63.2,
+   "dclCold": 58,
+   "respEndCold": 1,
+   "tReadyWarm": 30.9,
+   "dclWarm": 31,
+   "raw": {
+    "cold": [
+     {
+      "tReady": 57,
+      "dcl": 58,
+      "load": 58,
+      "respEnd": 1,
+      "tScript": 37.1
+     },
+     {
+      "tReady": 63.5,
+      "dcl": 57,
+      "load": 57,
+      "respEnd": 1,
+      "tScript": 36.8
+     },
+     {
+      "tReady": 57.6,
+      "dcl": 59,
+      "load": 59,
+      "respEnd": 1,
+      "tScript": 37.5
+     },
+     {
+      "tReady": 66.4,
+      "dcl": 56,
+      "load": 56,
+      "respEnd": 1,
+      "tScript": 36.8
+     },
+     {
+      "tReady": 63.2,
+      "dcl": 58,
+      "load": 58,
+      "respEnd": 1,
+      "tScript": 37.7
+     }
+    ],
+    "warm": [
+     {
+      "tReady": 37.1,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.9,
+      "dcl": 31
+     },
+     {
+      "tReady": 30.9,
+      "dcl": 31
+     },
+     {
+      "tReady": 31.5,
+      "dcl": 30
+     },
+     {
+      "tReady": 30.6,
+      "dcl": 31
+     }
+    ]
+   }
+  }
+ ],
+ "fps": [
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 60,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 16.8,
+   "long17": 0,
+   "long34": 0,
+   "min1s": 58,
+   "n": 603,
+   "peak": 2,
+   "avgEnt": 0.9,
+   "restarts": 0,
+   "simEvents": 30,
+   "heap": 2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.8,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 33.4,
+   "long17": 2,
+   "long34": 0,
+   "min1s": 58,
+   "n": 603,
+   "peak": 2,
+   "avgEnt": 0.9,
+   "restarts": 0,
+   "simEvents": 30,
+   "heap": 2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.6,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 50.1,
+   "long17": 3,
+   "long34": 1,
+   "min1s": 57,
+   "n": 600,
+   "peak": 26,
+   "avgEnt": 14.9,
+   "restarts": 0,
+   "simEvents": 94,
+   "heap": 2.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.9,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 33.3,
+   "long17": 1,
+   "long34": 0,
+   "min1s": 59,
+   "n": 604,
+   "peak": 24,
+   "avgEnt": 14.7,
+   "restarts": 0,
+   "simEvents": 93,
+   "heap": 2.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.71,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 33.4,
+   "long17": 3,
+   "long34": 0,
+   "min1s": 59,
+   "n": 603,
+   "peak": 10,
+   "avgEnt": 5.1,
+   "restarts": 1,
+   "simEvents": 5,
+   "heap": 1.8
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.9,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 33.3,
+   "long17": 1,
+   "long34": 0,
+   "min1s": 57,
+   "n": 602,
+   "peak": 10,
+   "avgEnt": 4.9,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 1.8
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 60,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 16.8,
+   "long17": 0,
+   "long34": 0,
+   "min1s": 56,
+   "n": 603,
+   "peak": 13,
+   "avgEnt": 7.7,
+   "restarts": 2,
+   "simEvents": 20,
+   "heap": 1.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.31,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 66.7,
+   "long17": 4,
+   "long34": 2,
+   "min1s": 56,
+   "n": 598,
+   "peak": 13,
+   "avgEnt": 7.7,
+   "restarts": 1,
+   "simEvents": 22,
+   "heap": 1.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.68,
+   "p95": 18.3,
+   "p99": 19.2,
+   "max": 56.8,
+   "long17": 125,
+   "long34": 3,
+   "min1s": 55,
+   "n": 600,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 10.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.89,
+   "p95": 18.3,
+   "p99": 20.1,
+   "max": 48.5,
+   "long17": 119,
+   "long34": 3,
+   "min1s": 54,
+   "n": 601,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 10.6
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.82,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 55.6,
+   "long17": 112,
+   "long34": 2,
+   "min1s": 58,
+   "n": 603,
+   "peak": 23,
+   "avgEnt": 13.6,
+   "restarts": 0,
+   "simEvents": 83,
+   "heap": 11.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.75,
+   "p95": 18.3,
+   "p99": 18.9,
+   "max": 50.2,
+   "long17": 124,
+   "long34": 2,
+   "min1s": 58,
+   "n": 602,
+   "peak": 23,
+   "avgEnt": 13.7,
+   "restarts": 0,
+   "simEvents": 82,
+   "heap": 11.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.71,
+   "p95": 18.3,
+   "p99": 18.7,
+   "max": 43.7,
+   "long17": 115,
+   "long34": 2,
+   "min1s": 58,
+   "n": 601,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 11.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.5,
+   "p95": 18.4,
+   "p99": 18.6,
+   "max": 57.8,
+   "long17": 106,
+   "long34": 3,
+   "min1s": 57,
+   "n": 599,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 11.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.8,
+   "p95": 18.3,
+   "p99": 18.5,
+   "max": 33.6,
+   "long17": 124,
+   "long34": 0,
+   "min1s": 58,
+   "n": 604,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 11.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.99,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 18.7,
+   "long17": 120,
+   "long34": 0,
+   "min1s": 57,
+   "n": 604,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 20,
+   "heap": 11.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.44,
+   "p95": 18.5,
+   "p99": 22.7,
+   "max": 90.2,
+   "long17": 114,
+   "long34": 3,
+   "min1s": 55,
+   "n": 596,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 13
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.51,
+   "p95": 18.4,
+   "p99": 19.4,
+   "max": 85.2,
+   "long17": 115,
+   "long34": 3,
+   "min1s": 57,
+   "n": 598,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 13.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.32,
+   "p95": 18.5,
+   "p99": 18.9,
+   "max": 85.2,
+   "long17": 115,
+   "long34": 3,
+   "min1s": 55,
+   "n": 596,
+   "peak": 23,
+   "avgEnt": 13.4,
+   "restarts": 0,
+   "simEvents": 80,
+   "heap": 13.5
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.47,
+   "p95": 18.4,
+   "p99": 18.7,
+   "max": 92.9,
+   "long17": 124,
+   "long34": 2,
+   "min1s": 55,
+   "n": 601,
+   "peak": 23,
+   "avgEnt": 13.7,
+   "restarts": 0,
+   "simEvents": 83,
+   "heap": 13.7
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.31,
+   "p95": 18.5,
+   "p99": 19.4,
+   "max": 79.2,
+   "long17": 124,
+   "long34": 3,
+   "min1s": 55,
+   "n": 596,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 13.7
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.11,
+   "p95": 18.5,
+   "p99": 19,
+   "max": 80.7,
+   "long17": 120,
+   "long34": 3,
+   "min1s": 53,
+   "n": 594,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 5,
+   "heap": 13.7
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.79,
+   "p95": 18.4,
+   "p99": 18.9,
+   "max": 52.6,
+   "long17": 121,
+   "long34": 1,
+   "min1s": 56,
+   "n": 599,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 20,
+   "heap": 13.6
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 60,
+   "p95": 18.5,
+   "p99": 19,
+   "max": 19.1,
+   "long17": 114,
+   "long34": 0,
+   "min1s": 59,
+   "n": 605,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 13.6
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.45,
+   "p95": 18.5,
+   "p99": 19.4,
+   "max": 67.2,
+   "long17": 120,
+   "long34": 4,
+   "min1s": 57,
+   "n": 598,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 5.8
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.84,
+   "p95": 18.2,
+   "p99": 18.7,
+   "max": 42.3,
+   "long17": 123,
+   "long34": 2,
+   "min1s": 57,
+   "n": 603,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 5.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.83,
+   "p95": 18.3,
+   "p99": 18.7,
+   "max": 42.6,
+   "long17": 124,
+   "long34": 2,
+   "min1s": 58,
+   "n": 605,
+   "peak": 23,
+   "avgEnt": 13.6,
+   "restarts": 0,
+   "simEvents": 82,
+   "heap": 5.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.93,
+   "p95": 18.4,
+   "p99": 18.7,
+   "max": 33.2,
+   "long17": 124,
+   "long34": 0,
+   "min1s": 58,
+   "n": 604,
+   "peak": 24,
+   "avgEnt": 13.6,
+   "restarts": 0,
+   "simEvents": 83,
+   "heap": 5.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 60.01,
+   "p95": 18.4,
+   "p99": 18.6,
+   "max": 18.8,
+   "long17": 118,
+   "long34": 0,
+   "min1s": 55,
+   "n": 602,
+   "peak": 11,
+   "avgEnt": 6.3,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 6.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.7,
+   "p95": 18.1,
+   "p99": 18.6,
+   "max": 41.3,
+   "long17": 99,
+   "long34": 1,
+   "min1s": 3,
+   "n": 605,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 6.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.2,
+   "p95": 18.4,
+   "p99": 21.4,
+   "max": 67.7,
+   "long17": 120,
+   "long34": 4,
+   "min1s": 55,
+   "n": 593,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 6.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.9,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 45,
+   "long17": 124,
+   "long34": 1,
+   "min1s": 58,
+   "n": 603,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 6.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 16,
+   "avg": 60,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 16.8,
+   "long17": 0,
+   "long34": 0,
+   "min1s": 60,
+   "n": 605,
+   "peak": 184,
+   "avgEnt": 91.6,
+   "restarts": 0,
+   "simEvents": 284,
+   "heap": 2.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 16,
+   "avg": 60,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 16.8,
+   "long17": 0,
+   "long34": 0,
+   "min1s": 2,
+   "n": 606,
+   "peak": 15,
+   "avgEnt": 9.8,
+   "restarts": 2,
+   "simEvents": 60,
+   "heap": 2.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 16,
+   "avg": 59.8,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 59.9,
+   "long17": 106,
+   "long34": 2,
+   "min1s": 1,
+   "n": 604,
+   "peak": 169,
+   "avgEnt": 83.7,
+   "restarts": 0,
+   "simEvents": 251,
+   "heap": 11.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 16,
+   "avg": 59.51,
+   "p95": 18.5,
+   "p99": 24.6,
+   "max": 59.8,
+   "long17": 109,
+   "long34": 3,
+   "min1s": 58,
+   "n": 599,
+   "peak": 16,
+   "avgEnt": 10.8,
+   "restarts": 2,
+   "simEvents": 54,
+   "heap": 10.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 16,
+   "avg": 59.4,
+   "p95": 18.4,
+   "p99": 18.7,
+   "max": 83.9,
+   "long17": 116,
+   "long34": 2,
+   "min1s": 54,
+   "n": 599,
+   "peak": 165,
+   "avgEnt": 83,
+   "restarts": 0,
+   "simEvents": 243,
+   "heap": 13.6
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 16,
+   "avg": 59.7,
+   "p95": 18.3,
+   "p99": 18.9,
+   "max": 80.6,
+   "long17": 113,
+   "long34": 1,
+   "min1s": 58,
+   "n": 601,
+   "peak": 16,
+   "avgEnt": 10.9,
+   "restarts": 2,
+   "simEvents": 55,
+   "heap": 13.6
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 16,
+   "avg": 59.86,
+   "p95": 18.3,
+   "p99": 18.7,
+   "max": 47.9,
+   "long17": 121,
+   "long34": 1,
+   "min1s": 56,
+   "n": 600,
+   "peak": 164,
+   "avgEnt": 83.6,
+   "restarts": 0,
+   "simEvents": 252,
+   "heap": 6.3
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 16,
+   "avg": 59.91,
+   "p95": 18.2,
+   "p99": 18.6,
+   "max": 30.7,
+   "long17": 110,
+   "long34": 0,
+   "min1s": 59,
+   "n": 605,
+   "peak": 16,
+   "avgEnt": 10.8,
+   "restarts": 2,
+   "simEvents": 55,
+   "heap": 7.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.41,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 66.6,
+   "long17": 2,
+   "long34": 2,
+   "min1s": 54,
+   "n": 600,
+   "peak": 2,
+   "avgEnt": 0.9,
+   "restarts": 0,
+   "simEvents": 30,
+   "heap": 2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.51,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 50,
+   "long17": 3,
+   "long34": 2,
+   "min1s": 57,
+   "n": 600,
+   "peak": 186,
+   "avgEnt": 93.2,
+   "restarts": 0,
+   "simEvents": 286,
+   "heap": 2.3
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.71,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 33.4,
+   "long17": 3,
+   "long34": 0,
+   "min1s": 59,
+   "n": 603,
+   "peak": 10,
+   "avgEnt": 4.9,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 1.8
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.9,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 33.3,
+   "long17": 1,
+   "long34": 0,
+   "min1s": 59,
+   "n": 605,
+   "peak": 15,
+   "avgEnt": 9.8,
+   "restarts": 2,
+   "simEvents": 60,
+   "heap": 2.2
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.6,
+   "p95": 18.4,
+   "p99": 18.7,
+   "max": 55.2,
+   "long17": 118,
+   "long34": 3,
+   "min1s": 58,
+   "n": 602,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 11
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.45,
+   "p95": 18.4,
+   "p99": 18.7,
+   "max": 60.8,
+   "long17": 137,
+   "long34": 1,
+   "min1s": 53,
+   "n": 598,
+   "peak": 168,
+   "avgEnt": 80.8,
+   "restarts": 0,
+   "simEvents": 252,
+   "heap": 12.3
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.1,
+   "p95": 18.3,
+   "p99": 19.8,
+   "max": 118,
+   "long17": 120,
+   "long34": 3,
+   "min1s": 55,
+   "n": 598,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 11.3
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.51,
+   "p95": 18.3,
+   "p99": 22.3,
+   "max": 65.8,
+   "long17": 127,
+   "long34": 3,
+   "min1s": 58,
+   "n": 601,
+   "peak": 16,
+   "avgEnt": 10.9,
+   "restarts": 2,
+   "simEvents": 53,
+   "heap": 11
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.53,
+   "p95": 18.3,
+   "p99": 18.7,
+   "max": 70.5,
+   "long17": 117,
+   "long34": 3,
+   "min1s": 57,
+   "n": 598,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 13.3
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 58.08,
+   "p95": 19.6,
+   "p99": 20.8,
+   "max": 73.4,
+   "long17": 178,
+   "long34": 2,
+   "min1s": 50,
+   "n": 586,
+   "peak": 174,
+   "avgEnt": 81.8,
+   "restarts": 0,
+   "simEvents": 262,
+   "heap": 14.4
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.21,
+   "p95": 18.4,
+   "p99": 18.7,
+   "max": 66.3,
+   "long17": 113,
+   "long34": 5,
+   "min1s": 55,
+   "n": 597,
+   "peak": 11,
+   "avgEnt": 6.3,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 13.7
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.7,
+   "p95": 18.2,
+   "p99": 18.6,
+   "max": 38.2,
+   "long17": 125,
+   "long34": 3,
+   "min1s": 58,
+   "n": 601,
+   "peak": 16,
+   "avgEnt": 10.8,
+   "restarts": 2,
+   "simEvents": 56,
+   "heap": 14
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.42,
+   "p95": 18.3,
+   "p99": 26.2,
+   "max": 66.6,
+   "long17": 115,
+   "long34": 4,
+   "min1s": 56,
+   "n": 596,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 5.9
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 55.27,
+   "p95": 23.7,
+   "p99": 25.1,
+   "max": 27.8,
+   "long17": 255,
+   "long34": 0,
+   "min1s": 5,
+   "n": 565,
+   "peak": 174,
+   "avgEnt": 79.2,
+   "restarts": 0,
+   "simEvents": 262,
+   "heap": 7.6
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 2,
+   "load": 1,
+   "avg": 59.91,
+   "p95": 18.3,
+   "p99": 18.7,
+   "max": 38.6,
+   "long17": 126,
+   "long34": 1,
+   "min1s": 56,
+   "n": 602,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 6.1
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.7,
+   "p95": 18.3,
+   "p99": 20.1,
+   "max": 46.3,
+   "long17": 126,
+   "long34": 3,
+   "min1s": 58,
+   "n": 602,
+   "peak": 16,
+   "avgEnt": 10.8,
+   "restarts": 2,
+   "simEvents": 55,
+   "heap": 7.2
+  },
+  {
+   "tag": "gpu",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.9,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 33.3,
+   "long17": 1,
+   "long34": 0,
+   "min1s": 59,
+   "n": 605,
+   "peak": 2,
+   "avgEnt": 0.9,
+   "restarts": 0,
+   "simEvents": 30,
+   "heap": 2.2
+  },
+  {
+   "tag": "gpu",
+   "name": "native-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 60,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 16.8,
+   "long17": 0,
+   "long34": 0,
+   "min1s": 58,
+   "n": 604,
+   "peak": 25,
+   "avgEnt": 14.8,
+   "restarts": 0,
+   "simEvents": 92,
+   "heap": 2.3
+  },
+  {
+   "tag": "gpu",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.4,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 50,
+   "long17": 4,
+   "long34": 2,
+   "min1s": 56,
+   "n": 596,
+   "peak": 10,
+   "avgEnt": 5.1,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 1.9
+  },
+  {
+   "tag": "gpu",
+   "name": "native-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.7,
+   "p95": 16.8,
+   "p99": 16.8,
+   "max": 50.1,
+   "long17": 2,
+   "long34": 1,
+   "min1s": 56,
+   "n": 600,
+   "peak": 13,
+   "avgEnt": 7.8,
+   "restarts": 1,
+   "simEvents": 21,
+   "heap": 2.1
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.8,
+   "p95": 18.4,
+   "p99": 18.9,
+   "max": 39.2,
+   "long17": 114,
+   "long34": 3,
+   "min1s": 59,
+   "n": 605,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 11
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.9,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 37.3,
+   "long17": 123,
+   "long34": 2,
+   "min1s": 58,
+   "n": 604,
+   "peak": 24,
+   "avgEnt": 13.7,
+   "restarts": 0,
+   "simEvents": 83,
+   "heap": 12.2
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 60,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 19.2,
+   "long17": 111,
+   "long34": 0,
+   "min1s": 59,
+   "n": 605,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 11.4
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.3,
+   "p95": 18.4,
+   "p99": 28,
+   "max": 64.3,
+   "long17": 129,
+   "long34": 3,
+   "min1s": 57,
+   "n": 597,
+   "peak": 14,
+   "avgEnt": 8.8,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 11.2
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.9,
+   "p95": 18.5,
+   "p99": 21,
+   "max": 45,
+   "long17": 111,
+   "long34": 3,
+   "min1s": 55,
+   "n": 601,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 26,
+   "heap": 13.4
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.61,
+   "p95": 18.4,
+   "p99": 19.7,
+   "max": 92.6,
+   "long17": 126,
+   "long34": 2,
+   "min1s": 57,
+   "n": 602,
+   "peak": 23,
+   "avgEnt": 13.4,
+   "restarts": 0,
+   "simEvents": 83,
+   "heap": 13.8
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.7,
+   "p95": 18.2,
+   "p99": 18.6,
+   "max": 93.4,
+   "long17": 102,
+   "long34": 1,
+   "min1s": 58,
+   "n": 601,
+   "peak": 11,
+   "avgEnt": 6.2,
+   "restarts": 1,
+   "simEvents": 4,
+   "heap": 14
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 60,
+   "p95": 18.5,
+   "p99": 18.8,
+   "max": 44.8,
+   "long17": 116,
+   "long34": 1,
+   "min1s": 58,
+   "n": 603,
+   "peak": 14,
+   "avgEnt": 8.7,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 13.9
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 1,
+   "avg": 60,
+   "p95": 18.4,
+   "p99": 18.8,
+   "max": 34.5,
+   "long17": 122,
+   "long34": 1,
+   "min1s": 57,
+   "n": 602,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "restarts": 0,
+   "simEvents": 27,
+   "heap": 5.9
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-tap",
+   "dpr": 1,
+   "load": 4,
+   "avg": 59.2,
+   "p95": 18.4,
+   "p99": 19,
+   "max": 69.5,
+   "long17": 122,
+   "long34": 5,
+   "min1s": 54,
+   "n": 594,
+   "peak": 23,
+   "avgEnt": 13.4,
+   "restarts": 0,
+   "simEvents": 81,
+   "heap": 5.8
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 1,
+   "avg": 59.9,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 37.8,
+   "long17": 108,
+   "long34": 1,
+   "min1s": 60,
+   "n": 606,
+   "peak": 11,
+   "avgEnt": 6,
+   "restarts": 0,
+   "simEvents": 3,
+   "heap": 6.1
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-runner",
+   "dpr": 1,
+   "load": 4,
+   "avg": 60.01,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 18.8,
+   "long17": 119,
+   "long34": 0,
+   "min1s": 57,
+   "n": 602,
+   "peak": 14,
+   "avgEnt": 8.9,
+   "restarts": 1,
+   "simEvents": 19,
+   "heap": 6
+  },
+  {
+   "tag": "gpu",
+   "name": "native-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.8,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 33.4,
+   "long17": 2,
+   "long34": 0,
+   "min1s": 54,
+   "n": 601,
+   "peak": 185,
+   "avgEnt": 92,
+   "restarts": 0,
+   "simEvents": 285,
+   "heap": 2.3
+  },
+  {
+   "tag": "gpu",
+   "name": "native-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.8,
+   "p95": 16.7,
+   "p99": 16.8,
+   "max": 33.3,
+   "long17": 2,
+   "long34": 0,
+   "min1s": 58,
+   "n": 604,
+   "peak": 15,
+   "avgEnt": 9.8,
+   "restarts": 2,
+   "simEvents": 62,
+   "heap": 2.4
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.51,
+   "p95": 18.4,
+   "p99": 28.3,
+   "max": 66.2,
+   "long17": 116,
+   "long34": 4,
+   "min1s": 55,
+   "n": 600,
+   "peak": 162,
+   "avgEnt": 79.9,
+   "restarts": 0,
+   "simEvents": 250,
+   "heap": 11.3
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser3-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.7,
+   "p95": 18.2,
+   "p99": 18.6,
+   "max": 67.3,
+   "long17": 110,
+   "long34": 2,
+   "min1s": 56,
+   "n": 598,
+   "peak": 16,
+   "avgEnt": 10.9,
+   "restarts": 2,
+   "simEvents": 55,
+   "heap": 11.4
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.8,
+   "p95": 18.4,
+   "p99": 20.8,
+   "max": 39.8,
+   "long17": 132,
+   "long34": 1,
+   "min1s": 60,
+   "n": 605,
+   "peak": 164,
+   "avgEnt": 82.3,
+   "restarts": 0,
+   "simEvents": 252,
+   "heap": 15
+  },
+  {
+   "tag": "gpu",
+   "name": "phaser4-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 59.9,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 37.2,
+   "long17": 116,
+   "long34": 1,
+   "min1s": 59,
+   "n": 604,
+   "peak": 16,
+   "avgEnt": 10.8,
+   "restarts": 2,
+   "simEvents": 54,
+   "heap": 13.7
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-tap",
+   "dpr": 2,
+   "load": 16,
+   "avg": 60,
+   "p95": 18.4,
+   "p99": 19,
+   "max": 38.2,
+   "long17": 124,
+   "long34": 1,
+   "min1s": 60,
+   "n": 606,
+   "peak": 164,
+   "avgEnt": 82.1,
+   "restarts": 0,
+   "simEvents": 252,
+   "heap": 6.4
+  },
+  {
+   "tag": "gpu",
+   "name": "pixi8-runner",
+   "dpr": 2,
+   "load": 16,
+   "avg": 60,
+   "p95": 18.3,
+   "p99": 18.6,
+   "max": 41.5,
+   "long17": 123,
+   "long34": 1,
+   "min1s": 57,
+   "n": 603,
+   "peak": 16,
+   "avgEnt": 10.8,
+   "restarts": 2,
+   "simEvents": 55,
+   "heap": 7.3
+  }
+ ],
+ "mem": [
+  {
+   "tag": "swiftshader",
+   "name": "native-tap",
+   "firstMB": 1.1,
+   "lastMB": 1.8,
+   "maxMB": 2.1,
+   "growthMB": 0.7,
+   "growthFromMinMB": 1,
+   "restarts": 3,
+   "simEvents": 176,
+   "peak": 2,
+   "avgEnt": 0.9,
+   "series": [
+    {
+     "t": 0,
+     "usedMB": 1.1,
+     "totalMB": 1.5
+    },
+    {
+     "t": 2132,
+     "usedMB": 1.6,
+     "totalMB": 2.8
+    },
+    {
+     "t": 4284,
+     "usedMB": 1.3,
+     "totalMB": 2.3
+    },
+    {
+     "t": 6449,
+     "usedMB": 1.7,
+     "totalMB": 2.8
+    },
+    {
+     "t": 8482,
+     "usedMB": 1.3,
+     "totalMB": 2.8
+    },
+    {
+     "t": 10649,
+     "usedMB": 1.6,
+     "totalMB": 3
+    },
+    {
+     "t": 12798,
+     "usedMB": 1.8,
+     "totalMB": 3.3
+    },
+    {
+     "t": 14949,
+     "usedMB": 2.1,
+     "totalMB": 3.3
+    },
+    {
+     "t": 17042,
+     "usedMB": 1.6,
+     "totalMB": 2.8
+    },
+    {
+     "t": 19048,
+     "usedMB": 1.7,
+     "totalMB": 3
+    },
+    {
+     "t": 21213,
+     "usedMB": 1.9,
+     "totalMB": 3
+    },
+    {
+     "t": 23232,
+     "usedMB": 2.1,
+     "totalMB": 3.3
+    },
+    {
+     "t": 25234,
+     "usedMB": 1.6,
+     "totalMB": 2.8
+    },
+    {
+     "t": 27384,
+     "usedMB": 1.8,
+     "totalMB": 3
+    },
+    {
+     "t": 29532,
+     "usedMB": 2,
+     "totalMB": 3
+    },
+    {
+     "t": 31698,
+     "usedMB": 1.1,
+     "totalMB": 1.4
+    },
+    {
+     "t": 33785,
+     "usedMB": 1.2,
+     "totalMB": 1.7
+    },
+    {
+     "t": 35933,
+     "usedMB": 1.4,
+     "totalMB": 2
+    },
+    {
+     "t": 38097,
+     "usedMB": 1.6,
+     "totalMB": 2.3
+    },
+    {
+     "t": 40247,
+     "usedMB": 1.1,
+     "totalMB": 1.8
+    },
+    {
+     "t": 42397,
+     "usedMB": 1.3,
+     "totalMB": 2
+    },
+    {
+     "t": 44563,
+     "usedMB": 1.5,
+     "totalMB": 2
+    },
+    {
+     "t": 46733,
+     "usedMB": 1.7,
+     "totalMB": 2.3
+    },
+    {
+     "t": 48882,
+     "usedMB": 1.2,
+     "totalMB": 1.8
+    },
+    {
+     "t": 50963,
+     "usedMB": 1.3,
+     "totalMB": 2
+    },
+    {
+     "t": 53113,
+     "usedMB": 1.5,
+     "totalMB": 2
+    },
+    {
+     "t": 55266,
+     "usedMB": 1.7,
+     "totalMB": 2.3
+    },
+    {
+     "t": 57430,
+     "usedMB": 1.2,
+     "totalMB": 2
+    },
+    {
+     "t": 59581,
+     "usedMB": 1.4,
+     "totalMB": 2.3
+    },
+    {
+     "t": 61729,
+     "usedMB": 1.6,
+     "totalMB": 2.3
+    },
+    {
+     "t": 63896,
+     "usedMB": 1.8,
+     "totalMB": 2.5
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "native-runner",
+   "firstMB": 1.2,
+   "lastMB": 1.2,
+   "maxMB": 2.3,
+   "growthMB": 0,
+   "growthFromMinMB": 1.1,
+   "restarts": 9,
+   "simEvents": 36,
+   "peak": 10,
+   "avgEnt": 5.5,
+   "series": [
+    {
+     "t": 0,
+     "usedMB": 1.2,
+     "totalMB": 2
+    },
+    {
+     "t": 2065,
+     "usedMB": 1.7,
+     "totalMB": 2.5
+    },
+    {
+     "t": 4153,
+     "usedMB": 1.9,
+     "totalMB": 2.8
+    },
+    {
+     "t": 6293,
+     "usedMB": 1.5,
+     "totalMB": 2.8
+    },
+    {
+     "t": 8404,
+     "usedMB": 1.8,
+     "totalMB": 3
+    },
+    {
+     "t": 10449,
+     "usedMB": 2,
+     "totalMB": 3
+    },
+    {
+     "t": 12469,
+     "usedMB": 1.6,
+     "totalMB": 2.8
+    },
+    {
+     "t": 14547,
+     "usedMB": 1.8,
+     "totalMB": 3
+    },
+    {
+     "t": 16587,
+     "usedMB": 2,
+     "totalMB": 3.3
+    },
+    {
+     "t": 18699,
+     "usedMB": 2.2,
+     "totalMB": 3.3
+    },
+    {
+     "t": 20842,
+     "usedMB": 1.7,
+     "totalMB": 2.8
+    },
+    {
+     "t": 22893,
+     "usedMB": 1.9,
+     "totalMB": 3
+    },
+    {
+     "t": 24917,
+     "usedMB": 2.1,
+     "totalMB": 3.3
+    },
+    {
+     "t": 27007,
+     "usedMB": 2.3,
+     "totalMB": 3.3
+    },
+    {
+     "t": 29120,
+     "usedMB": 1.8,
+     "totalMB": 2.8
+    },
+    {
+     "t": 31148,
+     "usedMB": 1.1,
+     "totalMB": 1.8
+    },
+    {
+     "t": 33156,
+     "usedMB": 1.2,
+     "totalMB": 1.8
+    },
+    {
+     "t": 35267,
+     "usedMB": 1.4,
+     "totalMB": 2.1
+    },
+    {
+     "t": 37355,
+     "usedMB": 1.5,
+     "totalMB": 2.1
+    },
+    {
+     "t": 39412,
+     "usedMB": 1,
+     "totalMB": 1.4
+    },
+    {
+     "t": 41514,
+     "usedMB": 1.2,
+     "totalMB": 1.4
+    },
+    {
+     "t": 43642,
+     "usedMB": 1.3,
+     "totalMB": 1.7
+    },
+    {
+     "t": 45730,
+     "usedMB": 1.5,
+     "totalMB": 1.7
+    },
+    {
+     "t": 47766,
+     "usedMB": 1.6,
+     "totalMB": 2
+    },
+    {
+     "t": 49871,
+     "usedMB": 1.8,
+     "totalMB": 2
+    },
+    {
+     "t": 51981,
+     "usedMB": 1.2,
+     "totalMB": 1.5
+    },
+    {
+     "t": 54085,
+     "usedMB": 1.4,
+     "totalMB": 1.7
+    },
+    {
+     "t": 56201,
+     "usedMB": 1.6,
+     "totalMB": 2
+    },
+    {
+     "t": 58260,
+     "usedMB": 1.7,
+     "totalMB": 2.3
+    },
+    {
+     "t": 60395,
+     "usedMB": 1,
+     "totalMB": 1.8
+    },
+    {
+     "t": 62542,
+     "usedMB": 1.2,
+     "totalMB": 1.8
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-tap",
+   "firstMB": 9.7,
+   "lastMB": 9.9,
+   "maxMB": 11.8,
+   "growthMB": 0.2,
+   "growthFromMinMB": 2.1,
+   "restarts": 3,
+   "simEvents": 156,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "series": [
+    {
+     "t": 0,
+     "usedMB": 9.7,
+     "totalMB": 13.1
+    },
+    {
+     "t": 2114,
+     "usedMB": 10.7,
+     "totalMB": 14.3
+    },
+    {
+     "t": 4233,
+     "usedMB": 11.7,
+     "totalMB": 14.6
+    },
+    {
+     "t": 6383,
+     "usedMB": 11,
+     "totalMB": 14.8
+    },
+    {
+     "t": 8534,
+     "usedMB": 11.8,
+     "totalMB": 14.8
+    },
+    {
+     "t": 10664,
+     "usedMB": 11.2,
+     "totalMB": 12.3
+    },
+    {
+     "t": 12799,
+     "usedMB": 11,
+     "totalMB": 13.1
+    },
+    {
+     "t": 14931,
+     "usedMB": 10.9,
+     "totalMB": 12.3
+    },
+    {
+     "t": 17052,
+     "usedMB": 10.7,
+     "totalMB": 11.6
+    },
+    {
+     "t": 19130,
+     "usedMB": 11.2,
+     "totalMB": 12.1
+    },
+    {
+     "t": 21263,
+     "usedMB": 11.1,
+     "totalMB": 12.1
+    },
+    {
+     "t": 23415,
+     "usedMB": 10.8,
+     "totalMB": 11.6
+    },
+    {
+     "t": 25567,
+     "usedMB": 11.3,
+     "totalMB": 12.1
+    },
+    {
+     "t": 27701,
+     "usedMB": 11.1,
+     "totalMB": 11.8
+    },
+    {
+     "t": 29831,
+     "usedMB": 10.9,
+     "totalMB": 11.8
+    },
+    {
+     "t": 31948,
+     "usedMB": 10,
+     "totalMB": 11.1
+    },
+    {
+     "t": 34081,
+     "usedMB": 9.8,
+     "totalMB": 10.9
+    },
+    {
+     "t": 36214,
+     "usedMB": 9.6,
+     "totalMB": 10.6
+    },
+    {
+     "t": 38298,
+     "usedMB": 10.1,
+     "totalMB": 11.1
+    },
+    {
+     "t": 40429,
+     "usedMB": 9.9,
+     "totalMB": 10.9
+    },
+    {
+     "t": 42563,
+     "usedMB": 10.3,
+     "totalMB": 11.3
+    },
+    {
+     "t": 44698,
+     "usedMB": 10,
+     "totalMB": 11
+    },
+    {
+     "t": 46831,
+     "usedMB": 9.6,
+     "totalMB": 10.9
+    },
+    {
+     "t": 48948,
+     "usedMB": 10.1,
+     "totalMB": 11.6
+    },
+    {
+     "t": 50952,
+     "usedMB": 9.7,
+     "totalMB": 11.1
+    },
+    {
+     "t": 53079,
+     "usedMB": 10.1,
+     "totalMB": 11.6
+    },
+    {
+     "t": 55214,
+     "usedMB": 9.8,
+     "totalMB": 11.1
+    },
+    {
+     "t": 57314,
+     "usedMB": 10.2,
+     "totalMB": 11.6
+    },
+    {
+     "t": 59430,
+     "usedMB": 9.9,
+     "totalMB": 11.1
+    },
+    {
+     "t": 61565,
+     "usedMB": 10.2,
+     "totalMB": 11.6
+    },
+    {
+     "t": 63716,
+     "usedMB": 9.9,
+     "totalMB": 11.3
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser3-runner",
+   "firstMB": 10.8,
+   "lastMB": 9.8,
+   "maxMB": 11.5,
+   "growthMB": -1,
+   "growthFromMinMB": 0.7,
+   "restarts": 7,
+   "simEvents": 26,
+   "peak": 12,
+   "avgEnt": 6.4,
+   "series": [
+    {
+     "t": 3,
+     "usedMB": 10.8,
+     "totalMB": 12.8
+    },
+    {
+     "t": 2007,
+     "usedMB": 11.1,
+     "totalMB": 14.6
+    },
+    {
+     "t": 4128,
+     "usedMB": 10.9,
+     "totalMB": 14.6
+    },
+    {
+     "t": 6225,
+     "usedMB": 10.4,
+     "totalMB": 12.3
+    },
+    {
+     "t": 8364,
+     "usedMB": 10.7,
+     "totalMB": 12.8
+    },
+    {
+     "t": 10509,
+     "usedMB": 10.8,
+     "totalMB": 12.6
+    },
+    {
+     "t": 12537,
+     "usedMB": 10.9,
+     "totalMB": 12.1
+    },
+    {
+     "t": 14625,
+     "usedMB": 10.9,
+     "totalMB": 12.1
+    },
+    {
+     "t": 16685,
+     "usedMB": 11,
+     "totalMB": 12.1
+    },
+    {
+     "t": 18772,
+     "usedMB": 10.9,
+     "totalMB": 12.1
+    },
+    {
+     "t": 20892,
+     "usedMB": 10.9,
+     "totalMB": 12.1
+    },
+    {
+     "t": 22972,
+     "usedMB": 10.9,
+     "totalMB": 12.1
+    },
+    {
+     "t": 25011,
+     "usedMB": 11.5,
+     "totalMB": 12.7
+    },
+    {
+     "t": 27078,
+     "usedMB": 11.5,
+     "totalMB": 12.8
+    },
+    {
+     "t": 29126,
+     "usedMB": 11.4,
+     "totalMB": 12.8
+    },
+    {
+     "t": 31235,
+     "usedMB": 9.9,
+     "totalMB": 11.8
+    },
+    {
+     "t": 33301,
+     "usedMB": 9.8,
+     "totalMB": 11.6
+    },
+    {
+     "t": 35339,
+     "usedMB": 10.3,
+     "totalMB": 12.2
+    },
+    {
+     "t": 37370,
+     "usedMB": 10.3,
+     "totalMB": 12.1
+    },
+    {
+     "t": 39521,
+     "usedMB": 10.3,
+     "totalMB": 12.3
+    },
+    {
+     "t": 41660,
+     "usedMB": 10.2,
+     "totalMB": 12.3
+    },
+    {
+     "t": 43677,
+     "usedMB": 10.1,
+     "totalMB": 12.1
+    },
+    {
+     "t": 45724,
+     "usedMB": 9.9,
+     "totalMB": 11.8
+    },
+    {
+     "t": 47838,
+     "usedMB": 9.9,
+     "totalMB": 11.8
+    },
+    {
+     "t": 49890,
+     "usedMB": 10.6,
+     "totalMB": 12.4
+    },
+    {
+     "t": 51973,
+     "usedMB": 9.6,
+     "totalMB": 11.2
+    },
+    {
+     "t": 54105,
+     "usedMB": 10.2,
+     "totalMB": 11.7
+    },
+    {
+     "t": 56154,
+     "usedMB": 10.1,
+     "totalMB": 11.7
+    },
+    {
+     "t": 58254,
+     "usedMB": 10.1,
+     "totalMB": 11.5
+    },
+    {
+     "t": 60421,
+     "usedMB": 9.9,
+     "totalMB": 11.5
+    },
+    {
+     "t": 62511,
+     "usedMB": 9.8,
+     "totalMB": 11.2
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-tap",
+   "firstMB": 12.5,
+   "lastMB": 13.8,
+   "maxMB": 13.9,
+   "growthMB": 1.3,
+   "growthFromMinMB": 1.4,
+   "restarts": 3,
+   "simEvents": 156,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "series": [
+    {
+     "t": 1,
+     "usedMB": 12.5,
+     "totalMB": 14.7
+    },
+    {
+     "t": 2133,
+     "usedMB": 12.9,
+     "totalMB": 17.2
+    },
+    {
+     "t": 4276,
+     "usedMB": 12.6,
+     "totalMB": 17.2
+    },
+    {
+     "t": 6410,
+     "usedMB": 13.6,
+     "totalMB": 17.2
+    },
+    {
+     "t": 8578,
+     "usedMB": 13.2,
+     "totalMB": 14.9
+    },
+    {
+     "t": 10713,
+     "usedMB": 12.9,
+     "totalMB": 14.9
+    },
+    {
+     "t": 12847,
+     "usedMB": 13.1,
+     "totalMB": 14.7
+    },
+    {
+     "t": 14977,
+     "usedMB": 13.3,
+     "totalMB": 14.9
+    },
+    {
+     "t": 17097,
+     "usedMB": 13.4,
+     "totalMB": 14.9
+    },
+    {
+     "t": 19210,
+     "usedMB": 13.5,
+     "totalMB": 14.9
+    },
+    {
+     "t": 21343,
+     "usedMB": 13.6,
+     "totalMB": 15
+    },
+    {
+     "t": 23359,
+     "usedMB": 13.5,
+     "totalMB": 14.9
+    },
+    {
+     "t": 25511,
+     "usedMB": 13.6,
+     "totalMB": 14.9
+    },
+    {
+     "t": 27642,
+     "usedMB": 13.6,
+     "totalMB": 14.9
+    },
+    {
+     "t": 29778,
+     "usedMB": 13.6,
+     "totalMB": 14.9
+    },
+    {
+     "t": 31924,
+     "usedMB": 13.6,
+     "totalMB": 14.9
+    },
+    {
+     "t": 34045,
+     "usedMB": 13.6,
+     "totalMB": 14.9
+    },
+    {
+     "t": 36062,
+     "usedMB": 13.5,
+     "totalMB": 14.9
+    },
+    {
+     "t": 38158,
+     "usedMB": 13.4,
+     "totalMB": 14.7
+    },
+    {
+     "t": 40292,
+     "usedMB": 13.3,
+     "totalMB": 14.7
+    },
+    {
+     "t": 42425,
+     "usedMB": 13.8,
+     "totalMB": 14.9
+    },
+    {
+     "t": 44558,
+     "usedMB": 13.6,
+     "totalMB": 14.9
+    },
+    {
+     "t": 46674,
+     "usedMB": 13.4,
+     "totalMB": 14.7
+    },
+    {
+     "t": 48808,
+     "usedMB": 13.3,
+     "totalMB": 14.4
+    },
+    {
+     "t": 50874,
+     "usedMB": 13.2,
+     "totalMB": 14.4
+    },
+    {
+     "t": 52995,
+     "usedMB": 13.9,
+     "totalMB": 15
+    },
+    {
+     "t": 55126,
+     "usedMB": 13.7,
+     "totalMB": 14.9
+    },
+    {
+     "t": 57228,
+     "usedMB": 13.5,
+     "totalMB": 14.7
+    },
+    {
+     "t": 59375,
+     "usedMB": 13.4,
+     "totalMB": 14.7
+    },
+    {
+     "t": 61509,
+     "usedMB": 13.9,
+     "totalMB": 15
+    },
+    {
+     "t": 63641,
+     "usedMB": 13.8,
+     "totalMB": 14.9
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "phaser4-runner",
+   "firstMB": 12.8,
+   "lastMB": 14,
+   "maxMB": 14.5,
+   "growthMB": 1.2,
+   "growthFromMinMB": 1.7,
+   "restarts": 7,
+   "simEvents": 30,
+   "peak": 11,
+   "avgEnt": 6.5,
+   "series": [
+    {
+     "t": 3,
+     "usedMB": 12.8,
+     "totalMB": 14.8
+    },
+    {
+     "t": 2235,
+     "usedMB": 14.1,
+     "totalMB": 17.2
+    },
+    {
+     "t": 4356,
+     "usedMB": 12.9,
+     "totalMB": 17.7
+    },
+    {
+     "t": 6452,
+     "usedMB": 13,
+     "totalMB": 17.7
+    },
+    {
+     "t": 8584,
+     "usedMB": 14.5,
+     "totalMB": 17.7
+    },
+    {
+     "t": 10707,
+     "usedMB": 13.5,
+     "totalMB": 15.7
+    },
+    {
+     "t": 12828,
+     "usedMB": 13.3,
+     "totalMB": 14.4
+    },
+    {
+     "t": 14854,
+     "usedMB": 13.8,
+     "totalMB": 14.9
+    },
+    {
+     "t": 16885,
+     "usedMB": 13.6,
+     "totalMB": 14.7
+    },
+    {
+     "t": 18933,
+     "usedMB": 13.8,
+     "totalMB": 14.9
+    },
+    {
+     "t": 21019,
+     "usedMB": 13.4,
+     "totalMB": 14.4
+    },
+    {
+     "t": 23143,
+     "usedMB": 13.9,
+     "totalMB": 14.9
+    },
+    {
+     "t": 25241,
+     "usedMB": 13.6,
+     "totalMB": 14.7
+    },
+    {
+     "t": 27293,
+     "usedMB": 14,
+     "totalMB": 14.9
+    },
+    {
+     "t": 29399,
+     "usedMB": 13.8,
+     "totalMB": 14.7
+    },
+    {
+     "t": 31485,
+     "usedMB": 13.5,
+     "totalMB": 14.4
+    },
+    {
+     "t": 33546,
+     "usedMB": 14,
+     "totalMB": 14.9
+    },
+    {
+     "t": 35589,
+     "usedMB": 13.5,
+     "totalMB": 14.7
+    },
+    {
+     "t": 37601,
+     "usedMB": 13.8,
+     "totalMB": 14.9
+    },
+    {
+     "t": 39640,
+     "usedMB": 14.2,
+     "totalMB": 15.2
+    },
+    {
+     "t": 41688,
+     "usedMB": 13.7,
+     "totalMB": 14.7
+    },
+    {
+     "t": 43816,
+     "usedMB": 14.1,
+     "totalMB": 15.2
+    },
+    {
+     "t": 45904,
+     "usedMB": 13.8,
+     "totalMB": 14.9
+    },
+    {
+     "t": 47974,
+     "usedMB": 14.1,
+     "totalMB": 15.2
+    },
+    {
+     "t": 50016,
+     "usedMB": 14.3,
+     "totalMB": 15.4
+    },
+    {
+     "t": 52189,
+     "usedMB": 13.9,
+     "totalMB": 14.9
+    },
+    {
+     "t": 54386,
+     "usedMB": 14.4,
+     "totalMB": 15.4
+    },
+    {
+     "t": 56407,
+     "usedMB": 13.9,
+     "totalMB": 14.9
+    },
+    {
+     "t": 58501,
+     "usedMB": 14.2,
+     "totalMB": 15.2
+    },
+    {
+     "t": 60527,
+     "usedMB": 14.4,
+     "totalMB": 15.4
+    },
+    {
+     "t": 62620,
+     "usedMB": 14,
+     "totalMB": 14.9
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-tap",
+   "firstMB": 5.5,
+   "lastMB": 5.3,
+   "maxMB": 6.5,
+   "growthMB": -0.2,
+   "growthFromMinMB": 1,
+   "restarts": 3,
+   "simEvents": 156,
+   "peak": 2,
+   "avgEnt": 0.8,
+   "series": [
+    {
+     "t": 1,
+     "usedMB": 5.5,
+     "totalMB": 7.8
+    },
+    {
+     "t": 2068,
+     "usedMB": 5.7,
+     "totalMB": 9.1
+    },
+    {
+     "t": 4219,
+     "usedMB": 6.5,
+     "totalMB": 9.8
+    },
+    {
+     "t": 6351,
+     "usedMB": 5.7,
+     "totalMB": 10.1
+    },
+    {
+     "t": 8484,
+     "usedMB": 6.5,
+     "totalMB": 10.1
+    },
+    {
+     "t": 10618,
+     "usedMB": 5.6,
+     "totalMB": 7.6
+    },
+    {
+     "t": 12741,
+     "usedMB": 6,
+     "totalMB": 7.6
+    },
+    {
+     "t": 14883,
+     "usedMB": 5.8,
+     "totalMB": 7.1
+    },
+    {
+     "t": 17019,
+     "usedMB": 6.2,
+     "totalMB": 7.3
+    },
+    {
+     "t": 19099,
+     "usedMB": 5.9,
+     "totalMB": 7.1
+    },
+    {
+     "t": 21216,
+     "usedMB": 5.6,
+     "totalMB": 6.8
+    },
+    {
+     "t": 23384,
+     "usedMB": 6,
+     "totalMB": 7.1
+    },
+    {
+     "t": 25534,
+     "usedMB": 6.4,
+     "totalMB": 7.4
+    },
+    {
+     "t": 27654,
+     "usedMB": 6,
+     "totalMB": 7.1
+    },
+    {
+     "t": 29785,
+     "usedMB": 4.8,
+     "totalMB": 5.5
+    },
+    {
+     "t": 31917,
+     "usedMB": 5.2,
+     "totalMB": 5.8
+    },
+    {
+     "t": 34051,
+     "usedMB": 5,
+     "totalMB": 5.5
+    },
+    {
+     "t": 36185,
+     "usedMB": 5.5,
+     "totalMB": 6.1
+    },
+    {
+     "t": 38269,
+     "usedMB": 5.1,
+     "totalMB": 5.8
+    },
+    {
+     "t": 40403,
+     "usedMB": 5.2,
+     "totalMB": 5.8
+    },
+    {
+     "t": 42535,
+     "usedMB": 5.6,
+     "totalMB": 6.2
+    },
+    {
+     "t": 44667,
+     "usedMB": 5.2,
+     "totalMB": 5.9
+    },
+    {
+     "t": 46783,
+     "usedMB": 5.5,
+     "totalMB": 6.2
+    },
+    {
+     "t": 48915,
+     "usedMB": 5.1,
+     "totalMB": 5.9
+    },
+    {
+     "t": 51065,
+     "usedMB": 5.5,
+     "totalMB": 6.4
+    },
+    {
+     "t": 53199,
+     "usedMB": 5.1,
+     "totalMB": 5.9
+    },
+    {
+     "t": 55333,
+     "usedMB": 5.5,
+     "totalMB": 6.4
+    },
+    {
+     "t": 57435,
+     "usedMB": 5,
+     "totalMB": 6
+    },
+    {
+     "t": 59450,
+     "usedMB": 5.4,
+     "totalMB": 6.3
+    },
+    {
+     "t": 61599,
+     "usedMB": 5.7,
+     "totalMB": 6.6
+    },
+    {
+     "t": 63766,
+     "usedMB": 5.3,
+     "totalMB": 6.3
+    }
+   ]
+  },
+  {
+   "tag": "swiftshader",
+   "name": "pixi8-runner",
+   "firstMB": 5.7,
+   "lastMB": 5.6,
+   "maxMB": 6.8,
+   "growthMB": -0.1,
+   "growthFromMinMB": 1.1,
+   "restarts": 7,
+   "simEvents": 29,
+   "peak": 11,
+   "avgEnt": 6.4,
+   "series": [
+    {
+     "t": 1,
+     "usedMB": 5.7,
+     "totalMB": 7.8
+    },
+    {
+     "t": 2072,
+     "usedMB": 5.9,
+     "totalMB": 8.8
+    },
+    {
+     "t": 4150,
+     "usedMB": 5.3,
+     "totalMB": 9.6
+    },
+    {
+     "t": 6270,
+     "usedMB": 6.1,
+     "totalMB": 9.6
+    },
+    {
+     "t": 8359,
+     "usedMB": 6.8,
+     "totalMB": 10.1
+    },
+    {
+     "t": 10370,
+     "usedMB": 5.8,
+     "totalMB": 7.6
+    },
+    {
+     "t": 12443,
+     "usedMB": 6.2,
+     "totalMB": 7.6
+    },
+    {
+     "t": 14520,
+     "usedMB": 6,
+     "totalMB": 7.3
+    },
+    {
+     "t": 16555,
+     "usedMB": 5.8,
+     "totalMB": 6.8
+    },
+    {
+     "t": 18687,
+     "usedMB": 6.2,
+     "totalMB": 7.3
+    },
+    {
+     "t": 20737,
+     "usedMB": 5.9,
+     "totalMB": 7.1
+    },
+    {
+     "t": 22820,
+     "usedMB": 6.4,
+     "totalMB": 7.3
+    },
+    {
+     "t": 24986,
+     "usedMB": 6.1,
+     "totalMB": 7.1
+    },
+    {
+     "t": 27061,
+     "usedMB": 6.5,
+     "totalMB": 7.4
+    },
+    {
+     "t": 29125,
+     "usedMB": 6.3,
+     "totalMB": 7.1
+    },
+    {
+     "t": 31218,
+     "usedMB": 5,
+     "totalMB": 6.1
+    },
+    {
+     "t": 33301,
+     "usedMB": 5.3,
+     "totalMB": 6.6
+    },
+    {
+     "t": 35435,
+     "usedMB": 5,
+     "totalMB": 6.1
+    },
+    {
+     "t": 37505,
+     "usedMB": 5.5,
+     "totalMB": 6.6
+    },
+    {
+     "t": 39554,
+     "usedMB": 5.2,
+     "totalMB": 6.4
+    },
+    {
+     "t": 41687,
+     "usedMB": 5.6,
+     "totalMB": 6.6
+    },
+    {
+     "t": 43825,
+     "usedMB": 5.3,
+     "totalMB": 6.4
+    },
+    {
+     "t": 45958,
+     "usedMB": 5,
+     "totalMB": 6.1
+    },
+    {
+     "t": 47986,
+     "usedMB": 5.4,
+     "totalMB": 6.4
+    },
+    {
+     "t": 50115,
+     "usedMB": 5.8,
+     "totalMB": 6.7
+    },
+    {
+     "t": 52184,
+     "usedMB": 4.8,
+     "totalMB": 5.6
+    },
+    {
+     "t": 54323,
+     "usedMB": 5.3,
+     "totalMB": 6.2
+    },
+    {
+     "t": 56405,
+     "usedMB": 5,
+     "totalMB": 5.7
+    },
+    {
+     "t": 58550,
+     "usedMB": 5.4,
+     "totalMB": 6.2
+    },
+    {
+     "t": 60670,
+     "usedMB": 5.1,
+     "totalMB": 5.9
+    },
+    {
+     "t": 62803,
+     "usedMB": 5.6,
+     "totalMB": 6.2
+    }
+   ]
+  }
+ ],
+ "errors": [],
+ "size": {
+  "pages": [
+   {
+    "name": "native-tap",
+    "engine": "native",
+    "game": "tap",
+    "vendor": "—",
+    "ownBytes": 25662,
+    "ownGzip": 9720,
+    "glueLines": 135,
+    "sharedLines": 275
+   },
+   {
+    "name": "native-runner",
+    "engine": "native",
+    "game": "runner",
+    "vendor": "—",
+    "ownBytes": 25668,
+    "ownGzip": 9719,
+    "glueLines": 135,
+    "sharedLines": 275
+   },
+   {
+    "name": "phaser3-tap",
+    "engine": "phaser3",
+    "game": "tap",
+    "vendor": "phaser3.min.js",
+    "ownBytes": 30004,
+    "ownGzip": 11151,
+    "glueLines": 228,
+    "sharedLines": 275
+   },
+   {
+    "name": "phaser3-runner",
+    "engine": "phaser3",
+    "game": "runner",
+    "vendor": "phaser3.min.js",
+    "ownBytes": 30010,
+    "ownGzip": 11150,
+    "glueLines": 228,
+    "sharedLines": 275
+   },
+   {
+    "name": "phaser4-tap",
+    "engine": "phaser4",
+    "game": "tap",
+    "vendor": "phaser4.min.js",
+    "ownBytes": 30004,
+    "ownGzip": 11152,
+    "glueLines": 228,
+    "sharedLines": 275
+   },
+   {
+    "name": "phaser4-runner",
+    "engine": "phaser4",
+    "game": "runner",
+    "vendor": "phaser4.min.js",
+    "ownBytes": 30010,
+    "ownGzip": 11151,
+    "glueLines": 228,
+    "sharedLines": 275
+   },
+   {
+    "name": "pixi8-tap",
+    "engine": "pixi8",
+    "game": "tap",
+    "vendor": "pixi8.min.js",
+    "ownBytes": 27814,
+    "ownGzip": 10418,
+    "glueLines": 204,
+    "sharedLines": 275
+   },
+   {
+    "name": "pixi8-runner",
+    "engine": "pixi8",
+    "game": "runner",
+    "vendor": "pixi8.min.js",
+    "ownBytes": 27820,
+    "ownGzip": 10418,
+    "glueLines": 204,
+    "sharedLines": 275
+   }
+  ],
+  "vendor": {
+   "phaser3.min.js": {
+    "rawKB": 1168.1,
+    "gzipKB": 309.4
+   },
+   "phaser4.min.js": {
+    "rawKB": 1343.7,
+    "gzipKB": 346.3
+   },
+   "pixi8.min.js": {
+    "rawKB": 808.9,
+    "gzipKB": 228.4
+   }
+  }
+ }
+}

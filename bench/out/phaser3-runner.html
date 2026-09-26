@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="zh" data-engine="phaser3" data-game="runner">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bench:phaser3-runner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#05070b;display:flex;align-items:center;justify-content:center;
+  font-family:-apple-system,"PingFang SC","Noto Sans SC",sans-serif;overflow:hidden}
+#stage{position:relative;width:375px;height:667px;background:#10141d;overflow:hidden}
+#cv{position:absolute;inset:0;display:block;touch-action:none}
+#hud{position:absolute;top:0;left:0;right:0;height:48px;display:flex;align-items:center;justify-content:center;
+  color:#cfd8e3;font-size:13px;letter-spacing:.02em;background:linear-gradient(#141926,#10141d);
+  border-bottom:1px solid #1f2735;user-select:none;pointer-events:none;z-index:2;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas><div id="hud">loading…</div></div>
+<script src="../vendor/phaser3.min.js"></script>
+<script>
+'use strict';
+/* GAMES-24 基准——页内度量层（全引擎一致，build.mjs 内联）。
+ * tReady：boot 完成后首个呈现帧的时刻（performance.now，导航起点为 0）；
+ * fps：ready+500ms 暖机后 rAF 时间戳采样 10s（无头 60Hz 口径）；
+ * 实体峰值/均值：每帧上报在场实体数（渲染压力的地面真值，跨引擎对齐证明）。
+ * 宿主（run.mjs）经 __BENCH__.collect() 取数；mem 模式由宿主外采 performance.memory。 */
+window.__BENCH__ = (function () {
+  const q = new URLSearchParams(location.search);
+  const B = {
+    engine: document.documentElement.dataset.engine,
+    game: document.documentElement.dataset.game,
+    mode: q.get('mode') || 'start',
+    load: +(q.get('load') || 1),
+    dpr: Math.min(window.devicePixelRatio || 1, 3),
+    tScript: performance.now(),          /* 内联主体首行时刻（≈ DOM 解析到脚本执行） */
+    tSim: 0, tReady: 0,
+    frames: null, fpsDone: false, _fpsT0: 0, FPS_DUR: 10, WARM: 0.5,
+    peak: 0, sumEnt: 0, entFrames: 0, restarts: 0, simEvents: 0,
+    extra: {},
+  };
+  B.markSim = () => { B.tSim = performance.now(); };
+  let readied = false;
+  B.markReady = function () {
+    if (readied) return; readied = true;
+    B.tReady = performance.now();
+  };
+  B.frame = function (t) {              /* 各引擎在其渲染循环入口调用（rAF/POST_RENDER/ticker） */
+    B.markReady();
+    if (B.mode !== 'fps') return;
+    if (B.frames === null) {
+      if (t - B.tReady >= B.WARM * 1000) { B.frames = [t]; B._fpsT0 = t; }
+    } else {
+      B.frames.push(t);
+      if (t - B._fpsT0 >= B.FPS_DUR * 1000) B.fpsDone = true;
+    }
+  };
+  B.noteEntities = function (n) {
+    if (n > B.peak) B.peak = n;
+    B.sumEnt += n; B.entFrames++;
+  };
+  B.collect = function () {
+    const nav = performance.getEntriesByType('navigation')[0];
+    const out = {
+      engine: B.engine, game: B.game, mode: B.mode, load: B.load, dpr: B.dpr,
+      tScript: Math.round(B.tScript * 10) / 10,
+      tSim: Math.round(B.tSim * 10) / 10,
+      tReady: Math.round(B.tReady * 10) / 10,
+      nav: nav ? {
+        ttfb: Math.round(nav.responseStart),
+        respEnd: Math.round(nav.responseEnd),
+        dcl: Math.round(nav.domContentLoadedEventEnd),
+        load: Math.round(nav.loadEventEnd),
+      } : null,
+      peak: B.peak, avgEnt: B.entFrames ? Math.round((B.sumEnt / B.entFrames) * 10) / 10 : 0,
+      restarts: B.restarts, simEvents: B.simEvents,
+      extra: B.extra,
+      heap: (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576 * 10) / 10 : null),
+      fps: null,
+    };
+    if (B.frames && B.frames.length > 10) {
+      const f = B.frames, dt = [];
+      for (let i = 1; i < f.length; i++) dt.push(f[i] - f[i - 1]);
+      const srt = dt.slice().sort((a, b) => a - b);
+      const dur = (f[f.length - 1] - f[0]) / 1000;
+      const per1s = [];
+      for (let i = 0; i < f.length - 1; ) {   /* 逐秒桶最小帧率（掉帧带证据） */
+        let j = i, cnt = 0;
+        while (j < f.length - 1 && f[j] - f[i] < 1000) { j++; cnt++; }
+        per1s.push(cnt); i = j;
+      }
+      out.fps = {
+        dur: Math.round(dur * 100) / 100,
+        avg: Math.round(((f.length - 1) / dur) * 100) / 100,
+        p95: Math.round(srt[Math.floor(srt.length * 0.95)] * 100) / 100,
+        p99: Math.round(srt[Math.floor(srt.length * 0.99)] * 100) / 100,
+        max: Math.round(srt[srt.length - 1] * 100) / 100,
+        long17: dt.filter(d => d > 17.5).length,
+        long34: dt.filter(d => d > 34).length,
+        min1s: Math.min(...per1s), max1s: Math.max(...per1s),
+        n: f.length,
+      };
+    }
+    return out;
+  };
+  return B;
+})();
+
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * GAMES-24 引擎基准——共享规则层（全引擎字节一致，build.mjs 内联进每个页面）。
+ * 目的：Phaser3 / Phaser4 / PixiJS8 / 原生Canvas 四个栈跑**同一套**玩法状态机：
+ *      同 seed → 同关卡布局 → 同实体流 → 同判定/计分，引擎层只负责渲染/输入/循环接线。
+ *      这样 fps / 内存 / 冷启动差异才可归因于引擎而非玩法实现差异。
+ * 口径：玩法参数逐字对齐线上引擎（games/_shared/engines/tap-burst.js §7、
+ *      lane-runner.js §9），PRNG 为 spec §5.6 冻结实现；关卡固定 L15/30（曲线中段，
+ *      稳定工作负载）。?load=N 为压力倍率（只放大生成密度/速度，判定逻辑不变）。
+ * ===================================================================== */
+const R24 = (function () {
+
+  /* ---------- §5.6 PRNG（冻结，与 games/_shared/common.js 逐字一致） ---------- */
+  function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  const W = 375, H = 667, TOP = 48;      /* §5.4 竖屏逻辑分辨率 + 顶栏高 */
+  const STEP = 1 / 120;                  /* 固定物理步长（全引擎一致，判定确定性铁律） */
+  const LEVEL = 15, LEVELS = 30;         /* 固定中段关卡（曲线 p≈0.448） */
+  const P = (LEVEL - 1) / (LEVELS - 1);
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+  /* =====================================================================
+   * 玩法一：tap-burst（高频点击类代表，§7）
+   * 曲线/计分/生成逻辑逐字对齐线上引擎；load 只乘 spawnPerSec 并放宽在场上限。
+   * ===================================================================== */
+  function makeTap(load, slug, emit) {
+    const t = { targetBase: 20, timeSec: 20, sizePx: 72, spawnPerSec: 1.6, decoyRate: 0.08 };
+    /* 压力档：目标数随 load 线性放大（否则机器人 21 中后秒赢重启，压力上不去） */
+    const target = Math.ceil(t.targetBase * (1 + 0.10 * P) * load);
+    const time = Math.max(10, Math.round(t.timeSec * (1 - 0.15 * P)));
+    const size = Math.max(48, Math.round(t.sizePx * (1 - 0.10 * P)));
+    const rate = +(t.spawnPerSec * (1 + 0.20 * P)).toFixed(3);
+    const decoyRate = +Math.min(0.5, t.decoyRate * (1 + 0.10 * P)).toFixed(3);
+    const rateL = rate * load;
+    const CAP = Math.min(480, Math.ceil(rateL * time) + 16);   /* 压力档防失控上限（同引擎同值） */
+    const T0 = 0.3;
+    /* 游戏区（顶栏下方，与 common.js 外壳一致） */
+    const area = { x: 0, y: TOP, w: W, h: H - TOP };
+    const r = size / 2;
+    const bx = area.w * 0.05 + r, bX = area.w * 0.95 - r;
+    const by = area.y + area.h * 0.05 + r, bY = area.y + area.h * 0.95 - r;
+
+    const S = {
+      kind: 'tap', W, H, area, target, time, size, rate: rateL, decoyRate,
+      items: [], popFx: [], timeLeft: 0, hits: 0, decoyHits: 0,
+      combo: 0, maxCombo: 0, score: 0, done: false, anim: 0,
+      rng: null, botRng: null, spawns: [], sp: 0, idc: 0,
+      restarts: 0, events: 0, params: { target, time, size, rate: rateL, decoyRate, load, CAP },
+    };
+
+    function place() {   /* 落点两两不重叠：环形重试再放（确定性，同线上 §7） */
+      for (let k = 0; k < 24; k++) {
+        const x = bx + S.rng() * (bX - bx), y = by + S.rng() * (bY - by);
+        if (S.items.every(it => (it.x - x) * (it.x - x) + (it.y - y) * (it.y - y) > (it.r + r + 6) * (it.r + r + 6))) return { x, y };
+      }
+      return { x: bx + S.rng() * (bX - bx), y: by + S.rng() * (bY - by) };
+    }
+
+    S.reset = function () {
+      S.rng = mulberry32(fnv1a32(`${slug}#${LEVEL}`));
+      S.botRng = mulberry32(fnv1a32(`${slug}#bot#${LEVEL}`));
+      S.spawns = [];
+      for (let tt = T0; tt < time; tt += 1 / rateL) {
+        S.spawns.push({ t: +tt.toFixed(4), decoy: S.rng() < decoyRate, hue: Math.floor(S.rng() * 360) });
+      }
+      S.items.length = 0; S.popFx.length = 0; S.sp = 0; S.idc = 0;
+      S.timeLeft = time; S.hits = 0; S.decoyHits = 0; S.combo = 0; S.maxCombo = 0;
+      S.score = 0; S.done = false; S.anim = 0;
+      if (S.restarts > 0) emit('restart', {});
+    };
+
+    function step() {
+      if (S.done) return;
+      S.timeLeft -= STEP;
+      const now = time - S.timeLeft;
+      while (S.sp < S.spawns.length && S.spawns[S.sp].t <= now) {
+        if (S.items.length >= CAP) { S.sp++; continue; }        /* 上限即跳过（护压力档） */
+        const s = S.spawns[S.sp];
+        const pos = place();
+        const it = { id: ++S.idc, x: pos.x, y: pos.y, r: s.decoy ? r * 0.72 : r, decoy: s.decoy, hue: s.hue, born: S.anim };
+        S.items.push(it); S.events++; S.sp++;
+        emit('spawn', it);
+      }
+      if (S.timeLeft <= 0) { S.done = true; S.score = curScore(); emit('over', { win: false, score: S.score }); }
+    }
+
+    const curScore = () => Math.max(0, S.hits * 10 + S.maxCombo * 5 - S.decoyHits * 15);
+
+    S.update = function (dt) {          /* dt 为帧间隔（秒），内部固定步长累加（同线上） */
+      S.anim += dt;
+      let acc = dt;
+      while (acc >= STEP) { acc -= STEP; step(); if (S.onStep) S.onStep(); if (S.done) break; }
+      S.score = curScore();
+      for (let i = S.popFx.length - 1; i >= 0; i--) { S.popFx[i].t -= dt; if (S.popFx[i].t <= 0) S.popFx.splice(i, 1); }
+    };
+
+    S.tap = function (x, y) {           /* 顶至底取最先命中；空点/陷阱断连击（裁量②） */
+      if (S.done) return;
+      for (let i = S.items.length - 1; i >= 0; i--) {
+        const it = S.items[i];
+        if ((x - it.x) * (x - it.x) + (y - it.y) * (y - it.y) <= it.r * it.r) {
+          S.items.splice(i, 1); S.events++;
+          if (it.decoy) { S.decoyHits++; S.combo = 0; emit('decoyHit', it); }
+          else {
+            S.hits++; S.combo++; S.maxCombo = Math.max(S.maxCombo, S.combo);
+            const sparks = [];
+            for (let k = 0; k < 8; k++) sparks.push({ a: (k / 8) * Math.PI * 2 + (S.hits % 8) * 0.13, sp: 120 + ((S.hits * 7 + k * 13) % 60) });
+            S.popFx.push({ x: it.x, y: it.y, hue: it.hue, t: 0.4, sparks });
+            emit('pop', it);
+            if (S.hits >= target) { S.done = true; S.score = curScore(); emit('over', { win: true, score: S.score }); return; }
+          }
+          return;
+        }
+      }
+      S.combo = 0;                       /* 空点断连击 */
+    };
+
+    S.reset();
+    return S;
+  }
+
+  /* =====================================================================
+   * 玩法二：lane-runner（滚动+碰撞类代表，§9）
+   * 三车道/安全走廊生成/跳跳物理/计分逐字对齐线上引擎。
+   * load：speed×load^0.75、obsRate/coinRate 趋近压力上限（文档化公式）。
+   * ===================================================================== */
+  function makeRunner(load, slug, emit) {
+    const SEG = 120, LANES = 3, OB_LOW = 42, OB_TALL = 88, TALL_RATE = 0.35;
+    const t = { speed: 300, obsRate: 0.30, hearts: 3, coinRate: 0.10, distanceBase: 2000 };
+    /* 压力档：speed 与 distance 同乘 load^0.75（轮次时长不变、单位时间实体流加密），
+     * obsRate/coinRate 趋近上限；判定逻辑不变。 */
+    const speed = +(t.speed * (1 + 0.35 * P) * Math.pow(load, 0.75)).toFixed(2);
+    const obsRate = Math.min(0.55, t.obsRate * (1 + 0.25 * P) * (1 + (load - 1) * 0.35));
+    const coinRate = Math.min(0.35, t.coinRate * (1 + (load - 1) * 0.5));
+    const distance = Math.round(t.distanceBase * (1 + 0.50 * P) * Math.pow(load, 0.75));
+    const coinTarget = Math.ceil(15 * (1 + 0.40 * P));
+    const area = { x: 0, y: TOP, w: W, h: H - TOP };
+    const laneW = area.w / LANES;
+    const playerY = area.y + area.h * 0.70;          /* §9 单手映射：角色固定屏高 70% */
+    const OB_H = { 1: OB_LOW, 3: OB_TALL };
+
+    const S = {
+      kind: 'runner', W, H, area, SEG, LANES, laneW, playerY, speed, distance, OB_H,
+      lanes: [], safePlan: [], segN: 0,
+      lane: 1, px: 0, jumpY: 0, vy: 0, dist: 0, coins: 0, hearts: t.hearts, invuln: 0,
+      done: false, score: 0, anim: 0, rng: null, botRng: null,
+      restarts: 0, events: 0, params: { speed, obsRate, coinRate, distance, coinTarget, load },
+    };
+
+    S.reset = function () {
+      S.rng = mulberry32(fnv1a32(`${slug}#${LEVEL}`));
+      S.botRng = mulberry32(fnv1a32(`${slug}#bot#${LEVEL}`));
+      S.segN = Math.ceil(distance / SEG);
+      S.lanes = []; S.safePlan = [];
+      let run = 0, safe = Math.floor(S.rng() * LANES);
+      for (let s = 0; s < S.segN; s++) {
+        const row = [0, 0, 0];                      /* 0空 1矮障 2金币 3高障 */
+        if (run < 3) {
+          for (let l = 0; l < LANES; l++) {
+            const r = S.rng();
+            if (r < obsRate) row[l] = S.rng() < TALL_RATE ? 3 : 1;
+            else if (r < obsRate + coinRate) row[l] = 2;
+          }
+          let free = [0, 1, 2].filter(k => row[k] !== 1 && row[k] !== 3);
+          if (!free.length) { row[Math.floor(S.rng() * LANES)] = 0; free = [0, 1, 2].filter(k => row[k] !== 1 && row[k] !== 3); }
+          const near = free.filter(k => Math.abs(k - safe) <= 1);
+          if (near.length) safe = near[Math.floor(S.rng() * near.length)];
+          else {
+            let best = 0;
+            for (let k = 1; k < LANES; k++) if (Math.abs(k - safe) < Math.abs(best - safe)) best = k;
+            row[best] = 0; safe = best;
+          }
+          run = (row[0] === 1 || row[0] === 3 || row[1] === 1 || row[1] === 3 || row[2] === 1 || row[2] === 3) ? run + 1 : 0;
+        } else run = 0;
+        S.lanes.push(row); S.safePlan.push(safe);
+      }
+      S.lane = 1; S.px = laneW * 1.5; S.jumpY = 0; S.vy = 0;
+      S.dist = 0; S.coins = 0; S.hearts = t.hearts; S.invuln = 0;
+      S.done = false; S.score = 0; S.anim = 0;
+      if (S.restarts > 0) emit('restart', {});
+    };
+
+    const laneX = (l) => laneW * (l + 0.5);
+
+    S.swipe = function (dx, dy) {       /* §12 定向：位移 ≥24px 主轴优先 */
+      if (S.done) return;
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+      if (Math.abs(dx) >= Math.abs(dy)) { const nl = clamp(S.lane + (dx > 0 ? 1 : -1), 0, LANES - 1); if (nl !== S.lane) S.lane = nl; }
+      else if (dy < 0 && S.jumpY <= 0) S.vy = 560;
+    };
+
+    function step() {
+      if (S.done) return;
+      S.dist += speed * STEP;
+      if (S.invuln > 0) S.invuln -= STEP;
+      const tx = laneX(S.lane);
+      S.px += clamp(tx - S.px, -900 * STEP, 900 * STEP);
+      if (S.jumpY > 0 || S.vy > 0) { S.vy -= 1500 * STEP; S.jumpY += S.vy * STEP; if (S.jumpY <= 0) { S.jumpY = 0; S.vy = 0; } }
+      const seg = Math.floor(S.dist / SEG);
+      for (let s = Math.max(0, seg - 1); s <= Math.min(S.segN - 1, seg + 1); s++) {
+        const z = s * SEG + SEG / 2;
+        if (Math.abs(z - S.dist) >= 28) continue;
+        const v = S.lanes[s][S.lane];
+        if (v === 2) { S.coins++; S.lanes[s][S.lane] = 0; S.events++; emit('coin', { s, lane: S.lane }); }
+        else if ((v === 1 || v === 3) && S.invuln <= 0) {
+          if (!(v === 1 && S.jumpY > OB_LOW - 6)) {
+            S.hearts--; S.invuln = 1.2; S.events++;
+            emit('hit', { hearts: S.hearts });
+            if (S.hearts <= 0) { S.done = true; S.score = S.coins * 20 + S.hearts * 50; emit('over', { win: false, score: S.score }); return; }
+          }
+        }
+      }
+      if (S.dist >= S.distance) { S.done = true; S.score = S.coins * 20 + S.hearts * 50; emit('over', { win: true, score: S.score }); }
+    }
+
+    S.update = function (dt) {
+      S.anim += dt;
+      let acc = dt;
+      while (acc >= STEP) { acc -= STEP; step(); if (S.onStep) S.onStep(); if (S.done) break; }
+    };
+
+    S.reset();
+    return S;
+  }
+
+  /* =====================================================================
+   * 确定性机器人（fps/内存跑的自动游玩，跨引擎同一决策序列）：
+   * 通过 emitTap/emitSwipe 合成 PointerEvent 打到画布上，走**引擎输入管线**而非直调 sim。
+   * tap：140ms 一决策——55% 点最新目标（±3px 抖动）、5% 点陷阱、40% 随机空点
+   *      （"跟不上的玩家"口径：压力档下目标积压 → 渲染负载随 load 爬坡）。
+   * runner：220ms 一决策——朝前方安全走廊换道；当前道前方矮障则跳；15% 随机扰动。
+   * ===================================================================== */
+  function makeBot(sim, emitTap, emitSwipe) {
+    let next = 0.14;
+    return function botTick() {
+      if (sim.done) return;
+      if (sim.kind === 'tap') {
+        next -= STEP;
+        if (next > 0) return;
+        next = 0.14;
+        const r = sim.botRng();
+        const targets = sim.items.filter(it => !it.decoy);
+        const decoys = sim.items.filter(it => it.decoy);
+        if (r < 0.55 && targets.length) {
+          const it = targets[targets.length - 1];
+          emitTap(it.x + (sim.botRng() - 0.5) * 6, it.y + (sim.botRng() - 0.5) * 6);
+        } else if (r < 0.60 && decoys.length) {
+          const it = decoys[decoys.length - 1];
+          emitTap(it.x, it.y);
+        } else {
+          emitTap(20 + sim.botRng() * (W - 40), sim.area.y + 20 + sim.botRng() * (sim.area.h - 40));
+        }
+      } else {
+        next -= STEP;
+        if (next > 0) return;
+        next = 0.22;
+        const seg = Math.floor(sim.dist / sim.SEG);
+        const look = Math.min(sim.segN - 1, seg + 3);
+        const desired = sim.safePlan[look];
+        const r = sim.botRng();
+        if (r < 0.15) { emitSwipe(r < 0.075 ? -60 : 60, 0); }
+        else if (desired !== sim.lane) { emitSwipe(desired > sim.lane ? 60 : -60, 0); }
+        else {
+          const ahead = sim.lanes[Math.min(sim.segN - 1, seg + 1)];
+          if (ahead && ahead[sim.lane] === 1) emitSwipe(0, -60);
+          else if (r > 0.9) emitSwipe(0, -60);
+        }
+      }
+    };
+  }
+
+  return { fnv1a32, mulberry32, W, H, TOP, STEP, LEVEL, LEVELS, makeTap, makeRunner, makeBot, clamp };
+})();
+
+</script>
+<script>
+'use strict';
+/* GAMES-24 基准——Phaser 接线层（3.90 / 4.2 共用一份，API 兼容性本身即评估证据）。
+ * 口径：canvas 由模板提供；游戏尺寸 = 375×667×DPR（Scale.FIT 进 375×667 舞台 ⇒ CSS 尺寸
+ * 375×667、背板 750×1334 @DPR2）；根 Container scale=DPR ⇒ 场景坐标保持逻辑 375×667。
+ * （相机 setZoom 方案被否：其缩放锚在视口中心，worldX/worldY 带偏移，输入换算易错——
+ *  这个坑本身记入选型报告的"上手成本"证据。）
+ * 纹理按 DPR 放大生成 + setDisplaySize 逻辑尺寸（保清晰度平价）。
+ * 循环：Phaser update(delta) 内做固定步长累加（判定确定性与原生完全一致）；
+ * B.frame 打在 postrender（每呈现帧一次）。 */
+(function () {
+  const B = window.__BENCH__;
+  const dpr = B.dpr;
+  const emit = () => { };
+  const sim = B.game === 'tap'
+    ? R24.makeTap(B.load, 'bench-tap', emit)
+    : R24.makeRunner(B.load, 'bench-run', emit);
+  B.markSim();
+
+  const W = R24.W, H = R24.H;
+
+  /* hue → 0xRRGGBB（tint 用，与原生 hsl(h,72,56) 视觉近似） */
+  function hueInt(h, s, l) {
+    s /= 100; l /= 100;
+    const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+    const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255);
+  }
+
+  class BenchScene extends Phaser.Scene {
+    constructor() { super('bench'); }
+
+    create() {
+      /* DPR 方案：根 Container 统一 scale=DPR（不用相机 zoom——其缩放锚点是视口中心，
+       * worldX/worldY 会带偏移；Container 拓扑对 v3/v4 语义一致且坐标换算只有一层除法）。 */
+      this.root = this.add.container(0, 0);
+      this.root.setScale(dpr);
+      const mk = (key, w, h, draw) => {                    /* 纹理按 DPR 放大生成 */
+        const g = this.make.graphics({ x: 0, y: 0, add: false });
+        draw(g, dpr);
+        g.generateTexture(key, Math.ceil(w * dpr), Math.ceil(h * dpr));
+        g.destroy();
+      };
+      mk('dot', 64, 64, (g, s) => { g.fillStyle(0xffffff); g.fillCircle(32 * s, 32 * s, 32 * s); });
+      mk('decoy', 64, 64, (g, s) => {
+        g.fillStyle(0x33343a); g.fillCircle(32 * s, 32 * s, 32 * s);
+        g.lineStyle(6 * s, 0xff5252); g.beginPath();
+        g.moveTo(20 * s, 20 * s); g.lineTo(44 * s, 44 * s); g.moveTo(44 * s, 20 * s); g.lineTo(20 * s, 44 * s); g.strokePath();
+      });
+      mk('spark', 8, 8, (g, s) => { g.fillStyle(0xffffff); g.fillCircle(4 * s, 4 * s, 4 * s); });
+      mk('coin', 26, 26, (g, s) => { g.fillStyle(0xffd54f); g.fillCircle(13 * s, 13 * s, 13 * s); g.lineStyle(2 * s, 0xb8860b); g.strokeCircle(13 * s, 13 * s, 11 * s); });
+      mk('obLow', 60, 42, (g, s) => { g.fillStyle(0x7aa5e0); g.fillRoundedRect(0, 0, 60 * s, 42 * s, 8 * s); });
+      mk('obTall', 60, 88, (g, s) => { g.fillStyle(0xe05252); g.fillRoundedRect(0, 0, 60 * s, 88 * s, 8 * s); });
+      mk('player', 32, 32, (g, s) => { g.fillStyle(0x66f0ff); g.fillCircle(16 * s, 16 * s, 16 * s); g.fillStyle(0x0b0e14); g.fillCircle(16 * s, 16 * s, 7 * s); });
+
+      this.itemMap = new Map();                            /* tap：id → Image（池化） */
+      this.pool = { dot: [], decoy: [], spark: [], coin: [], obLow: [], obTall: [] };
+      this.segMap = new Map();                             /* runner：seg:lane → Image */
+      this._tk = (o) => o.texture.key;                     /* v3/v4 通用的纹理键取法 */
+
+      if (sim.kind === 'runner') {
+        const bg = this.make.graphics({ x: 0, y: 0, add: false });
+        bg.fillStyle(0x151a26); bg.fillRect(sim.area.x, sim.area.y, sim.area.w, sim.area.h);
+        bg.lineStyle(1, 0x12ffffff, 0.07);
+        for (let l = 1; l < sim.LANES; l++) { bg.beginPath(); bg.moveTo(l * sim.laneW + 0.5, sim.area.y); bg.lineTo(l * sim.laneW + 0.5, sim.area.y + sim.area.h); bg.strokePath(); }
+        this.root.add(bg);
+        this.player = this.make.image({ key: 'player', x: 0, y: 0 });
+        this.root.add(this.player);
+      } else {
+        this.sparks = [];                                  /* popFx → 8 spark 组（附着在 fx 对象上） */
+      }
+
+      /* ---------- 输入（p.x/p.y 为画布坐标，÷DPR 即逻辑坐标） ---------- */
+      this.input.on('pointerdown', (p) => {
+        const x = p.x / dpr, y = p.y / dpr;
+        if (sim.kind === 'tap') sim.tap(x, y);
+        else this._down = { x, y };
+      });
+      this.input.on('pointerup', (p) => {
+        if (sim.kind === 'runner' && this._down) sim.swipe(p.x / dpr - this._down.x, p.y / dpr - this._down.y);
+        this._down = null;
+      });
+
+      this.game.events.on('postrender', () => B.frame(performance.now()));
+
+      /* ---------- 机器人：决策在页内（确定性），执行由宿主受信输入（CDP mouse）回放 ---------- */
+      const BOT_OUT = [];
+      sim.onStep = R24.makeBot(sim,
+        (x, y) => BOT_OUT.push({ k: 'tap', x, y }),
+        (dx, dy) => BOT_OUT.push({ k: 'swipe', dx, dy }));
+      window.__BOT_DRAIN__ = () => BOT_OUT.splice(0);
+
+      this.hudEl = document.getElementById('hud');
+      this._hudStr = '';
+      this._overAt = 0;
+      this._last = performance.now();
+    }
+
+    upd(dt) {
+      if (!sim.done) sim.update(dt);
+      else if (!this._overAt) this._overAt = performance.now();
+      if (this._overAt && performance.now() - this._overAt > 800) {
+        this._overAt = 0; sim.restarts++; B.restarts = sim.restarts;
+        sim.reset();
+        if (sim.kind === 'runner') { for (const [k, img] of this.segMap) { img.setVisible(false); this.pool[this._tk(img)].push(img); } this.segMap.clear(); }
+      }
+    }
+
+    update() {
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - this._last) / 1000);
+      this._last = now;
+      this.upd(dt);
+      this.sync();
+      this.hud();
+      B.simEvents = sim.events;
+    }
+
+    img(texKey, x, y) {
+      let img = this.pool[texKey].pop();
+      if (!img) { img = this.make.image({ key: texKey, x, y }); this.root.add(img); }
+      img.setTexture(texKey); img.setPosition(x, y); img.setVisible(true); img.setAlpha(1);
+      return img;
+    }
+
+    sync() {
+      if (sim.kind === 'tap') {
+        const alive = new Set();
+        for (const it of sim.items) {
+          alive.add(it.id);
+          let img = this.itemMap.get(it.id);
+          if (!img) {
+            img = this.img(it.decoy ? 'decoy' : 'dot', it.x, it.y);
+            img.setTint(it.decoy ? 0xffffff : hueInt(it.hue, 72, 56));   /* 池化复用必须重设 tint */
+            this.itemMap.set(it.id, img);
+          }
+          const age = sim.anim - it.born, pop = Math.min(1, age / 0.12), rr = it.r * (0.6 + 0.4 * pop);
+          img.setPosition(it.x, it.y); img.setDisplaySize(rr * 2, rr * 2);
+        }
+        for (const [id, img] of this.itemMap) {
+          if (!alive.has(id)) { img.setVisible(false); this.pool[this._tk(img)].push(img); this.itemMap.delete(id); }
+        }
+        /* 火花：fx 对象首次见到时挂 8 spark，过期回收 */
+        for (let i = this.sparks.length - 1; i >= 0; i--) {
+          const rec = this.sparks[i];
+          if (!sim.popFx.includes(rec.fx)) {
+            for (const s of rec.parts) { s.setVisible(false); this.pool.spark.push(s); }
+            this.sparks.splice(i, 1);
+          }
+        }
+        for (const fx of sim.popFx) {
+          if (!fx._d) {
+            fx._d = true;
+            const parts = [];
+            for (let k = 0; k < fx.sparks.length; k++) {
+              const s = this.img('spark', fx.x, fx.y); s.setTint(hueInt(fx.hue, 80, 60)); parts.push(s);
+            }
+            this.sparks.push({ fx, parts });
+          }
+        }
+        for (const rec of this.sparks) {
+          const fx = rec.fx, k = fx.t / 0.4;
+          for (let j = 0; j < fx.sparks.length; j++) {
+            const sp = fx.sparks[j], s = rec.parts[j];
+            s.setPosition(fx.x + Math.cos(sp.a) * (1 - k) * sp.sp * 0.4, fx.y + Math.sin(sp.a) * (1 - k) * sp.sp * 0.4);
+            s.setDisplaySize(7 * k, 7 * k); s.setAlpha(k);
+          }
+        }
+        B.noteEntities(sim.items.length + sim.popFx.length);
+      } else {
+        const A = sim.area, py = sim.playerY;
+        const worldY = (z) => py - (z - sim.dist);
+        const z0 = sim.dist - 80, z1 = sim.dist + (A.y + A.h) + 80;
+        const s0 = Math.max(0, Math.floor(z0 / sim.SEG)), s1 = Math.min(sim.segN - 1, Math.floor(z1 / sim.SEG));
+        const alive = new Set();
+        let ents = 0;
+        for (let s = s0; s <= s1; s++) {
+          for (let l = 0; l < sim.LANES; l++) {
+            const v = sim.lanes[s][l];
+            if (!v) continue;
+            const key = s + ':' + l;
+            const cx = (l + 0.5) * sim.laneW, zc = s * sim.SEG + sim.SEG / 2, y = worldY(zc);
+            if (y < A.y - 60 || y > A.y + A.h + 60) continue;
+            alive.add(key); ents++;
+            const texKey = v === 2 ? 'coin' : (v === 3 ? 'obTall' : 'obLow');
+            let img = this.segMap.get(key);
+            if (img && this._tk(img) !== texKey) { img.setVisible(false); this.pool[this._tk(img)].push(img); this.segMap.delete(key); img = null; }
+            if (!img) { img = this.img(texKey, cx, y); this.segMap.set(key, img); }
+            else img.setPosition(cx, y);
+          }
+        }
+        for (const [key, img] of this.segMap) {
+          if (!alive.has(key)) { img.setVisible(false); this.pool[this._tk(img)].push(img); this.segMap.delete(key); }
+        }
+        const blink = sim.invuln > 0 && Math.floor(sim.anim * 10) % 2;
+        this.player.setPosition(sim.px, py - sim.jumpY).setAlpha(blink ? 0.3 : 1);
+        B.noteEntities(ents + 1);
+      }
+    }
+
+    hud() {
+      let s;
+      if (sim.kind === 'tap') s = `目标 ${sim.hits}/${sim.target} ｜ 连击 ${sim.combo} ｜ 秒 ${Math.max(0, Math.ceil(sim.timeLeft))} ｜ 分 ${sim.score}`;
+      else s = `金币 ${sim.coins} ｜ 命 ${Math.max(0, sim.hearts)} ｜ 距离 ${Math.min(sim.segN * sim.SEG, Math.floor(sim.dist))}/${sim.distance} ｜ 分 ${sim.score}`;
+      if (s !== this._hudStr) { this._hudStr = s; this.hudEl.textContent = s; }
+    }
+  }
+
+  /* 提供既有 canvas 时 Phaser 禁止 AUTO（custom environment 铁则）——自行探测后显式指定 */
+  function hasWebGL() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    } catch (e) { return false; }
+  }
+  B.extra = { webgl: hasWebGL() };
+
+  new Phaser.Game({
+    type: hasWebGL() ? Phaser.WEBGL : Phaser.CANVAS,
+    parent: 'stage',
+    canvas: document.getElementById('cv'),
+    width: W * dpr, height: H * dpr,
+    backgroundColor: '#10141d',
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    banner: false,
+    scene: BenchScene,
+  });
+})();
+
+</script>
+</body>
+</html>
