@@ -1031,17 +1031,18 @@
    "notes": "E6 首条完整 10/10 单链。STRESS 三组 PASS（PM 亲自组装五跑工件，Q-007）；QA1/QA2 红线全过；200ms 延迟无偏置；确定性与压测零泄漏。合并链 8078586→7c35b30→e8b03f7（第 6 跑收官复核：修正 2 口径+B 组实测入表+T2b 补跑）"
   },
   "multiplayer:mmo-township": {
-   "stage": "testing",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 1,
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
    "net": {
-    "tech": "S2",
-    "bot": "三档居民(游手/勤恳/商人)+常驻镇人口动态 8-12",
-    "aoi": "r=300px 滞回 15px 预算 40"
+    "tech": "S2+AOI",
+    "bot": "三档居民人格(勤恳/游手/商人·日程/陪聚集)+常驻镇人口动态 8-12",
+    "aoi": "r=300px 滞回 15px 预算 40",
+    "chain": "GAMES-50..65 十单链完整"
    },
-   "notes": "GAMES-52 DEV 交付（单链 2/10+，S2 状态同步首证）。设计书 docs/designs/mmo-township.md（GAMES-50）。自测：api-check 16/16（A2 gather-push tick2386 达标 120 / A3 idle+3商人 day-end / 注入 27ms / 重连 1.2s）；存量回归见 REPORT。待 PM 验收。"
+   "notes": "E6-W1-T2 轨 S2 状态同步首证（常驻世界/续镇存档/席位托管）。STRESS 三组 PASS（6 镇并行 8min tick 满频 ±0.46%、满编 12/12 spot、三游戏混编零错误；实测 18:53 守 Q-007 预算）；四单 ≈98min 长局零钉死；200ms 延迟无偏置；重连窗 10s+1 拍；feed ≤388ms；回收重建 2.3s 续镇。合并链 696babf→e2e84ac→5d74468→5d90e2f→fe7f376→05907f6→98bc0fd→539c816→c73b314"
   }
  }
 }
