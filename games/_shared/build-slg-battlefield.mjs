@@ -33,6 +33,8 @@ const html = `<!doctype html>
   .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     flex-direction: column; gap: 12px; background: rgba(11,14,20,.8); z-index: 10; }
   #joining { color: #e8ecf3; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  #joining button { margin-top: 10px; padding: 9px 30px; border-radius: 999px; border: 0; background: #2563eb;
+    color: #fff; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   #banner { display: none; position: absolute; top: 66px; left: 0; right: 0; text-align: center;
     color: #fbbf24; font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
   .rbox { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 300px; }

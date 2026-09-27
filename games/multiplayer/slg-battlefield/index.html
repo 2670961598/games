@@ -14,6 +14,8 @@
   .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     flex-direction: column; gap: 12px; background: rgba(11,14,20,.8); z-index: 10; }
   #joining { color: #e8ecf3; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  #joining button { margin-top: 10px; padding: 9px 30px; border-radius: 999px; border: 0; background: #2563eb;
+    color: #fff; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   #banner { display: none; position: absolute; top: 66px; left: 0; right: 0; text-align: center;
     color: #fbbf24; font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
   .rbox { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 300px; }
@@ -1109,6 +1111,7 @@
 
     var ws = null;
     var userClose = false;
+    var roomGone = false;          // 房间已回收（曾入房后 join 得 room-gone）：重试已无意义，终结会话
     var lastFrame = 0;             // 最近收到的帧号（输入自动标 lastFrame+1）
     var rtts = [], offsets = [];
     var pingTimer = 0, backoffIdx = 0, retryTimer = 0;
@@ -1199,13 +1202,20 @@
             emit('onPong', { rttMs: session.rttMs, offsetMs: session.offsetMs });
             break;
           case 'error':
+            // BACKOFF→lost 路径同步（GAMES-51 F3）：曾入房后房已回收——清重连凭证并终结
+            // 重试（否则 BACKOFF 空转 10s 后误报 reconnect-timeout，盖掉"对局已结束"语义）
+            if (msg.code === 'room-gone' && session.roomId) {
+              roomGone = true;
+              clearResume(session.roomId);
+              try { ws.close(); } catch (e) { /* 已断 */ }
+            }
             emit('onError', msg);
             break;
         }
       };
       ws.onclose = function () {
         root.clearInterval(pingTimer);
-        if (userClose) { setStatus('closed'); return; }
+        if (userClose || roomGone) { setStatus('closed'); return; }
         if (session.status === 'lost') return;
         if (!lostAt) lostAt = root.Date.now();
         if (root.Date.now() - lostAt > 10000) { // 10s 重连窗（协议 §2）
@@ -2244,7 +2254,10 @@
       onEnd: function (m) { finish(m.result); },
       onClosed: function () { if (!matchOver) showResult({ winner: 'draw', reason: 'abandon' }); },
       onError: function (m) {
-        if (m.code === 'reconnect-timeout' || m.code === 'room-gone') fallbackOffline('对局已结束');
+        /* 文案分家（GAMES-51 F3）：room-gone=房已回收（对局真的结束）；reconnect-timeout=
+           仅重连窗耗尽——对局多半仍在（托管 bot 续打），重进可让位拿回席位，不可误导弃局 */
+        if (m.code === 'room-gone') fallbackOffline('对局已结束');
+        else if (m.code === 'reconnect-timeout') showRejoin();
       },
       onStatus: function (st) {
         var el = document.getElementById('joining');
@@ -2266,6 +2279,27 @@
     var el = document.getElementById('banner');
     el.textContent = reason; el.style.display = 'block';
     startOffline();
+  }
+
+  /* 重连窗耗尽（GAMES-51 F3）：不切离线、不报"对局已结束"——覆盖层提示 + 一键重进。
+     ?room= 直达后 SDK 自动携 sessionStorage token 复席（窗内）；已逾时转托管则走让位
+     入席照常参战；房已回收则服务端回 room-gone → 上面"对局已结束"分支。 */
+  function showRejoin() {
+    if (matchOver || fellBack) return;
+    var roomId = session ? session.roomId : null;
+    var el = document.getElementById('joining');
+    el.textContent = '连接已断，可重新进入对战';
+    if (roomId) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'rejoin'; btn.textContent = '重新进入对战';
+      btn.onclick = function () { // 保留 gw/maxTicks 等现有参数，只改 room
+        var q = new URLSearchParams(location.search);
+        q.set('room', roomId);
+        location.href = location.pathname + '?' + q.toString();
+      };
+      el.appendChild(btn);
+    }
+    el.style.display = 'flex';
   }
 
   /* ---------- 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑） ---------- */
