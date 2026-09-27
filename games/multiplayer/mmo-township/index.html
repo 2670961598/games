@@ -192,6 +192,7 @@
 
     var ws = null;
     var userClose = false;
+    var roomGone = false;          // 房间已回收（曾入房后 join 得 room-gone）：重试已无意义，终结会话
     var lastFrame = 0;             // 最近收到的帧号（输入自动标 lastFrame+1）
     var inputSeq = 0;              // S2 seqInput 模式：客户端输入序号（0 起单调，GAMES-52）
     var rtts = [], offsets = [];
@@ -287,13 +288,20 @@
             emit('onPong', { rttMs: session.rttMs, offsetMs: session.offsetMs });
             break;
           case 'error':
+            // BACKOFF→lost 路径同步（GAMES-51 F3）：曾入房后房已回收——清重连凭证并终结
+            // 重试（否则 BACKOFF 空转 10s 后误报 reconnect-timeout，盖掉"对局已结束"语义）
+            if (msg.code === 'room-gone' && session.roomId) {
+              roomGone = true;
+              clearResume(session.roomId);
+              try { ws.close(); } catch (e) { /* 已断 */ }
+            }
             emit('onError', msg);
             break;
         }
       };
       ws.onclose = function () {
         root.clearInterval(pingTimer);
-        if (userClose) { setStatus('closed'); return; }
+        if (userClose || roomGone) { setStatus('closed'); return; }
         if (session.status === 'lost') return;
         if (!lostAt) lostAt = root.Date.now();
         if (root.Date.now() - lostAt > 10000) { // 10s 重连窗（协议 §2）
@@ -340,6 +348,19 @@
  * 长按 350ms=采集 / 点自己=表情轮盘 / 点地基=建造钮 / 点镇长=对话）。
  * HUD 识图特征位：顶栏镇进度条 + 右上圆小地图 + 底栏表情快捷条。
  * debug 模式（?debug=1）：本地幽灵镇（纯渲染，无网关）——perf-smoke 契约。
+ *
+ * GAMES-56 手感调优层（纯呈现，sim/brain 零改动）：
+ *   §1 输入反馈链——摇杆死区/指数曲线/80ms 阻尼（满速半径 40px 收进拇指幅）+ 底盘
+ *      80ms 淡入/死区环/力度可视；长按 350ms 充能环（touchstart 当帧起播，权威环接手）；
+ *      采集刻度微光（25/50/75%）；建筑落成尘土；倾倒闪光+金环；到包计数跳动。
+ *   §2 世界 juice——流星雨全屏氛围（晕影+星尘幕+加密流星，400ms 缓动进出）；
+ *      资源刷新涟漪（空→有/星髓新生）；镇升级三连烟花；粒子对象池（240 槽零分配）。
+ *   §3 昼夜渲染——dayTick 虚拟时间插值：天色三段渐变（昼/黄昏/夜+破晓防硬切）、
+ *      灯光随夜点亮（贡献台/建筑亮窗/提灯/夜精灵）、银河层+星点亮度增强。
+ *   §4 社交反馈——emote 气泡弹出过冲动效（to===mySeat 描金边+金屑迸溅）；
+ *      居民哼歌音符粒子；朝向 80ms 过渡转身（视线随速度矢量）。
+ *   §5 音效位预留——环境（昼夜双轨增益）/交互/事件三组静音占位（Snd 模块，
+ *      common.js makeSound 平台协议范式，默认只记账不出声）。
  * ===================================================================== */
 (function () {
   'use strict'
@@ -373,7 +394,7 @@
     { x: 802, y: 1410, w: 40, h: 40 },
   ]
   var EMOTE_QUICK = [0, 2, 4, 7]   // 底栏 4 常用：挥手/爱心/星光/点赞（§3.2）
-  var LONGPRESS_MS = 350, DEAD = 8
+  var LONGPRESS_MS = 350, DEAD = 8, RAMP_R = 40   // 长按起采 / 摇杆死区 / 满速半径（GAMES-56 调优值）
 
   /* ---------- 上报（宿主钩子优先，本地兜底） ---------- */
   var telQueue = []
@@ -419,11 +440,121 @@
   var mayorSay = null, mayorUntil = 0
   var settleUntil = 0
   var gatherHold = false, lastGatherId = null, pendingCmd = null
+  var pressRing = null              // 长按充能环（GAMES-56 §1：起采前 350ms 本地进度反馈）
+  var depositBoost = 0              // 倾倒闪光起始时刻（事件驱动）
+  var bagPulseAt = 0                // 背包计数跳动（flybag 到包时刻）
+  var ringFlash = null              // 采集刻度微光 {id,m,at}（25/50/75%，§3.3）
+  var stockSeen = {}                // 资源节点存量观测（刷新涟漪判据；全量重建/AOI 回入不误触）
+  var loadingWorld = false          // loadWorld 期禁一切"状态变化"类 juice
   var inputMaxMs = 0, lastInputTs = 0
   var delayMs = 120                  // 插值渲染延迟（自适应上探 150，只上探不追快 §5.3）
   var quickZones = []                // 底栏快捷条命中区（每帧重建）
   /* 装饰层专用伪随机（不入判定路径；星海流星点缀） */
   var decorRng = (function () { var s = 20260927; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 } })()
+
+  /* ---------- 粒子对象池（GAMES-56 世界 juice 底座）：预分配环形复用，稳态零分配零 GC ---------- */
+  var POOL_N = 240, pool = new Array(POOL_N), poolCursor = 0, poolSpawned = 0
+  for (var pi = 0; pi < POOL_N; pi++) pool[pi] = { live: false }
+  var fxLog = []   // spawn 流水（QA 证据：__GAMES_DEBUG__.fxLog()；只记种类+世界坐标）
+  function spawnP(o) {
+    var p = null, t
+    for (t = 0; t < POOL_N; t++) { var q = pool[poolCursor]; poolCursor = (poolCursor + 1) % POOL_N; if (!q.live) { p = q; break } }
+    if (!p) { p = pool[poolCursor]; poolCursor = (poolCursor + 1) % POOL_N }   // 满池覆盖游标位（池即上限）
+    for (var k in o) p[k] = o[k]
+    p.live = true; poolSpawned++
+    fxLog.push({ k: p.k, at: Math.round(performance.now()), x: p.wx != null ? Math.round(p.wx / 1000) : Math.round(p.x || 0), y: p.wy != null ? Math.round(p.wy / 1000) : Math.round(p.y || 0) })
+    if (fxLog.length > 80) fxLog.shift()
+    return p
+  }
+  /* 粒子推进+绘制（世界坐标粒子随镜头走；屏幕坐标粒子=星尘） */
+  function drawParticles(nowP, dt) {
+    var f = dt / 1000
+    for (var i = 0; i < POOL_N; i++) {
+      var p = pool[i]
+      if (!p.live) continue
+      p.ttl -= dt
+      if (p.ttl <= 0) { p.live = false; continue }
+      var lt = p.ttl / p.ttl0
+      if (p.k === 'dust') {
+        p.wx += p.vx * f; p.wy += p.vy * f; p.vy += 30000 * f
+        ctx.globalAlpha = lt * 0.45
+        ctx.fillStyle = 'rgb(196,178,150)'
+        ctx.beginPath(); ctx.arc(sx(p.wx), sy(p.wy), p.r0 * (1 + 1.8 * (1 - lt)), 0, 7); ctx.fill()
+      } else if (p.k === 'spark') {
+        p.wx += p.vx * f; p.wy += p.vy * f; p.vy += p.g * f
+        ctx.globalAlpha = lt
+        ctx.fillStyle = p.col
+        ctx.fillRect(sx(p.wx) - 1.2, sy(p.wy) - 1.2, 2.4, 2.4)
+      } else if (p.k === 'stardust') {
+        p.x += p.vx * f; p.y += p.vy * f
+        if (p.y > H + 8) { p.live = false; continue }
+        ctx.globalAlpha = (0.22 + 0.5 * Math.abs(Math.sin(nowP / 260 + p.tw))) * Math.min(1, lt * 3)
+        ctx.fillStyle = 'rgb(' + p.col + ')'
+        ctx.fillRect(p.x, p.y, 1.6, 1.6)
+      } else if (p.k === 'glint') {
+        var gd = p.d + (1 - lt) * 9000
+        ctx.globalAlpha = lt
+        ctx.fillStyle = p.col
+        ctx.fillRect(sx(p.wx + Math.cos(p.a) * gd) - 1, sy(p.wy + Math.sin(p.a) * gd) - 1, 2, 2)
+      } else if (p.k === 'ripple') {
+        ctx.globalAlpha = lt * 0.7
+        ctx.strokeStyle = p.col; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(sx(p.wx), sy(p.wy), 6 + (1 - lt) * p.rMax, 0, 7); ctx.stroke()
+      } else if (p.k === 'note') {
+        ctx.globalAlpha = Math.min(1, lt * 2.5) * 0.8
+        ctx.fillStyle = 'rgba(232,236,243,.9)'; ctx.font = '10px ' + FONT; ctx.textAlign = 'center'
+        ctx.fillText(p.g, sx(p.wx) + Math.sin(nowP / 300 + p.ph) * 6, sy(p.wy) - (1 - lt) * 26)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  /* ---------- 音效位预留（GAMES-56 §5）：环境（昼夜双轨）/交互/事件 三组静音占位。
+     平台协议=本仓 common.js makeSound 范式（WebAudio 程序合成 + 总闸门）；默认静音——
+     只记账不出声（零 AudioContext 成本，无自动播放策略风险），平台接线下闸即出声。
+     __GAMES_DEBUG__.sndState() 可观测：各槽触发计数 + 昼夜双轨交叉增益实时值 */
+  var Snd = (function () {
+    var on = false, ac = null, fired = {}
+    var slots = {
+      'amb-day':       { g: 'amb', type: 'sine', f0: 174, f1: 174, vol: 0.012 },        // 环境轨·昼（持续）
+      'amb-night':     { g: 'amb', type: 'sine', f0: 116, f1: 116, vol: 0.012 },        // 环境轨·夜（持续）
+      'ix-stick':      { g: 'ix', type: 'triangle', f0: 340, f1: 300, dur: 0.06, vol: 0.03 },   // 摇杆起手
+      'ix-gather':     { g: 'ix', type: 'triangle', f0: 480, f1: 560, dur: 0.1, vol: 0.04 },    // 长按起采
+      'ix-gather-tick':{ g: 'ix', type: 'square', f0: 880, f1: 1180, dur: 0.05, vol: 0.025 },  // 刻度微光
+      'ix-gather-done':{ g: 'ix', type: 'triangle', f0: 620, f1: 940, dur: 0.12, vol: 0.05 },   // 产出入包
+      'ix-deposit':    { g: 'ix', type: 'sine', f0: 523, f1: 784, dur: 0.14, vol: 0.05 },       // 倾倒
+      'ix-build':      { g: 'ix', type: 'triangle', f0: 300, f1: 210, dur: 0.16, vol: 0.05 },   // 建筑落成
+      'ix-emote':      { g: 'ix', type: 'sine', f0: 700, f1: 900, dur: 0.07, vol: 0.03 },       // 表情气泡
+      'ev-meteor':     { g: 'ev', type: 'sawtooth', f0: 90, f1: 55, dur: 0.8, vol: 0.03 },      // 流星雨
+      'ev-levelup':    { g: 'ev', type: 'sine', f0: 523, f1: 1568, dur: 0.5, vol: 0.06 },       // 镇升级烟花
+      'ev-refresh':    { g: 'ev', type: 'sine', f0: 980, f1: 1240, dur: 0.12, vol: 0.02 },      // 资源刷新涟漪
+      'ev-settle':     { g: 'ev', type: 'sine', f0: 392, f1: 392, dur: 0.3, vol: 0.05 },        // 镇日结算
+    }
+    function ctxA() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)() } catch (e) { ac = null } } return ac }
+    function tone(s) {
+      var a = ctxA(); if (!a) return
+      var o = a.createOscillator(), gn = a.createGain(), t = a.currentTime
+      o.type = s.type
+      o.frequency.setValueAtTime(s.f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, s.f1), t + s.dur)
+      gn.gain.setValueAtTime(s.vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + s.dur)
+      o.connect(gn).connect(a.destination); o.start(t); o.stop(t + s.dur + 0.02)
+    }
+    function fire(name) {
+      fired[name] = (fired[name] || 0) + 1
+      if (!on) return   // 静音占位：只记账不出声
+      var s = slots[name]; if (s && s.dur) tone(s)
+    }
+    return {
+      fire: fire,
+      state: function () { return { on: on, fired: fired, amb: { day: +(1 - skyNow.f).toFixed(2), night: +skyNow.f.toFixed(2) } } },
+      enable: function (v) {
+        on = v !== false
+        if (on) { var a = ctxA(); if (a && a.state === 'suspended') a.resume() }
+        return on
+      },
+    }
+  })()
+  function snd(n) { Snd.fire(n) }
 
   /* ---------- 辉光精灵缓存（径向渐变一次成图；键=颜色:半径:α档） ---------- */
   var glowCache = {}
@@ -454,7 +585,9 @@
     world = { map: state.map, buildings: state.buildings || [], collide: (state.collide || []).slice(), town: state.town }
     ents = {}
     fades = []
+    loadingWorld = true
     for (var id in state.ents) upsertEnt(state.ents[id])
+    loadingWorld = false
     townPanel = { e: state.town.exp, l: state.town.level, d: state.town.day, dt: state.town.dayTick, ph: state.town.phase, sc: state.town.sc || 0 }
     if (state.sessions && state.sessions[mySeat]) {
       var s = state.sessions[mySeat]
@@ -474,8 +607,19 @@
 
   function upsertEnt(rec) {
     var e = ents[rec.id]
+    var isRes = rec.k === 'herb' || rec.k === 'berry' || rec.k === 'ore' || rec.k === 'star'
     if (!e) e = ents[rec.id] = { rec: rec, buf: [] }
     else e.rec = rec
+    /* 资源刷新涟漪（GAMES-56 §2）：空→有=刷新；流星雨新星髓（新实体）同律。
+       stockSeen 跨全量重建存续（GAMES-54 F2b 常态退化不误触）且 AOI 出入视野不误触 */
+    if (isRes && !loadingWorld && rec.stock > 0) {
+      var seen = stockSeen[rec.id]
+      if (seen === undefined ? rec.k === 'star' : seen <= 0) {
+        spawnP({ k: 'ripple', wx: rec.x, wy: rec.y, col: RES_COL[rec.k] || WARM, ttl: 700, ttl0: 700, rMax: 26 })
+        snd('ev-refresh')
+      }
+    }
+    if (isRes) stockSeen[rec.id] = rec.stock
     if (rec.k === 'player' || rec.k === 'npc-wisp') {
       e.buf.push({ t: performance.now(), x: rec.x, y: rec.y })
       if (e.buf.length > 4) e.buf.shift()
@@ -537,28 +681,42 @@
     } else own.ghost = gh
   }
 
-  /* ---------- 事件 → 表现（零 diff 触发 juice，§5.1） ---------- */
+  /* ---------- 事件 → 表现（零 diff 触发 juice，§5.1；GAMES-56 手感链全部事件帧同步起播 ≤80ms） ---------- */
   function applyEvent(ev) {
     if (ev.k === 'emote') {
       if (ev.seat !== mySeat) {
         var p = ents['p' + ev.seat]
         /* to=社交定向（GAMES-55）：居民偶遇/对真人反应的互动气泡带尾标——聊天气泡位预留 */
-        if (p) fx.push({ k: 'bubble', seat: ev.seat, id: ev.id, ttl: 2500, to: ev.to })
+        if (p) {
+          fx.push({ k: 'bubble', seat: ev.seat, id: ev.id, ttl: 2500, to: ev.to, born: performance.now() })
+          /* 对我定向（to===mySeat）：描金边弹出 + 金屑迸溅（GAMES-56 §4） */
+          if (ev.to === mySeat) for (var gb = 0; gb < 6; gb++)
+            spawnP({ k: 'glint', wx: p.rec.x, wy: p.rec.y - 20000, a: gb / 6 * Math.PI * 2, d: 16000, col: '#FFD700', ttl: 420, ttl0: 420 })
+          snd('ix-emote')
+        }
       } // 自己乐观已弹
     } else if (ev.k === 'gather-done') {
       var site = ents[ev.entId]
       if (site) fx.push({ k: 'pop', x: site.rec.x, y: site.rec.y, col: RES_COL[ev.res], ttl: 350 })
-      if (ev.seat === mySeat) fx.push({ k: 'flybag', res: ev.res, ttl: 300 })
+      if (ev.seat === mySeat) { fx.push({ k: 'flybag', res: ev.res, ttl: 300 }); snd('ix-gather-done') }
     } else if (ev.k === 'deposit') {
       dayContrib[ev.seat] = (dayContrib[ev.seat] || 0) + ev.n
       fx.push({ k: 'rise', x: world.map.deposit.x, y: world.map.deposit.y, n: ev.n, ttl: 1100 })
+      /* 倾倒闪光（GAMES-56 §1）：贡献台金环扩散 + 台面辉光脉冲 */
+      depositBoost = performance.now()
+      spawnP({ k: 'ripple', wx: world.map.deposit.x, wy: world.map.deposit.y, col: WARM2, ttl: 500, ttl0: 500, rMax: 34 })
+      snd('ix-deposit')
     } else if (ev.k === 'levelup') {
       toast('小镇升级 Lv' + ev.level + '！')
       fx.push({ k: 'flash', ttl: 900 })
+      fx.push({ k: 'fireworks', at: performance.now(), burst: 0, ttl: 1100 })   // 镇升级烟花（三连爆）
+      snd('ev-levelup')
     } else if (ev.k === 'meteor') {
       toast('流星雨来了——星髓在城外闪光！')
+      snd('ev-meteor')
     } else if (ev.k === 'settle') {
       showSettle(ev.day)
+      snd('ev-settle')
       report('levelEnd', { win: mePanel.g ? 1 : 0, score: mePanel.c, reason: 'day-end' })
     } else if (ev.k === 'build-done') {
       var b = world.buildings[ev.slot]
@@ -567,6 +725,14 @@
         if (ev.seat === mySeat) spentLocal += b.cost
         if (ev.box) world.collide.push({ x: ev.box[0], y: ev.box[1], w: ev.box[2], h: ev.box[3] }) // 碰撞表增量（§2.1）
         fx.push({ k: 'sparkle', box: ev.box, ttl: 800 })
+        /* 建筑落成尘土（GAMES-56 §1）：基座四向扬尘缓落 */
+        if (ev.box) for (var di = 0; di < 10; di++) {
+          var da = decorRng() * Math.PI * 2
+          spawnP({ k: 'dust', wx: ev.box[0] + ev.box[2] / 2 + Math.cos(da) * ev.box[2] / 2, wy: ev.box[1] + ev.box[3],
+            vx: Math.cos(da) * 40000 * (0.4 + decorRng()), vy: -20000 - decorRng() * 30000,
+            r0: 3 + decorRng() * 3, ttl: 500 + decorRng() * 250, ttl0: 750 })
+        }
+        snd('ix-build')
       }
       toast((b ? BUILD_NAME[b.kind] : '建筑') + '落成！')
     }
@@ -589,15 +755,21 @@
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] }) }
   function nameOf(seat) { return (roster[seat] && roster[seat].name) || '居民' + seat }
 
-  /* ---------- 触摸（§1.5 单拇指） ---------- */
-  var stick = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 }
+  /* ---------- 触摸（§1.5 单拇指；摇杆死区/阻尼手感 GAMES-56 §1） ---------- */
+  var stick = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0, since: 0 }
   var touch = { id: -1, sx: 0, sy: 0, t0: 0, moved: false, holdTimer: 0 }
+  var dmpX = 0, dmpY = 0   // 摇杆阻尼跟随值（80ms 临界阻尼，量化前的连续域）
 
   function currentInput() {
     var mx = 0, my = 0
     if (stick.active) {
       var dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.sqrt(dx * dx + dy * dy)
-      if (d > DEAD) { var m = Math.min(100, (d - DEAD) * 2.2); mx = Math.round(dx / d * m); my = Math.round(dy / d * m) }
+      /* 死区 8px → 满速 40px：指数 1.35 曲线——低速一指幅细腻、高速直给；
+         满速半径收进拇指自然幅（原 2.2 线性要 53px 才满速，超出底盘环 34px 太远） */
+      if (d > DEAD) {
+        var m = Math.min(100, Math.pow((d - DEAD) / (RAMP_R - DEAD), 1.35) * 100)
+        mx = dx / d * m; my = dy / d * m
+      }
     }
     return { mx: mx, my: my }
   }
@@ -627,13 +799,16 @@
     touch.id = t.identifier; touch.sx = p.x; touch.sy = p.y; touch.t0 = performance.now(); touch.moved = false
     var node = hitNode(toWorld(p.x, p.y).x, toWorld(p.x, p.y).y)
     if (node && node.stock > 0) {
+      /* 长按充能环（GAMES-56 §1）：touchstart 当帧起播（≤80ms 呈现），350ms 满格交接服务端权威进度环 */
+      pressRing = { id: node.id, t0: performance.now() }
       touch.holdTimer = setTimeout(function () { // 长按 350ms 起采（防误触 §3.3）
         if (touch.moved) return
         gatherHold = true; lastGatherId = node.id
+        snd('ix-gather')
         sendCmd({ k: 'gather', entId: node.id, phase: 'start' })
       }, LONGPRESS_MS)
     } else touch.holdTimer = 0
-    if (!stick.active) { stick.active = true; stick.id = t.identifier; stick.ox = p.x; stick.oy = p.y; stick.x = p.x; stick.y = p.y }
+    if (!stick.active) { stick.active = true; stick.id = t.identifier; stick.ox = p.x; stick.oy = p.y; stick.x = p.x; stick.y = p.y; stick.since = performance.now(); snd('ix-stick') }
   }, { passive: false })
 
   canvas.addEventListener('touchmove', function (ev) {
@@ -645,6 +820,7 @@
         var d = Math.sqrt((p.x - touch.sx) * (p.x - touch.sx) + (p.y - touch.sy) * (p.y - touch.sy))
         if (d > 12) {
           touch.moved = true
+          pressRing = null
           if (touch.holdTimer) { clearTimeout(touch.holdTimer); touch.holdTimer = 0 }
           stopGather()
         }
@@ -664,6 +840,7 @@
         if (touch.holdTimer) { clearTimeout(touch.holdTimer); touch.holdTimer = 0 }
         if (gatherHold) stopGather()
         else if (!touch.moved && performance.now() - touch.t0 < LONGPRESS_MS) onTap(toCanvas(t))
+        pressRing = null
         touch.id = -1
       }
     }
@@ -681,7 +858,8 @@
       if ((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) <= q.r * q.r) {
         if (q.wheel) { wheelOpen = !wheelOpen; wheelAt = { x: W / 2, y: H / 2 - 60 }; return }
         sendCmd({ k: 'emote', id: q.id })
-        fx.push({ k: 'bubble', seat: mySeat, id: q.id, ttl: 2500 }) // 乐观即时（§3.2）
+        fx.push({ k: 'bubble', seat: mySeat, id: q.id, ttl: 2500, born: performance.now() }) // 乐观即时（§3.2）
+        snd('ix-emote')
         return
       }
     }
@@ -698,7 +876,8 @@
       wheelOpen = false
       if (pick >= 0) {
         sendCmd({ k: 'emote', id: pick })
-        fx.push({ k: 'bubble', seat: mySeat, id: pick, ttl: 2500 })
+        fx.push({ k: 'bubble', seat: mySeat, id: pick, ttl: 2500, born: performance.now() })
+        snd('ix-emote')
       }
       return
     }
@@ -742,16 +921,22 @@
   function netTick(dt) {
     if (mode !== 'online' || !session || session.role !== 'player' || !started) return
     var inp = currentInput()
+    /* 摇杆阻尼（GAMES-56 §1）：目标向量 80ms 临界阻尼跟随——起向柔和不突兀、
+       收向不回弹；量化为整数后同时喂预测与上报（两端仍同式，确定性红线不破） */
+    var k = Math.min(1, dt / 80)
+    dmpX += (inp.mx - dmpX) * k; dmpY += (inp.my - dmpY) * k
+    if (!inp.mx && !inp.my && Math.abs(dmpX) < 0.5 && Math.abs(dmpY) < 0.5) { dmpX = 0; dmpY = 0 }
+    var mx = Math.round(dmpX), my = Math.round(dmpY)
     /* 预测：每 rAF 帧按帧时长积分（与服务器同式移动/碰撞，predict.cjs 单一事实源）
        ——输入读入到预测应用 ≤1 帧（设计 §3.1），不再隔着 10Hz netTick 拍 */
-    if (own.ghost) P.stepAvatarFrac(own.ghost, inp.mx, inp.my, world.collide, dt)
+    if (own.ghost) P.stepAvatarFrac(own.ghost, mx, my, world.collide, dt)
     predAcc += dt
     while (predAcc >= 100) {
       predAcc -= 100
-      var msg = { mx: inp.mx, my: inp.my }
+      var msg = { mx: mx, my: my }
       if (pendingCmd) { msg.cmd = pendingCmd; pendingCmd = null }
       session.sendInput(msg)               // seqInput：SDK 标 seq（10Hz 上报节拍不变）
-      own.pending.push({ seq: seqCounter++, mx: inp.mx, my: inp.my })
+      own.pending.push({ seq: seqCounter++, mx: mx, my: my })
       if (own.pending.length > 12) own.pending.shift()
     }
   }
@@ -831,10 +1016,51 @@
       if (!fed) delayMs = Math.min(150, delayMs + 0.4)
     }
 
+    /* 流星雨氛围强度缓动（事件进出 400ms，§2 世界 juice） */
+    meteorAmt += ((townPanel.ph === 'meteor' ? 1 : 0) - meteorAmt) * Math.min(1, dt / 400)
+    if (meteorAmt < 0.004 && townPanel.ph !== 'meteor') meteorAmt = 0
+    updateGather(nowP)
+    updateHum(nowP)
     drawWorld(nowP)
     drawFades()
     drawFx(nowP, dt)
     drawHud(nowP)
+  }
+
+  /* ---------- 采集刻度微光（§3.3：25/50/75% 三点，权威刻度越线触发，纯呈现） ---------- */
+  var gathMile = null
+  function updateGather(nowP) {
+    var g = null
+    if (myRole === 'player') { var oe = ents['p' + mySeat]; g = oe && oe.rec.g }
+    if (!g || !ents[g.id]) { gathMile = null; ringFlash = null; return }
+    var m = g.p >= 0.75 ? 3 : g.p >= 0.5 ? 2 : g.p >= 0.25 ? 1 : 0
+    if (gathMile && gathMile.id === g.id && m > gathMile.m) {
+      var node = ents[g.id].rec
+      for (var i = 0; i < 5; i++)
+        spawnP({ k: 'glint', wx: node.x, wy: node.y, a: i / 5 * Math.PI * 2 + m, d: 14000, col: RES_COL[node.k] || WARM, ttl: 320, ttl0: 320 })
+      ringFlash = { id: g.id, at: nowP }
+      snd('ix-gather-tick')
+    }
+    gathMile = { id: g.id, m: m }
+  }
+
+  /* ---------- 居民哼歌音符（§4 社交反馈：可见居民偶发 ♪/♫ 上飘，纯装饰） ---------- */
+  var nextNoteAt = 0
+  function updateHum(nowP) {
+    if (nowP < nextNoteAt) return
+    nextNoteAt = nowP + 400
+    var cand = null, n = 0
+    for (var id in ents) {
+      var e = ents[id], k = e.rec.k
+      if (k !== 'player' && k !== 'npc-wisp') continue
+      if (k === 'player' && e.rec.seat === mySeat) continue
+      var ex = sx(e.rec.x), ey = sy(e.rec.y)
+      if (ex < -20 || ex > W + 20 || ey < -20 || ey > H + 20) continue
+      n++
+      if (decorRng() < 1 / n) cand = e.rec   // 蓄水池抽样：可见者等概率
+    }
+    if (!cand || decorRng() > 0.16) return
+    spawnP({ k: 'note', wx: cand.x, wy: cand.y - 14000, ph: decorRng() * 6.28, ttl: 2000, ttl0: 2000, g: decorRng() < 0.5 ? '♪' : '♫' })
   }
 
   function drawBoot() {
@@ -842,15 +1068,50 @@
     ctx.fillStyle = DIM; ctx.font = '14px ' + FONT; ctx.textAlign = 'center'
     ctx.fillText('正在加入小镇…', W / 2, H / 2)
   }
+  /* ---------- 昼夜渲染（GAMES-56 §3）：渲染层按虚拟时间（dayTick 0..3000）插值，零协议改动。
+     锚点与 game.json residents.sched {duskAt:2100, nightAt:2700} 对齐；2950..3000 破晓渐变防换日硬切。
+     f=夜度（0 昼 → 1 夜），dusk=过渡带峰值（黄昏色叠加量，f=0.5 处最强） */
+  var DUSK_AT = 2100, NIGHT_AT = 2700, DAWN_AT = 2950
+  function dayness(dt) {
+    if (dt < DUSK_AT) return 0
+    if (dt < NIGHT_AT) return (dt - DUSK_AT) / (NIGHT_AT - DUSK_AT)
+    if (dt < DAWN_AT) return 1
+    return (3000 - dt) / (3000 - DAWN_AT)
+  }
+  var skyNow = { f: 0, dusk: 0 }   // 每帧刷新（灯光/星海/音效双轨增益共用）
+  function mixc(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t] }
+  function css(c) { return 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')' }
+  var SKY_DAY_T = [14, 21, 52], SKY_DAY_B = [40, 47, 94]     // 昼：深空蓝微亮
+  var SKY_NGT_T = [5, 8, 22], SKY_NGT_B = [15, 19, 46]       // 夜：更深（星海对比度↑）
+  var SKY_DUSK_T = [26, 20, 64], SKY_DUSK_B = [96, 54, 76]   // 黄昏：地平线暖橙紫
   function bgGradient() {
+    var f = dayness(townPanel.dt || 0)
+    var dusk = f > 0 && f < 1 ? Math.sin(f * Math.PI) : 0
+    skyNow.f = f; skyNow.dusk = dusk
+    var top = mixc(mixc(SKY_DAY_T, SKY_NGT_T, f), SKY_DUSK_T, dusk * 0.35)
+    var bot = mixc(mixc(SKY_DAY_B, SKY_NGT_B, f), SKY_DUSK_B, dusk * 0.5)
     var g = ctx.createLinearGradient(0, 0, 0, H)
-    g.addColorStop(0, '#0B1026'); g.addColorStop(1, '#1A1B3A')
+    g.addColorStop(0, css(top)); g.addColorStop(1, css(bot))
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
   }
+  /* 银河层（夜空星海加强：只在 f>0 显影） */
+  var galaxy = []
+  for (var gi = 0; gi < 64; gi++) galaxy.push({ x: decorRng() * 1600, y: decorRng() * 2700, r: 0.8 + decorRng() * 1.7, tw: decorRng() * 6.28 })
+  /* 流星雨氛围晕影（一次成图，逐帧仅 drawImage） */
+  var vignette = (function () {
+    var c = document.createElement('canvas'); c.width = W; c.height = H
+    var g = c.getContext('2d')
+    var gr = g.createRadialGradient(W / 2, H / 2, H * 0.24, W / 2, H / 2, H * 0.72)
+    gr.addColorStop(0, 'rgba(255,200,120,0)'); gr.addColorStop(1, 'rgba(255,190,110,.55)')
+    g.fillStyle = gr; g.fillRect(0, 0, W, H)
+    return c
+  })()
+  var meteorAmt = 0, stardustAcc = 0   // 流星雨氛围强度（事件进出 400ms 缓动）+ 星尘投放累积器
 
   function drawWorld(nowP) {
     bgGradient()
-    /* 星点双层视差 */
+    /* 星点双层视差（夜度增强：昼 0.85× / 夜 1.25× 亮度）+ 银河层（夜空星海加强） */
+    var sInt = 0.85 + 0.4 * skyNow.f
     for (var L = 0; L < 2; L++) {
       var lay = starLayers[L]
       ctx.fillStyle = L === 0 ? 'rgba(200,210,255,.5)' : 'rgba(230,236,255,.85)'
@@ -859,11 +1120,23 @@
         var px = ((st.x - cam.x * lay.par) % 1600 + 1600) % 1600 - 100
         var py = ((st.y - cam.y * lay.par) % 2700 + 2700) % 2700 - 100
         if (px < -8 || px > W + 8 || py < -8 || py > H + 8) continue
-        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(nowP / 900 + st.tw)
+        ctx.globalAlpha = Math.min(1, (0.55 + 0.45 * Math.sin(nowP / 900 + st.tw)) * sInt)
         ctx.fillRect(px, py, st.r, st.r)
       }
     }
+    if (skyNow.f > 0.02) {
+      ctx.fillStyle = 'rgba(205,222,255,.7)'
+      for (var gy = 0; gy < galaxy.length; gy++) {
+        var gs = galaxy[gy]
+        var gx2 = ((gs.x - cam.x * 0.15) % 1600 + 1600) % 1600 - 100
+        var gy2 = ((gs.y - cam.y * 0.15) % 2700 + 2700) % 2700 - 100
+        if (gx2 < -8 || gx2 > W + 8 || gy2 < -8 || gy2 > H + 8) continue
+        ctx.globalAlpha = Math.min(1, (0.45 + 0.55 * Math.abs(Math.sin(nowP / 1300 + gs.tw))) * skyNow.f * 0.55)
+        ctx.fillRect(gx2, gy2, gs.r, gs.r)
+      }
+    }
     ctx.globalAlpha = 1
+    var lamp = 0.35 + 0.65 * skyNow.f   /* 灯光点亮（昼 0.35 → 夜 1；§3 灯光随夜点亮） */
     /* 分区色块（装饰表达边界） */
     if (world.map.zones) {
       for (var z = 0; z < world.map.zones.length; z++) {
@@ -874,13 +1147,15 @@
         if (z > 0) { ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.moveTo(x0 + .5, y0); ctx.lineTo(x0 + .5, y1); ctx.stroke() }
       }
     }
-    /* 贡献台（镇中心最亮光源） */
+    /* 贡献台（镇中心最亮光源；夜色灯光↑ + 倾倒闪光脉冲 GAMES-56 §1） */
     var dx0 = sx(world.map.deposit.x), dy0 = sy(world.map.deposit.y)
     var pulse = 0.5 + 0.5 * Math.sin(nowP / 600)
-    ctx.drawImage(warmGlow(72, 0.5), dx0 - 72, dy0 - 72)
-    ctx.drawImage(warmGlow(26, 0.35), dx0 - 26, dy0 - 26)
+    ctx.drawImage(warmGlow(72, 0.35 + 0.3 * lamp), dx0 - 72, dy0 - 72)
+    ctx.drawImage(warmGlow(26, 0.25 + 0.25 * lamp), dx0 - 26, dy0 - 26)
+    var db = depositBoost ? Math.max(0, 1 - (nowP - depositBoost) / 400) : 0   // 倾倒闪光（≤80ms 呈现：事件帧起 400ms 衰减）
+    if (db > 0) { ctx.globalAlpha = db; ctx.drawImage(warmGlow(96, 0.5), dx0 - 96, dy0 - 96); ctx.globalAlpha = 1 }
     ctx.fillStyle = WARM2
-    ctx.beginPath(); ctx.arc(dx0, dy0, 7 + pulse * 1.5, 0, 7); ctx.fill()
+    ctx.beginPath(); ctx.arc(dx0, dy0, 7 + pulse * 1.5 + db * 3, 0, 7); ctx.fill()
     ctx.fillStyle = 'rgba(255,217,142,.8)'; ctx.font = '9px ' + FONT; ctx.textAlign = 'center'
     ctx.fillText('贡 献 台', dx0, dy0 + 21)
     /* 建筑与地基蓝图 */
@@ -890,9 +1165,13 @@
       if (!bld) continue
       var bx = sx(sp.x * 1000), by = sy(sp.y * 1000)
       if (bld.built) {
-        ctx.drawImage(warmGlow(40, 0.4), bx - 40, by - 40)
+        ctx.drawImage(warmGlow(40, 0.28 + 0.32 * lamp), bx - 40, by - 40)
         ctx.fillStyle = '#3d3663'
         ctx.fillRect(bx - sp.w / 2, by - sp.h / 2, sp.w, sp.h)
+        /* 亮窗（昼夜：夜色越深窗越亮，§3 灯光点亮） */
+        ctx.fillStyle = 'rgba(255,217,142,' + (0.15 + 0.75 * skyNow.f) + ')'
+        ctx.fillRect(bx - sp.w / 2 + 5, by - sp.h / 2 + 6, 4, 5)
+        ctx.fillRect(bx + sp.w / 2 - 9, by - sp.h / 2 + 6, 4, 5)
         ctx.strokeStyle = WARM; ctx.lineWidth = 1.5
         ctx.strokeRect(bx - sp.w / 2 + .5, by - sp.h / 2 + .5, sp.w - 1, sp.h - 1)
         if (s === 0) { ctx.fillStyle = 'rgba(140,200,255,.6)'; ctx.beginPath(); ctx.arc(bx, by - 6, 4 + pulse * 2, 0, 7); ctx.fill() }
@@ -944,8 +1223,34 @@
           ctx.fillStyle = DIM; ctx.font = '9px ' + FONT; ctx.textAlign = 'center'
           ctx.fillText('被采空', gx, gy - 26)
         } else {
-          ctx.strokeStyle = RES_COL[node.rec.k] || WARM; ctx.lineWidth = 3
+          /* 刻度微光（§3.3/GAMES-56）：25/50/75% 越线 160ms 环加粗+外晕闪 */
+          var rf = ringFlash && ringFlash.id === g.id ? Math.max(0, 1 - (nowP - ringFlash.at) / 160) : 0
+          if (rf > 0) {
+            ctx.globalAlpha = rf * 0.6
+            ctx.strokeStyle = RES_COL[node.rec.k] || WARM; ctx.lineWidth = 2
+            ctx.beginPath(); ctx.arc(gx, gy, 26, -Math.PI / 2, -Math.PI / 2 + g.p * Math.PI * 2); ctx.stroke()
+            ctx.globalAlpha = 1
+          }
+          ctx.strokeStyle = RES_COL[node.rec.k] || WARM; ctx.lineWidth = 3 + rf * 1.8
           ctx.beginPath(); ctx.arc(gx, gy, 20, -Math.PI / 2, -Math.PI / 2 + g.p * Math.PI * 2); ctx.stroke()
+        }
+      }
+    }
+    /* 长按充能环（GAMES-56 §1）：touchstart 当帧起播，350ms 满格；服务端权威环接手后隐去 */
+    if (pressRing) {
+      var pn = ents[pressRing.id]
+      var og = myRole === 'player' && ents['p' + mySeat] && ents['p' + mySeat].rec.g
+      if (!pn || pn.rec.stock <= 0 || nowP - pressRing.t0 > 1200 || (og && og.id === pressRing.id)) pressRing = null
+      else {
+        var frac = Math.min(1, (nowP - pressRing.t0) / LONGPRESS_MS)
+        var prx = sx(pn.rec.x), pry = sy(pn.rec.y)
+        ctx.strokeStyle = 'rgba(232,236,243,.9)'; ctx.lineWidth = 2.5
+        ctx.beginPath(); ctx.arc(prx, pry, 24, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2); ctx.stroke()
+        if (frac >= 1) {   // 满格等待服务端接手：呼吸脉动（不空窗）
+          ctx.globalAlpha = 0.4 + 0.3 * Math.sin(nowP / 70)
+          ctx.strokeStyle = WARM2
+          ctx.beginPath(); ctx.arc(prx, pry, 27, 0, 7); ctx.stroke()
+          ctx.globalAlpha = 1
         }
       }
     }
@@ -1019,7 +1324,10 @@
   function drawWisp(e, nowP) {
     var ip = interp(e, performance.now())
     var x = sx(ip.x), y = sy(ip.y)
+    /* 夜精灵：夜色越深辉光越亮（§3 灯光点点的活点缀） */
+    ctx.globalAlpha = 0.75 + 0.25 * skyNow.f
     ctx.drawImage(glowCanvas(16, 'rgb(159,200,255)', 'rgba(159,200,255,.3)'), x - 16, y - 16)
+    ctx.globalAlpha = 1
     ctx.fillStyle = '#cfe8ff'
     ctx.beginPath(); ctx.arc(x, y, 3 + Math.sin(nowP / 180) * 0.8, 0, 7); ctx.fill()
   }
@@ -1030,15 +1338,20 @@
     var x = sx(pos.x), y = sy(pos.y)
     if (x < -50 || x > W + 50 || y < -50 || y > H + 50) return
     var info = roster[r.seat] || {}
-    ctx.drawImage(warmGlow(20, isMe ? 0.5 : 0.38), x - 20, y - 20) // 提灯暖光
+    /* 提灯暖光（夜色越深灯越暖亮，§3 灯光点亮） */
+    ctx.drawImage(warmGlow(20, (isMe ? 0.42 : 0.32) + 0.16 * skyNow.f), x - 20, y - 20)
+    /* 朝向 80ms 过渡转身（§1.5/GAMES-56）：视线随速度矢量偏移——积分曲线自带平滑 */
     var hue = (r.seat * 47) % 360
     ctx.fillStyle = info.kind === 'bot' ? '#7d84a0' : 'hsl(' + hue + ',60%,68%)'
     ctx.beginPath(); ctx.arc(x, y - 4, 8, Math.PI, 0); ctx.fill()
     ctx.fillRect(x - 8, y - 4, 16, 9)
     ctx.fillStyle = 'rgba(11,16,38,.55)'
     ctx.fillRect(x - 8, y + 2, 16, 3)
+    var fv = isMe && own.ghost ? { x: own.ghost.vx, y: own.ghost.vy } : { x: r.vx || 0, y: r.vy || 0 }
+    var fvm = Math.sqrt(fv.x * fv.x + fv.y * fv.y) || 1
+    var fox = fv.x / fvm * 1.4 * Math.min(1, fvm / 60000), foy = fv.y / fvm * 1.4 * Math.min(1, fvm / 60000)
     ctx.fillStyle = INK
-    ctx.beginPath(); ctx.arc(x - 2.6, y - 4.5, 1.3, 0, 7); ctx.arc(x + 2.6, y - 4.5, 1.3, 0, 7); ctx.fill()
+    ctx.beginPath(); ctx.arc(x - 2.6 + fox, y - 4.5 + foy, 1.3, 0, 7); ctx.arc(x + 2.6 + fox, y - 4.5 + foy, 1.3, 0, 7); ctx.fill()
     if (isMe) { ctx.strokeStyle = 'rgba(232,236,243,.85)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y - 1, 12.5, 0, 7); ctx.stroke() }
     ctx.fillStyle = isMe ? '#fff' : 'rgba(232,236,243,.72)'
     ctx.font = '8px ' + FONT; ctx.textAlign = 'center'
@@ -1052,10 +1365,24 @@
 
   /* ---------- 特效 ---------- */
   function drawFx(nowP, dt) {
-    /* 装饰流星（流星雨期密集） */
-    if (nowP - lastMeteorSpawn > (townPanel.ph === 'meteor' ? 600 : 5000) && decorRng() < 0.5) {
+    /* 装饰流星（流星雨期随氛围强度加密；常态稀疏点缀） */
+    var meteorGap = 5600 - 5000 * meteorAmt
+    if (nowP - lastMeteorSpawn > meteorGap && decorRng() < 0.5) {
       lastMeteorSpawn = nowP
       decorMeteors.push({ x: 60 + decorRng() * (W - 60), y: -10, vx: -1.6 - decorRng(), vy: 3 + decorRng() * 2, ttl: 700 })
+    }
+    /* 流星雨全屏氛围（GAMES-56 §2）：暖金晕影 + 星尘粒子幕（强度 400ms 缓动进出） */
+    if (meteorAmt > 0.01) {
+      ctx.globalAlpha = meteorAmt * 0.38
+      ctx.drawImage(vignette, 0, 0)
+      ctx.globalAlpha = 1
+      stardustAcc += dt
+      var sdGap = 90 / meteorAmt
+      while (stardustAcc > sdGap) {
+        stardustAcc -= sdGap
+        spawnP({ k: 'stardust', x: decorRng() * W, y: -6, vx: -12 - decorRng() * 18, vy: 26 + decorRng() * 30,
+          tw: decorRng() * 6.28, ttl: 2600, ttl0: 2600, col: decorRng() < 0.3 ? '255,215,0' : '190,210,255' })
+      }
     }
     for (var mi = decorMeteors.length - 1; mi >= 0; mi--) {
       var m = decorMeteors[mi]
@@ -1067,13 +1394,18 @@
     for (var i = fx.length - 1; i >= 0; i--) {
       var f = fx[i]
       f.ttl -= dt
-      if (f.ttl <= 0) { fx.splice(i, 1); continue }
+      if (f.ttl <= 0) { if (f.k === 'flybag') bagPulseAt = nowP; fx.splice(i, 1); continue }   // 到包时刻=背包跳动起点（§3.3 计数跳动）
       if (f.k === 'bubble') {
         var pe = ents['p' + f.seat]
         var bx = pe ? sx(interp(pe, performance.now()).x) : W / 2
         var by = pe ? sy(interp(pe, performance.now()).y) : H / 2
         var rise = (2500 - f.ttl) / 2500 * 8
-        bubble(bx, by - 26 - rise, EMOTE_GLYPH[f.id] + ' ' + EMOTE_NAME[f.id], 62, f.to, f.seat)
+        /* 弹出动效（§3.2/GAMES-56 §4）：120ms 0.55→1.17 过冲弹出、140ms 回落定格；
+           对我定向（to===mySeat）描金边+更弹（×1.06） */
+        var age = f.born ? nowP - f.born : 9999
+        var bs = age < 120 ? 0.55 + 0.62 * (age / 120) : age < 260 ? 1.17 - 0.17 * (age - 120) / 140 : 1
+        if (f.to === mySeat) bs *= 1.06
+        bubble(bx, by - 26 - rise, EMOTE_GLYPH[f.id] + ' ' + EMOTE_NAME[f.id], 62, f.to, bs)
       } else if (f.k === 'pop') {
         ctx.globalAlpha = f.ttl / 350
         ctx.fillStyle = f.col
@@ -1099,9 +1431,23 @@
         ctx.fillStyle = WARM2
         star5(sx(f.box[0] + f.box[2] / 2), sy(f.box[1] + f.box[3] / 2), 10 + (800 - f.ttl) / 40)
         ctx.globalAlpha = 1
+      } else if (f.k === 'fireworks') {
+        /* 镇升级烟花（GAMES-56 §2）：镇中心上空三连爆（0/260/520ms），每爆 26 火花+重力飘落 */
+        var tgo = nowP - f.at, ftimes = [0, 260, 520]
+        while (f.burst < 3 && tgo >= ftimes[f.burst]) {
+          var fwX = world.map.deposit.x + (decorRng() * 2 - 1) * 220000
+          var fwY = world.map.deposit.y - 120000 - decorRng() * 160000
+          var fwCol = ['#FFD700', '#7FE8D8', '#C98FE8'][f.burst]
+          for (var fs = 0; fs < 26; fs++) {
+            var fa = fs / 26 * Math.PI * 2, fspeed = (30 + decorRng() * 46) * 1000
+            spawnP({ k: 'spark', wx: fwX, wy: fwY, vx: Math.cos(fa) * fspeed, vy: Math.sin(fa) * fspeed, col: fwCol, g: 60000, ttl: 700 + decorRng() * 250, ttl0: 950 })
+          }
+          f.burst++
+        }
       }
     }
     if (fx.length > 60) fx.splice(0, fx.length - 60)
+    drawParticles(nowP, dt)
     if (toastMsg && performance.now() < toastUntil) {
       var a = Math.min(1, (toastUntil - performance.now()) / 500)
       ctx.fillStyle = 'rgba(11,16,38,' + 0.82 * a + ')'
@@ -1112,20 +1458,24 @@
     if (wheelOpen) drawWheel()
   }
   /* 气泡（§3.2）。to≠null=社交定向气泡（GAMES-55）：带尾标=聊天气泡位预留；
-     to===mySeat 时描金边——居民对我挥手/点头/招揽一眼可辨 */
-  function bubble(x, y, text, w, to) {
+     to===mySeat 时描金边——居民对我挥手/点头/招揽一眼可辨。
+     scale=弹出动效（GAMES-56 §4）：调用方传弹出曲线值，1=定格 */
+  function bubble(x, y, text, w, to, scale) {
+    var s = scale || 1
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s)
     ctx.fillStyle = 'rgba(11,16,38,.88)'
-    roundRect(x - w / 2, y - 11, w, 20, 10); ctx.fill()
+    roundRect(-w / 2, -11, w, 20, 10); ctx.fill()
     ctx.strokeStyle = to != null ? (to === mySeat ? 'rgba(255,215,0,.85)' : 'rgba(255,182,92,.6)') : 'rgba(255,182,92,.4)'
-    ctx.lineWidth = 1
+    ctx.lineWidth = 1 / s   // 描边随缩放补偿（金边细亮不糊）
     ctx.stroke()
     if (to != null) { // 尾标（指向发起者——聊天气泡位）
       ctx.beginPath()
-      ctx.moveTo(x - 3, y + 9); ctx.lineTo(x + 3, y + 9); ctx.lineTo(x, y + 14)
+      ctx.moveTo(-3, 9); ctx.lineTo(3, 9); ctx.lineTo(0, 14)
       ctx.closePath(); ctx.fill()
     }
     ctx.fillStyle = INK; ctx.font = '10px ' + FONT; ctx.textAlign = 'center'
-    ctx.fillText(text, x, y + 2.5)
+    ctx.fillText(text, 0, 2.5)
+    ctx.restore()
   }
   function drawWheel() {
     ctx.fillStyle = 'rgba(11,16,38,.45)'; ctx.fillRect(0, 0, W, H)
@@ -1150,12 +1500,20 @@
   }
   function drawStick() {
     if (!stick.active) return
+    /* 底盘 80ms 淡入 + 死区标记环（GAMES-56 §1：起手即见、死区可视） */
+    var sa = Math.min(1, (performance.now() - stick.since) / 80)
+    ctx.globalAlpha = sa
     ctx.strokeStyle = 'rgba(232,236,243,.22)'; ctx.lineWidth = 2
     ctx.beginPath(); ctx.arc(stick.ox, stick.oy, 34, 0, 7); ctx.stroke()
+    ctx.strokeStyle = 'rgba(232,236,243,.1)'
+    ctx.beginPath(); ctx.arc(stick.ox, stick.oy, DEAD, 0, 7); ctx.stroke()
     var dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.sqrt(dx * dx + dy * dy) || 1
     var m = Math.min(d, 34)
-    ctx.fillStyle = 'rgba(255,182,92,.5)'
-    ctx.beginPath(); ctx.arc(stick.ox + dx / d * m, stick.oy + dy / d * m, 15, 0, 7); ctx.fill()
+    /* 帽填充随速度（阻尼同源向量）：慢=细帽、满=实帽——力度可视 */
+    var mag = Math.min(1, Math.max(0, d - DEAD) / (RAMP_R - DEAD))
+    ctx.fillStyle = 'rgba(255,182,92,' + (0.3 + 0.3 * mag) + ')'
+    ctx.beginPath(); ctx.arc(stick.ox + dx / d * m, stick.oy + dy / d * m, 13 + 2 * mag, 0, 7); ctx.fill()
+    ctx.globalAlpha = 1
   }
 
   /* ---------- HUD（顶栏镇进度 / 圆小地图 / 底栏表情快捷条+背包+贡献，§7） ---------- */
@@ -1258,14 +1616,16 @@
       for (var c = 0; c < (mePanel.b[kinds[bk]] || 0) && seq.length < 6; c++) seq.push(kinds[bk])
     }
     while (seq.length < 6) seq.push(null)
+    var bp = Math.max(0, 1 - (nowP - bagPulseAt) / 180)   /* 到包跳动（§3.3 计数跳动，180ms） */
     for (var s3 = 0; s3 < 6; s3++) {
       var sxp = bx0 + (s3 % 6) * 23, syp = by0 + (s3 / 6 | 0) * 0
       ctx.fillStyle = 'rgba(255,255,255,.07)'
       roundRect(sxp, syp, 20, 20, 5); ctx.fill()
       if (seq[s3]) {
+        if (bp > 0) { ctx.strokeStyle = 'rgba(255,217,142,' + (bp * 0.8) + ')'; ctx.lineWidth = 1; roundRect(sxp + .5, syp + .5, 19, 19, 5); ctx.stroke() }
         ctx.fillStyle = RES_COL[seq[s3]]
-        ctx.beginPath(); ctx.arc(sxp + 10, syp + 8, 4.5, 0, 7); ctx.fill()
-        ctx.font = '7px ' + FONT; ctx.textAlign = 'center'; ctx.fillStyle = INK
+        ctx.beginPath(); ctx.arc(sxp + 10, syp + 8, 4.5 + 1.5 * bp, 0, 7); ctx.fill()
+        ctx.font = (7 + 2 * bp) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.fillStyle = INK
         ctx.fillText('×' + (mePanel.b[seq[s3]] || 0), sxp + 10, syp + 18)
       }
     }
@@ -1399,7 +1759,8 @@
     }
   }, 100)
 
-  /* ---------- 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑） ---------- */
+  /* ---------- 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑；
+     GAMES-56 增补均为加法：jumpDayTick/ev/px/fxLog/poolStat/sndState 只服务 QA 取证） ---------- */
   window.__GAMES_DEBUG__ = {
     events: [],
     start: function () { startDebug() },
@@ -1409,11 +1770,32 @@
     mode: function () { return mode },
     fps: function () { return fpsV },
     perf: function () { return { inputMaxMs: Math.round(inputMaxMs), fps: fpsV } },
+    jumpDayTick: function (v) {   // 昼夜/流星雨取证：跳 dayTick（仅幽灵镇）
+      if (mode !== 'debug') return false
+      townPanel.dt = ((v % 3000) + 3000) % 3000
+      townPanel.ph = townPanel.dt >= 2900 ? 'meteor' : 'calm'
+      return townPanel.dt
+    },
+    ev: function (e) { applyEvent(e) },   // 走生产事件→表现路径（动效起播 ≤80ms 取证）
+    px: function (x, y) { var d = ctx.getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data; return [d[0], d[1], d[2], d[3]] },
+    fxLog: function () { return fxLog.slice() },
+    worldProbe: function () {   // 在线 E2E 取证：自身位/镜头/最近资源节点（只读）
+      var nodes = []
+      for (var id in ents) {
+        var r = ents[id].rec
+        if ((r.k === 'herb' || r.k === 'berry' || r.k === 'ore' || r.k === 'star') && r.stock > 0) nodes.push({ id: id, k: r.k, x: r.x, y: r.y, stock: r.stock })
+      }
+      var me = own.ghost ? { x: own.ghost.x, y: own.ghost.y } : (ents['p' + mySeat] ? { x: ents['p' + mySeat].rec.x, y: ents['p' + mySeat].rec.y } : null)
+      return { me: me, cam: { x: cam.x, y: cam.y }, nodes: nodes, mySeat: mySeat, role: myRole, sky: { f: +skyNow.f.toFixed(3), dusk: +skyNow.dusk.toFixed(3), dt: townPanel.dt } }
+    },
+    poolStat: function () { var n = 0; for (var i = 0; i < POOL_N; i++) if (pool[i].live) n++; return { live: n, cap: POOL_N, spawned: poolSpawned } },
+    sndState: function () { return Snd.state() },
+    sndEnable: function (v) { return Snd.enable(v) },
   }
 
   /* ---------- 启动 ---------- */
   fit()
-  report('boot', { slug: 'mmo-township', version: '1.0.0', mode: 'net' })
+  report('boot', { slug: 'mmo-township', version: '1.1.0', mode: 'net' })
   var q = new URLSearchParams(location.search)
   requestAnimationFrame(render)
   if (q.get('debug') === '1') startDebug()
