@@ -1,0 +1,1058 @@
+/* =====================================================================
+ * 星海小镇 mmo-township 客户端（GAMES-52）——S2 状态同步呈现层（客户端零判定）。
+ * 依赖前置内联：predict.cjs（window.MMOPredict，与服务端同一段移动积分纯函数）
+ * + _shared/net.js（window.GNet，seqInput 模式：input.frame=输入序号）。
+ *
+ * 三类延迟敏感操作三种策略（设计 §5 附 4）：
+ *   自身移动=本地预测 0ms 起步 + ext.ack 和解（≤32px 指数收敛 / >32px 200ms 滑移）；
+ *   他人=120ms 插值缓冲（上限 150ms 只上探不追快）+ 迟到 1 张航位外推（仅呈现）；
+ *   emote=乐观本地即时气泡（服务器只广播）。
+ * 渲染：星海夜色双层星点视差 + 暖光小镇（§7）；375×667 单拇指（拖=摇杆 /
+ * 长按 350ms=采集 / 点自己=表情轮盘 / 点地基=建造钮 / 点镇长=对话）。
+ * HUD 识图特征位：顶栏镇进度条 + 右上圆小地图 + 底栏表情快捷条。
+ * debug 模式（?debug=1）：本地幽灵镇（纯渲染，无网关）——perf-smoke 契约。
+ * ===================================================================== */
+(function () {
+  'use strict'
+
+  var P = window.MMOPredict, G = window.GNet
+  var W = 375, H = 667, TOP_H = 56, BOT_H = 96
+  var WORLD_W = 1400, WORLD_H = 2400
+  var FONT = "-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',Roboto,sans-serif"
+  /* §7 调色板 */
+  var WARM = '#FFB65C', WARM2 = '#FFD98E'
+  var RES_COL = { herb: '#7FE8D8', berry: '#C98FE8', ore: '#6FA8FF', star: '#FFD700' }
+  var RES_RGB = { herb: 'rgb(127,232,216)', berry: 'rgb(201,143,232)', ore: 'rgb(111,168,255)', star: 'rgb(255,215,0)' }
+  var INK = '#E8ECF3', DIM = '#8B93A7'
+  var ZONE_TINT = ['rgba(127,232,216,.045)', 'rgba(201,143,232,.05)', 'rgba(255,182,92,.07)', 'rgba(111,168,255,.05)']
+  var EMOTE_NAME = ['挥手', '大笑', '爱心', '星光', '鼓掌', '瞌睡', '惊讶', '点赞']
+  var EMOTE_GLYPH = ['👋', '😂', '💗', '✨', '👏', '💤', '😮', '👍']
+  var BUILD_NAME = { 'b-fountain': '喷泉', 'b-flower': '花坛', 'b-lighthouse': '灯塔', 'b-starbridge': '星桥', 'b-wishingwell': '许愿池' }
+  var MAYOR_LINES = [
+    '欢迎来到星海小镇，旅行者。',
+    '把资源倒进贡献台，小镇就会成长。',
+    '流星雨要来了——星髓就在城外闪光。',
+    '居民都很友善，除了那几个商人……',
+    '镇子等级越高，住得越热闹。一起努力吧！',
+  ]
+  /* 建筑槽位（与服务端 BUILDINGS 盒一致；客户端仅热区/绘制，判定在服务端） */
+  var SLOT_POS = [
+    { x: 700, y: 1148, w: 44, h: 44 },
+    { x: 600, y: 1260, w: 40, h: 40 },
+    { x: 824, y: 1258, w: 36, h: 36 },
+    { x: 624, y: 1414, w: 48, h: 48 },
+    { x: 802, y: 1410, w: 40, h: 40 },
+  ]
+  var EMOTE_QUICK = [0, 2, 4, 7]   // 底栏 4 常用：挥手/爱心/星光/点赞（§3.2）
+  var LONGPRESS_MS = 350, DEAD = 8
+
+  /* ---------- 上报（宿主钩子优先，本地兜底） ---------- */
+  var telQueue = []
+  function report(event, payload) {
+    try {
+      if (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) window.__GAMES_HOOK__.report(event, payload)
+      else { telQueue.push({ t: Date.now(), event: event, payload: payload }); if (telQueue.length > 50) telQueue.shift() }
+    } catch (e) { /* 上报永不抛 */ }
+    if (window.__GAMES_DEBUG__) window.__GAMES_DEBUG__.events.push({ event: event, payload: payload, at: Date.now() })
+  }
+
+  /* ---------- 画布（安全区 + DPR 夹 1..3） ---------- */
+  var canvas = document.getElementById('cv'), ctx = canvas.getContext('2d')
+  var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1))
+  function fit() {
+    var vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight
+    var scale = Math.min(vw / W, vh / H)
+    canvas.style.width = Math.round(W * scale) + 'px'; canvas.style.height = Math.round(H * scale) + 'px'
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+  window.addEventListener('resize', fit)
+
+  /* ---------- 状态 ---------- */
+  var mode = null                    // 'online' | 'debug'
+  var session = null, mySeat = -1, myRole = null, started = false
+  var world = null
+  var ents = {}                      // id → { rec, buf:[{t,x,y}] }
+  var fades = []                     // 出视野淡出 300ms（§5.2）
+  var own = { ghost: null, rx: 0, ry: 0, pending: [], slide: null }
+  var seqCounter = 0                 // 与 SDK inputSeq 同步自增（每 send 一次）
+  var mePanel = { c: 0, t: 0, b: { herb: 0, berry: 0, ore: 0, star: 0 }, n: 0, g: 0 }
+  var spentLocal = 0                 // 已花（build-done 本地账本；余额=贡献−已花 §1.2）
+  var townPanel = { e: 0, l: 1, d: 1, dt: 0, ph: 'calm' }
+  var dayContrib = {}                // seat → 当日贡献（deposit 事件累计，settle 清零 → 结算榜）
+  var roster = {}
+  var cam = { x: 700, y: 1300 }
+  var lastSnapSeq = -1
+  var fx = []
+  var toastMsg = null, toastUntil = 0
+  var wheelOpen = false, wheelAt = { x: 0, y: 0 }
+  var buildAsk = -1
+  var mayorSay = null, mayorUntil = 0
+  var settleUntil = 0
+  var gatherHold = false, lastGatherId = null, pendingCmd = null
+  var inputMaxMs = 0, lastInputTs = 0
+  var delayMs = 120                  // 插值渲染延迟（自适应上探 150，只上探不追快 §5.3）
+  var quickZones = []                // 底栏快捷条命中区（每帧重建）
+  /* 装饰层专用伪随机（不入判定路径；星海流星点缀） */
+  var decorRng = (function () { var s = 20260927; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 } })()
+
+  /* ---------- 辉光精灵缓存（径向渐变一次成图；键=颜色:半径:α档） ---------- */
+  var glowCache = {}
+  function glowCanvas(r, inner, mid) {
+    var key = r + ':' + inner + ':' + mid
+    if (glowCache[key]) return glowCache[key]
+    var c = document.createElement('canvas'); c.width = c.height = r * 2
+    var g = c.getContext('2d')
+    var gr = g.createRadialGradient(r, r, 0, r, r, r)
+    gr.addColorStop(0, inner); gr.addColorStop(0.5, mid); gr.addColorStop(1, 'rgba(0,0,0,0)')
+    g.fillStyle = gr; g.fillRect(0, 0, r * 2, r * 2)
+    glowCache[key] = c
+    return c
+  }
+  function warmGlow(r, a) { return glowCanvas(r, 'rgba(255,182,92,' + a + ')', 'rgba(255,182,92,' + (a * 0.3) + ')') }
+  function resGlow(k, r) { return glowCanvas(r, RES_RGB[k], RES_RGB[k].replace('rgb', 'rgba').replace(')', ',.3)')) }
+
+  /* ---------- 星点双层视差（远景 0.3× / 近景 0.6×，§7） ---------- */
+  var starLayers = (function () {
+    var layers = [{ par: 0.3, dots: [] }, { par: 0.6, dots: [] }]
+    for (var i = 0; i < 90; i++) layers[0].dots.push({ x: decorRng() * 1600, y: decorRng() * 2700, r: 0.6 + decorRng() * 0.7, tw: decorRng() * 6.28 })
+    for (var j = 0; j < 55; j++) layers[1].dots.push({ x: decorRng() * 1600, y: decorRng() * 2700, r: 0.9 + decorRng() * 1.1, tw: decorRng() * 6.28 })
+    return layers
+  })()
+
+  /* ---------- 世界装载（welcome/state 全量 → 渲染态） ---------- */
+  function loadWorld(state) {
+    world = { map: state.map, buildings: state.buildings || [], collide: (state.collide || []).slice(), town: state.town }
+    ents = {}
+    fades = []
+    for (var id in state.ents) upsertEnt(state.ents[id])
+    townPanel = { e: state.town.exp, l: state.town.level, d: state.town.day, dt: state.town.dayTick, ph: state.town.phase }
+    if (state.sessions && state.sessions[mySeat]) {
+      var s = state.sessions[mySeat]
+      mePanel = { c: s.contrib, t: s.total, b: { herb: s.bag.herb, berry: s.bag.berry, ore: s.bag.ore, star: s.bag.star }, n: s.bagN, g: s.goalMet ? 1 : 0 }
+      spentLocal = s.spent || 0
+    }
+    if (myRole === 'player') {
+      var me = ents['p' + mySeat]
+      if (me) {
+        own.ghost = { x: me.rec.x, y: me.rec.y, vx: me.rec.vx || 0, vy: me.rec.vy || 0, face: 0, mv: 0 }
+        own.rx = me.rec.x; own.ry = me.rec.y
+        own.pending = []; own.slide = null
+        cam.x = me.rec.x / 1000; cam.y = me.rec.y / 1000
+      }
+    }
+  }
+
+  function upsertEnt(rec) {
+    var e = ents[rec.id]
+    if (!e) e = ents[rec.id] = { rec: rec, buf: [] }
+    else e.rec = rec
+    if (rec.k === 'player' || rec.k === 'npc-wisp') {
+      e.buf.push({ t: performance.now(), x: rec.x, y: rec.y })
+      if (e.buf.length > 4) e.buf.shift()
+    }
+    return e
+  }
+
+  /* ---------- 快照应用（二式全量/增量 + leave + ext.aoi/ack/t/me，§5.1/§5.2） ---------- */
+  function applySnapshot(m) {
+    if (!world) return
+    if (lastSnapSeq >= 0 && !m.full && m.snapSeq !== lastSnapSeq + 1) session.sync() // 丢张自救
+    lastSnapSeq = m.snapSeq
+    var i
+    if (m.full) {
+      ents = {}
+      for (i = 0; i < m.ents.length; i++) upsertEnt(m.ents[i])
+    } else {
+      for (i = 0; i < m.ents.length; i++) upsertEnt(m.ents[i])
+      if (m.leave) for (i = 0; i < m.leave.length; i++) {
+        var gone = ents[m.leave[i]]
+        if (gone) { fades.push({ rec: gone.rec, at: performance.now() }); delete ents[m.leave[i]] }
+      }
+    }
+    if (m.ext) {
+      if (m.ext.t) townPanel = { e: m.ext.t.e, l: m.ext.t.l, d: m.ext.t.d, dt: m.ext.t.dt, ph: m.ext.t.ph }
+      if (m.ext.me) mePanel = { c: m.ext.me.c, t: m.ext.me.t, b: m.ext.me.b, n: m.ext.me.n, g: m.ext.me.g }
+      if (myRole === 'player' && typeof m.ext.ack === 'number') {
+        var meRec = null
+        for (i = 0; i < m.ents.length; i++) if (m.ents[i].id === 'p' + mySeat) { meRec = m.ents[i]; break }
+        if (meRec) reconcile(meRec, m.ext.ack)
+      }
+    }
+    if (m.events) for (i = 0; i < m.events.length; i++) applyEvent(m.events[i])
+  }
+
+  /* 预测和解（§5.5）：丢弃 ack 前历史，从权威位重放未确认输入 */
+  function reconcile(meRec, ack) {
+    own.pending = own.pending.filter(function (p) { return p.seq > ack })
+    var gh = { x: meRec.x, y: meRec.y, vx: meRec.vx || 0, vy: meRec.vy || 0, face: 0, mv: 0 }
+    for (var i = 0; i < own.pending.length; i++) P.stepAvatar(gh, own.pending[i].mx, own.pending[i].my, world.collide)
+    if (own.ghost) {
+      var d = Math.sqrt((gh.x - own.ghost.x) * (gh.x - own.ghost.x) + (gh.y - own.ghost.y) * (gh.y - own.ghost.y))
+      own.ghost = gh
+      if (d > 32000 && !own.slide) own.slide = { fx: own.rx, fy: own.ry, until: performance.now() + 200 } // >32px：200ms 滑移不闪跳
+    } else own.ghost = gh
+  }
+
+  /* ---------- 事件 → 表现（零 diff 触发 juice，§5.1） ---------- */
+  function applyEvent(ev) {
+    if (ev.k === 'emote') {
+      if (ev.seat !== mySeat) {
+        var p = ents['p' + ev.seat]
+        if (p) fx.push({ k: 'bubble', seat: ev.seat, id: ev.id, ttl: 2500 })
+      } // 自己乐观已弹
+    } else if (ev.k === 'gather-done') {
+      var site = ents[ev.entId]
+      if (site) fx.push({ k: 'pop', x: site.rec.x, y: site.rec.y, col: RES_COL[ev.res], ttl: 350 })
+      if (ev.seat === mySeat) fx.push({ k: 'flybag', res: ev.res, ttl: 300 })
+    } else if (ev.k === 'deposit') {
+      dayContrib[ev.seat] = (dayContrib[ev.seat] || 0) + ev.n
+      fx.push({ k: 'rise', x: world.map.deposit.x, y: world.map.deposit.y, n: ev.n, ttl: 1100 })
+    } else if (ev.k === 'levelup') {
+      toast('小镇升级 Lv' + ev.level + '！')
+      fx.push({ k: 'flash', ttl: 900 })
+    } else if (ev.k === 'meteor') {
+      toast('流星雨来了——星髓在城外闪光！')
+    } else if (ev.k === 'settle') {
+      showSettle(ev.day)
+      report('levelEnd', { win: mePanel.g ? 1 : 0, score: mePanel.c, reason: 'day-end' })
+    } else if (ev.k === 'build-done') {
+      var b = world.buildings[ev.slot]
+      if (b) {
+        b.built = true; b.by = ev.seat
+        if (ev.seat === mySeat) spentLocal += b.cost
+        if (ev.box) world.collide.push({ x: ev.box[0], y: ev.box[1], w: ev.box[2], h: ev.box[3] }) // 碰撞表增量（§2.1）
+        fx.push({ k: 'sparkle', box: ev.box, ttl: 800 })
+      }
+      toast((b ? BUILD_NAME[b.kind] : '建筑') + '落成！')
+    }
+  }
+  function toast(msg) { toastMsg = msg; toastUntil = performance.now() + 2600 }
+  function showSettle(day) {
+    var rank = Object.keys(dayContrib).map(function (s) { return { seat: Number(s), n: dayContrib[s] } })
+      .sort(function (a, b) { return b.n - a.n }).slice(0, 3)
+    var met = mePanel.g
+    var el = document.getElementById('settle')
+    el.style.display = 'flex'
+    el.innerHTML = '<div class="sbox"><div class="stitle">第 ' + day + ' 镇日 · 结算</div>' +
+      '<div class="srank">' + (rank.length ? rank.map(function (r, i) {
+        return '<div class="srow' + (r.seat === mySeat ? ' me' : '') + '"><span>' + (i + 1) + '. ' + esc(nameOf(r.seat)) + '</span><b>+' + r.n + '</b></div>'
+      }).join('') : '<div class="srow"><span>今天没人倾倒……</span><b></b></div>') + '</div>' +
+      '<div class="sme">' + (met ? '🎖 镇民嘉许 · 贡献 ' + mePanel.c + '（≥120）' : '贡献 ' + mePanel.c + ' · 明天再努力') + '</div></div>'
+    settleUntil = performance.now() + 5000
+    dayContrib = {}
+  }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] }) }
+  function nameOf(seat) { return (roster[seat] && roster[seat].name) || '居民' + seat }
+
+  /* ---------- 触摸（§1.5 单拇指） ---------- */
+  var stick = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 }
+  var touch = { id: -1, sx: 0, sy: 0, t0: 0, moved: false, holdTimer: 0 }
+
+  function currentInput() {
+    var mx = 0, my = 0
+    if (stick.active) {
+      var dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.sqrt(dx * dx + dy * dy)
+      if (d > DEAD) { var m = Math.min(100, (d - DEAD) * 2.2); mx = Math.round(dx / d * m); my = Math.round(dy / d * m) }
+    }
+    return { mx: mx, my: my }
+  }
+  function toCanvas(t) {
+    var r = canvas.getBoundingClientRect()
+    return { x: (t.clientX - r.left) / r.width * W, y: (t.clientY - r.top) / r.height * H }
+  }
+  function toWorld(sx, sy) { // drawWorld sx/sy 的逆变换
+    return { x: (sx + cam.x - W / 2) * 1000, y: (sy + cam.y - H / 2) * 1000 }
+  }
+  function hitNode(wx, wy) { // 资源节点热区（55px，长按起采目标）
+    var best = null, bd = 55 * 55 * 1e6
+    for (var id in ents) {
+      var e = ents[id], k = e.rec.k
+      if (k !== 'herb' && k !== 'berry' && k !== 'ore' && k !== 'star') continue
+      var d = (e.rec.x - wx) * (e.rec.x - wx) + (e.rec.y - wy) * (e.rec.y - wy)
+      if (d < bd) { bd = d; best = e.rec }
+    }
+    return best
+  }
+  function markInput(ts) { if (ts) lastInputTs = ts }
+
+  canvas.addEventListener('touchstart', function (ev) {
+    ev.preventDefault(); markInput(ev.timeStamp)
+    var t = ev.changedTouches[0], p = toCanvas(t)
+    if (ev.changedTouches.length > 1) return
+    touch.id = t.identifier; touch.sx = p.x; touch.sy = p.y; touch.t0 = performance.now(); touch.moved = false
+    var node = hitNode(toWorld(p.x, p.y).x, toWorld(p.x, p.y).y)
+    if (node && node.stock > 0) {
+      touch.holdTimer = setTimeout(function () { // 长按 350ms 起采（防误触 §3.3）
+        if (touch.moved) return
+        gatherHold = true; lastGatherId = node.id
+        sendCmd({ k: 'gather', entId: node.id, phase: 'start' })
+      }, LONGPRESS_MS)
+    } else touch.holdTimer = 0
+    if (!stick.active) { stick.active = true; stick.id = t.identifier; stick.ox = p.x; stick.oy = p.y; stick.x = p.x; stick.y = p.y }
+  }, { passive: false })
+
+  canvas.addEventListener('touchmove', function (ev) {
+    ev.preventDefault()
+    for (var i = 0; i < ev.changedTouches.length; i++) {
+      var t = ev.changedTouches[i], p = toCanvas(t)
+      if (stick.active && t.identifier === stick.id) { stick.x = p.x; stick.y = p.y }
+      if (t.identifier === touch.id && !touch.moved) {
+        var d = Math.sqrt((p.x - touch.sx) * (p.x - touch.sx) + (p.y - touch.sy) * (p.y - touch.sy))
+        if (d > 12) {
+          touch.moved = true
+          if (touch.holdTimer) { clearTimeout(touch.holdTimer); touch.holdTimer = 0 }
+          stopGather()
+        }
+      }
+    }
+  }, { passive: false })
+
+  function stopGather() {
+    if (gatherHold && lastGatherId) sendCmd({ k: 'gather', entId: lastGatherId, phase: 'stop' })
+    gatherHold = false; lastGatherId = null
+  }
+  function endTouch(ev) {
+    for (var i = 0; i < ev.changedTouches.length; i++) {
+      var t = ev.changedTouches[i]
+      if (stick.active && t.identifier === stick.id) { stick.active = false; stick.id = -1 }
+      if (t.identifier === touch.id) {
+        if (touch.holdTimer) { clearTimeout(touch.holdTimer); touch.holdTimer = 0 }
+        if (gatherHold) stopGather()
+        else if (!touch.moved && performance.now() - touch.t0 < LONGPRESS_MS) onTap(toCanvas(t))
+        touch.id = -1
+      }
+    }
+  }
+  canvas.addEventListener('touchend', endTouch)
+  canvas.addEventListener('touchcancel', endTouch)
+
+  function sendCmd(cmd) { pendingCmd = cmd } // 随下一次 10Hz 上报发出（同频心跳 §5.1）
+
+  function onTap(p) {
+    markInput(performance.now())
+    /* 1. 底栏快捷表情 + 轮盘钮（HUD 命中区） */
+    for (var i = 0; i < quickZones.length; i++) {
+      var q = quickZones[i]
+      if ((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) <= q.r * q.r) {
+        if (q.wheel) { wheelOpen = !wheelOpen; wheelAt = { x: W / 2, y: H / 2 - 60 }; return }
+        sendCmd({ k: 'emote', id: q.id })
+        fx.push({ k: 'bubble', seat: mySeat, id: q.id, ttl: 2500 }) // 乐观即时（§3.2）
+        return
+      }
+    }
+    /* 2. 建造确认浮钮 */
+    if (buildAsk >= 0 && hitBuildAsk(p)) {
+      var b = world.buildings[buildAsk]
+      if (b && !b.built) sendCmd({ k: 'build', slot: buildAsk })
+      buildAsk = -1
+      return
+    }
+    /* 3. 表情轮盘选档 */
+    if (wheelOpen) {
+      var pick = wheelPick(p)
+      wheelOpen = false
+      if (pick >= 0) {
+        sendCmd({ k: 'emote', id: pick })
+        fx.push({ k: 'bubble', seat: mySeat, id: pick, ttl: 2500 })
+      }
+      return
+    }
+    var wpt = toWorld(p.x, p.y)
+    /* 4. 自己 avatar（大热区）→ 表情轮盘 */
+    if (myRole === 'player' && own.ghost) {
+      var dm = Math.sqrt((wpt.x - own.rx) * (wpt.x - own.rx) + (wpt.y - own.ry) * (wpt.y - own.ry))
+      if (dm < 44000) { wheelOpen = true; wheelAt = { x: p.x, y: p.y }; return }
+    }
+    /* 5. 镇长 → 对话 */
+    var mayor = ents['npc-mayor']
+    if (mayor && Math.sqrt((wpt.x - mayor.rec.x) * (wpt.x - mayor.rec.x) + (wpt.y - mayor.rec.y) * (wpt.y - mayor.rec.y)) < 50000) {
+      mayorSay = MAYOR_LINES[(decorRng() * MAYOR_LINES.length) | 0]; mayorUntil = performance.now() + 3000
+      return
+    }
+    /* 6. 建筑地基 → 建造确认浮钮 */
+    for (var s = 0; s < SLOT_POS.length; s++) {
+      var sp = SLOT_POS[s]
+      var bld = world.buildings[s]
+      if (bld && bld.built) continue
+      if (Math.abs(wpt.x / 1000 - sp.x) < 46 && Math.abs(wpt.y / 1000 - sp.y) < 46) { buildAsk = buildAsk === s ? -1 : s; return }
+    }
+    buildAsk = -1; mayorSay = null
+  }
+  function wheelPick(p) { // 8 档环形 tap-zone（drawWheel 同角度布局）
+    var dx = p.x - wheelAt.x, dy = p.y - wheelAt.y
+    var d = Math.sqrt(dx * dx + dy * dy)
+    if (d < 26 || d > 130) return -1
+    var ang = Math.atan2(dy, dx) + Math.PI / 2 // 0 号在正上
+    var norm = ((ang % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
+    return Math.round(norm / (Math.PI / 4)) % 8
+  }
+  function hitBuildAsk(p) {
+    var ap = SLOT_POS[buildAsk]
+    var ax = sx(ap.x * 1000), ay = sy(ap.y * 1000) - 36
+    return Math.abs(p.x - ax) < 40 && Math.abs(p.y - ay) < 14
+  }
+
+  /* ---------- 10Hz 输入上报 + 预测步进（与服务器同式积分，§5.5） ---------- */
+  var predAcc = 0
+  function netTick(dt) {
+    if (mode !== 'online' || !session || session.role !== 'player' || !started) return
+    predAcc += dt
+    while (predAcc >= 100) {
+      predAcc -= 100
+      var inp = currentInput()
+      var msg = { mx: inp.mx, my: inp.my }
+      if (pendingCmd) { msg.cmd = pendingCmd; pendingCmd = null }
+      session.sendInput(msg)               // seqInput：SDK 标 seq
+      own.pending.push({ seq: seqCounter++, mx: inp.mx, my: inp.my })
+      if (own.pending.length > 12) own.pending.shift()
+      if (own.ghost) P.stepAvatar(own.ghost, inp.mx, inp.my, world.collide)
+    }
+  }
+
+  /* ---------- 他人插值（§5.3：缓冲 + 迟到 1 张外推，仅呈现） ---------- */
+  function interp(e, nowP) {
+    var buf = e.buf
+    if (!buf.length) return { x: e.rec.x, y: e.rec.y }
+    var rt = nowP - delayMs
+    if (rt <= buf[0].t) return { x: buf[0].x, y: buf[0].y }
+    for (var i = 1; i < buf.length; i++) {
+      if (buf[i].t >= rt) {
+        var a = buf[i - 1], b = buf[i], f = (rt - a.t) / Math.max(1, b.t - a.t)
+        return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }
+      }
+    }
+    var last = buf[buf.length - 1]
+    var over = Math.min(100, rt - last.t)
+    return { x: last.x + (e.rec.vx || 0) / 10 * over / 100, y: last.y + (e.rec.vy || 0) / 10 * over / 100 }
+  }
+
+  /* ---------- 渲染主循环 ---------- */
+  var fpsN = 0, fpsAt = 0, fpsV = 0, lastFrameAt = 0
+  var decorMeteors = [], lastMeteorSpawn = 0
+
+  function sx(wx) { return wx / 1000 - cam.x + W / 2 }
+  function sy(wy) { return wy / 1000 - cam.y + H / 2 }
+
+  function render(nowP) {
+    requestAnimationFrame(render)
+    var dt = Math.min(50, nowP - (lastFrameAt || nowP)); lastFrameAt = nowP
+    fpsN++
+    if (nowP - fpsAt > 500) { fpsV = Math.round(fpsN * 1000 / (nowP - fpsAt)); fpsN = 0; fpsAt = nowP }
+    if (lastInputTs) { inputMaxMs = Math.max(inputMaxMs, nowP - lastInputTs); lastInputTs = 0 }
+    netTick(dt)
+    if (settleUntil && performance.now() > settleUntil) {
+      settleUntil = 0
+      document.getElementById('settle').style.display = 'none'
+    }
+    for (var f = fades.length - 1; f >= 0; f--) if (nowP - fades[f].at > 300) fades.splice(f, 1)
+    if (!world) { drawBoot(); return }
+
+    /* 自身呈现位（预测和解平滑：≤32px 指数收敛，>32px 滑移） */
+    if (own.ghost && myRole === 'player') {
+      var tx = own.ghost.x, ty = own.ghost.y
+      if (own.slide) {
+        if (nowP < own.slide.until) {
+          var fr = 1 - (own.slide.until - nowP) / 200
+          tx = own.slide.fx + (own.ghost.x - own.slide.fx) * fr
+          ty = own.slide.fy + (own.ghost.y - own.slide.fy) * fr
+        } else own.slide = null
+      }
+      var ex = tx - own.rx, ey = ty - own.ry
+      if (ex * ex + ey * ey > 32000 * 32000) { own.rx = tx; own.ry = ty }
+      else { own.rx += ex * 0.25; own.ry += ey * 0.25 }
+    }
+    /* 镜头：角色居中、世界滚动（§1.5） */
+    var tgt = (myRole === 'player' && own.ghost) ? { x: own.rx / 1000, y: own.ry / 1000 } : { x: world.map.deposit.x / 1000, y: world.map.deposit.y / 1000 }
+    cam.x += (tgt.x - cam.x) * Math.min(1, dt / 130)
+    cam.y += (tgt.y - cam.y) * Math.min(1, dt / 130)
+    cam.x = Math.max(W / 2, Math.min(WORLD_W - W / 2, cam.x))
+    cam.y = Math.max(H / 2, Math.min(WORLD_H - H / 2, cam.y))
+    /* 插值缓冲自适应（饿→上探至 150ms，只上探不追快 §5.3） */
+    if (mode === 'online' && delayMs < 150) {
+      var fed = false
+      for (var id0 in ents) {
+        var e0 = ents[id0]
+        if (e0.rec.k === 'player' && e0.buf.length && nowP - delayMs < e0.buf[e0.buf.length - 1].t) { fed = true; break }
+      }
+      if (!fed) delayMs = Math.min(150, delayMs + 0.4)
+    }
+
+    drawWorld(nowP)
+    drawFades()
+    drawFx(nowP, dt)
+    drawHud(nowP)
+  }
+
+  function drawBoot() {
+    bgGradient()
+    ctx.fillStyle = DIM; ctx.font = '14px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText('正在加入小镇…', W / 2, H / 2)
+  }
+  function bgGradient() {
+    var g = ctx.createLinearGradient(0, 0, 0, H)
+    g.addColorStop(0, '#0B1026'); g.addColorStop(1, '#1A1B3A')
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+  }
+
+  function drawWorld(nowP) {
+    bgGradient()
+    /* 星点双层视差 */
+    for (var L = 0; L < 2; L++) {
+      var lay = starLayers[L]
+      ctx.fillStyle = L === 0 ? 'rgba(200,210,255,.5)' : 'rgba(230,236,255,.85)'
+      for (var i = 0; i < lay.dots.length; i++) {
+        var st = lay.dots[i]
+        var px = ((st.x - cam.x * lay.par) % 1600 + 1600) % 1600 - 100
+        var py = ((st.y - cam.y * lay.par) % 2700 + 2700) % 2700 - 100
+        if (px < -8 || px > W + 8 || py < -8 || py > H + 8) continue
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(nowP / 900 + st.tw)
+        ctx.fillRect(px, py, st.r, st.r)
+      }
+    }
+    ctx.globalAlpha = 1
+    /* 分区色块（装饰表达边界） */
+    if (world.map.zones) {
+      for (var z = 0; z < world.map.zones.length; z++) {
+        var zn = world.map.zones[z]
+        var x0 = sx(zn.x), y0 = sy(zn.y), x1 = sx(zn.x + zn.w), y1 = sy(zn.y + zn.h)
+        ctx.fillStyle = ZONE_TINT[zn.id] || 'rgba(255,255,255,.03)'
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+        if (z > 0) { ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); ctx.moveTo(x0 + .5, y0); ctx.lineTo(x0 + .5, y1); ctx.stroke() }
+      }
+    }
+    /* 贡献台（镇中心最亮光源） */
+    var dx0 = sx(world.map.deposit.x), dy0 = sy(world.map.deposit.y)
+    var pulse = 0.5 + 0.5 * Math.sin(nowP / 600)
+    ctx.drawImage(warmGlow(72, 0.5), dx0 - 72, dy0 - 72)
+    ctx.drawImage(warmGlow(26, 0.35), dx0 - 26, dy0 - 26)
+    ctx.fillStyle = WARM2
+    ctx.beginPath(); ctx.arc(dx0, dy0, 7 + pulse * 1.5, 0, 7); ctx.fill()
+    ctx.fillStyle = 'rgba(255,217,142,.8)'; ctx.font = '9px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText('贡 献 台', dx0, dy0 + 21)
+    /* 建筑与地基蓝图 */
+    for (var s = 0; s < SLOT_POS.length; s++) {
+      var sp = SLOT_POS[s]
+      var bld = world.buildings[s]
+      if (!bld) continue
+      var bx = sx(sp.x * 1000), by = sy(sp.y * 1000)
+      if (bld.built) {
+        ctx.drawImage(warmGlow(40, 0.4), bx - 40, by - 40)
+        ctx.fillStyle = '#3d3663'
+        ctx.fillRect(bx - sp.w / 2, by - sp.h / 2, sp.w, sp.h)
+        ctx.strokeStyle = WARM; ctx.lineWidth = 1.5
+        ctx.strokeRect(bx - sp.w / 2 + .5, by - sp.h / 2 + .5, sp.w - 1, sp.h - 1)
+        if (s === 0) { ctx.fillStyle = 'rgba(140,200,255,.6)'; ctx.beginPath(); ctx.arc(bx, by - 6, 4 + pulse * 2, 0, 7); ctx.fill() }
+        ctx.fillStyle = WARM2; ctx.font = '8px ' + FONT; ctx.textAlign = 'center'
+        ctx.fillText(BUILD_NAME[bld.kind], bx, by + sp.h / 2 + 9)
+      } else {
+        var lv = bld.lv || (s + 1)
+        var cost = bld.cost || 0
+        ctx.strokeStyle = 'rgba(127,232,216,' + (0.3 + 0.25 * Math.sin(nowP / 500 + s)) + ')'
+        ctx.setLineDash([4, 3]); ctx.lineWidth = 1
+        ctx.strokeRect(bx - sp.w / 2, by - sp.h / 2, sp.w, sp.h)
+        ctx.setLineDash([])
+        ctx.font = '8px ' + FONT; ctx.textAlign = 'center'
+        if (townPanel.l >= lv) { ctx.fillStyle = 'rgba(127,232,216,.85)'; ctx.fillText('+' + cost, bx, by + 3) }
+        else { ctx.fillStyle = 'rgba(139,147,167,.6)'; ctx.fillText('Lv' + lv, bx, by + 3) }
+      }
+    }
+    /* 建造确认浮钮 */
+    if (buildAsk >= 0 && world.buildings[buildAsk] && !world.buildings[buildAsk].built) {
+      var b2 = world.buildings[buildAsk]
+      var ap = SLOT_POS[buildAsk]
+      var ax = sx(ap.x * 1000), ay = sy(ap.y * 1000) - 36
+      var can = townPanel.l >= b2.lv && (mePanel.c + 0) - spentLocal >= 0 || balance() >= b2.cost
+      ctx.fillStyle = balance() >= b2.cost && townPanel.l >= b2.lv ? '#2ea88a' : '#5b657d'
+      roundRect(ax - 42, ay - 12, 84, 24, 12); ctx.fill()
+      ctx.fillStyle = '#fff'; ctx.font = '10px ' + FONT; ctx.textAlign = 'center'
+      ctx.fillText('建造 ' + BUILD_NAME[b2.kind] + ' ' + b2.cost, ax, ay + 4)
+    }
+    /* 实体 */
+    for (var eid in ents) {
+      var e = ents[eid]
+      if (!e || !e.rec) continue
+      var k = e.rec.k
+      if (k === 'herb' || k === 'berry' || k === 'ore' || k === 'star') drawSite(e, nowP)
+      else if (k === 'npc-mayor') drawMayor(e, nowP)
+      else if (k === 'npc-wisp') drawWisp(e, nowP)
+      else if (k === 'player') drawPlayer(e, nowP)
+    }
+    /* 采集进度环（服务端权威刻度；§3.3 被采空变灰） */
+    if (myRole === 'player') {
+      var oe = ents['p' + mySeat]
+      var g = oe && oe.rec.g
+      if (g && ents[g.id]) {
+        var node = ents[g.id]
+        var gx = sx(node.rec.x), gy = sy(node.rec.y)
+        if (node.rec.stock <= 0) {
+          ctx.strokeStyle = 'rgba(139,147,167,.8)'; ctx.lineWidth = 2
+          ctx.beginPath(); ctx.arc(gx, gy, 20, 0, 7); ctx.stroke()
+          ctx.fillStyle = DIM; ctx.font = '9px ' + FONT; ctx.textAlign = 'center'
+          ctx.fillText('被采空', gx, gy - 26)
+        } else {
+          ctx.strokeStyle = RES_COL[node.rec.k] || WARM; ctx.lineWidth = 3
+          ctx.beginPath(); ctx.arc(gx, gy, 20, -Math.PI / 2, -Math.PI / 2 + g.p * Math.PI * 2); ctx.stroke()
+        }
+      }
+    }
+    drawStick()
+  }
+  function balance() { return mePanel.t - spentLocal } // 余额=累计贡献−已花（§1.2；ext.me.t 随流权威）
+
+  function drawFades() { // 出视野淡出（300ms）
+    for (var i = 0; i < fades.length; i++) {
+      var f = fades[i]
+      ctx.globalAlpha = Math.max(0, 1 - (performance.now() - f.at) / 300) * 0.6
+      ctx.fillStyle = '#7d84a0'
+      ctx.beginPath(); ctx.arc(sx(f.rec.x), sy(f.rec.y), 6, 0, 7); ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  }
+
+  function drawSite(e, nowP) {
+    var r = e.rec, k = r.k
+    var x = sx(r.x), y = sy(r.y)
+    if (x < -60 || x > W + 60 || y < -60 || y > H + 60) return
+    var pulse = 0.5 + 0.5 * Math.sin(nowP / 500 + (r.x % 1000) / 300)
+    var empty = r.stock <= 0
+    ctx.globalAlpha = empty ? 0.25 : 1
+    ctx.drawImage(resGlow(k, k === 'star' ? 30 : 22), x - (k === 'star' ? 30 : 22), y - (k === 'star' ? 30 : 22))
+    if (k === 'herb') {
+      ctx.strokeStyle = RES_COL.herb; ctx.lineWidth = 2
+      for (var i = 0; i < Math.max(1, r.stock); i++) {
+        ctx.beginPath(); ctx.moveTo(x - 8 + i * 8, y + 7)
+        ctx.quadraticCurveTo(x - 6 + i * 8, y - 8 - pulse * 3, x - 2 + i * 8, y - 10 - pulse * 3); ctx.stroke()
+      }
+    } else if (k === 'berry') {
+      for (var j = 0; j < Math.max(1, r.stock); j++) {
+        ctx.fillStyle = RES_COL.berry
+        ctx.beginPath(); ctx.arc(x - 6 + j * 12, y, 5, 0, 7); ctx.fill()
+        ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(x - 8 + j * 12, y - 7, 2, 2)
+      }
+    } else if (k === 'ore') {
+      ctx.fillStyle = RES_COL.ore
+      for (var m = 0; m < Math.max(1, r.stock); m++) {
+        ctx.beginPath(); ctx.moveTo(x - 10 + m * 14, y + 7); ctx.lineTo(x - 4 + m * 14, y - 7 - pulse * 2); ctx.lineTo(x + 3 + m * 14, y + 7); ctx.closePath(); ctx.fill()
+      }
+    } else {
+      ctx.fillStyle = '#FFD700'
+      star5(x, y, 6 + pulse * 2.5)
+    }
+    ctx.globalAlpha = 1
+  }
+  function star5(x, y, r) {
+    ctx.beginPath()
+    for (var i = 0; i < 10; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r
+      var px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)
+    }
+    ctx.closePath(); ctx.fill()
+  }
+
+  function drawMayor(e, nowP) {
+    var x = sx(e.rec.x), y = sy(e.rec.y)
+    ctx.drawImage(warmGlow(24, 0.35), x - 24, y - 24)
+    ctx.fillStyle = '#c9b8ff'
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill()
+    ctx.fillStyle = '#2b2350'
+    ctx.beginPath(); ctx.arc(x - 3, y - 2, 1.4, 0, 7); ctx.arc(x + 3, y - 2, 1.4, 0, 7); ctx.fill()
+    ctx.fillStyle = WARM2; ctx.font = '8px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText('镇长', x, y + 18)
+    if (mayorSay && performance.now() < mayorUntil) bubble(x, y - 22, mayorSay, 170)
+    else mayorSay = null
+  }
+  function drawWisp(e, nowP) {
+    var ip = interp(e, performance.now())
+    var x = sx(ip.x), y = sy(ip.y)
+    ctx.drawImage(glowCanvas(16, 'rgb(159,200,255)', 'rgba(159,200,255,.3)'), x - 16, y - 16)
+    ctx.fillStyle = '#cfe8ff'
+    ctx.beginPath(); ctx.arc(x, y, 3 + Math.sin(nowP / 180) * 0.8, 0, 7); ctx.fill()
+  }
+  function drawPlayer(e, nowP) {
+    var r = e.rec
+    var isMe = myRole === 'player' && r.seat === mySeat
+    var pos = isMe ? { x: own.rx, y: own.ry } : interp(e, performance.now())
+    var x = sx(pos.x), y = sy(pos.y)
+    if (x < -50 || x > W + 50 || y < -50 || y > H + 50) return
+    var info = roster[r.seat] || {}
+    ctx.drawImage(warmGlow(20, isMe ? 0.5 : 0.38), x - 20, y - 20) // 提灯暖光
+    var hue = (r.seat * 47) % 360
+    ctx.fillStyle = info.kind === 'bot' ? '#7d84a0' : 'hsl(' + hue + ',60%,68%)'
+    ctx.beginPath(); ctx.arc(x, y - 4, 8, Math.PI, 0); ctx.fill()
+    ctx.fillRect(x - 8, y - 4, 16, 9)
+    ctx.fillStyle = 'rgba(11,16,38,.55)'
+    ctx.fillRect(x - 8, y + 2, 16, 3)
+    ctx.fillStyle = INK
+    ctx.beginPath(); ctx.arc(x - 2.6, y - 4.5, 1.3, 0, 7); ctx.arc(x + 2.6, y - 4.5, 1.3, 0, 7); ctx.fill()
+    if (isMe) { ctx.strokeStyle = 'rgba(232,236,243,.85)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y - 1, 12.5, 0, 7); ctx.stroke() }
+    ctx.fillStyle = isMe ? '#fff' : 'rgba(232,236,243,.72)'
+    ctx.font = '8px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText(((info.name || '居民' + r.seat) + '').slice(0, 6), x, y + 17)
+    if (!isMe && r.g && ents[r.g.id]) { // 他人采集环
+      var node = ents[r.g.id]
+      ctx.strokeStyle = 'rgba(232,236,243,.4)'; ctx.lineWidth = 2
+      ctx.beginPath(); ctx.arc(sx(node.rec.x), sy(node.rec.y), 16, -Math.PI / 2, -Math.PI / 2 + r.g.p * Math.PI * 2); ctx.stroke()
+    }
+  }
+
+  /* ---------- 特效 ---------- */
+  function drawFx(nowP, dt) {
+    /* 装饰流星（流星雨期密集） */
+    if (nowP - lastMeteorSpawn > (townPanel.ph === 'meteor' ? 600 : 5000) && decorRng() < 0.5) {
+      lastMeteorSpawn = nowP
+      decorMeteors.push({ x: 60 + decorRng() * (W - 60), y: -10, vx: -1.6 - decorRng(), vy: 3 + decorRng() * 2, ttl: 700 })
+    }
+    for (var mi = decorMeteors.length - 1; mi >= 0; mi--) {
+      var m = decorMeteors[mi]
+      m.x += m.vx * dt / 16; m.y += m.vy * dt / 16; m.ttl -= dt
+      if (m.ttl <= 0 || m.y > H + 20) { decorMeteors.splice(mi, 1); continue }
+      ctx.strokeStyle = 'rgba(255,240,200,' + Math.min(1, m.ttl / 400) + ')'; ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(m.x - m.vx * 14, m.y - m.vy * 14); ctx.stroke()
+    }
+    for (var i = fx.length - 1; i >= 0; i--) {
+      var f = fx[i]
+      f.ttl -= dt
+      if (f.ttl <= 0) { fx.splice(i, 1); continue }
+      if (f.k === 'bubble') {
+        var pe = ents['p' + f.seat]
+        var bx = pe ? sx(interp(pe, performance.now()).x) : W / 2
+        var by = pe ? sy(interp(pe, performance.now()).y) : H / 2
+        var rise = (2500 - f.ttl) / 2500 * 8
+        bubble(bx, by - 26 - rise, EMOTE_GLYPH[f.id] + ' ' + EMOTE_NAME[f.id], 62)
+      } else if (f.k === 'pop') {
+        ctx.globalAlpha = f.ttl / 350
+        ctx.fillStyle = f.col
+        ctx.beginPath(); ctx.arc(sx(f.x), sy(f.y) - (350 - f.ttl) / 350 * 18, 3.5, 0, 7); ctx.fill()
+        ctx.globalAlpha = 1
+      } else if (f.k === 'rise') {
+        var t = 1 - f.ttl / 1100
+        ctx.globalAlpha = 1 - t * 0.6
+        ctx.fillStyle = WARM2; ctx.font = 'bold 12px ' + FONT; ctx.textAlign = 'center'
+        ctx.fillText('+' + f.n, sx(f.x) + Math.sin(t * 5) * 8, sy(f.y) - t * 60)
+        ctx.globalAlpha = 1
+      } else if (f.k === 'flybag') { // 产出飞入背包（贝塞尔近似）
+        var ft = 1 - f.ttl / 300
+        var fxp = W / 2 + (W / 2 - 60 - W / 2) * ft
+        var fyp = H / 2 - 80 + (H - 44 - H / 2 + 80) * ft - Math.sin(ft * Math.PI) * 40
+        ctx.fillStyle = RES_COL[f.res]
+        ctx.beginPath(); ctx.arc(fxp, fyp, 4, 0, 7); ctx.fill()
+      } else if (f.k === 'flash') {
+        ctx.fillStyle = 'rgba(255,182,92,' + f.ttl / 900 * 0.22 + ')'
+        ctx.fillRect(0, 0, W, H)
+      } else if (f.k === 'sparkle' && f.box) {
+        ctx.globalAlpha = f.ttl / 800
+        ctx.fillStyle = WARM2
+        star5(sx(f.box[0] + f.box[2] / 2), sy(f.box[1] + f.box[3] / 2), 10 + (800 - f.ttl) / 40)
+        ctx.globalAlpha = 1
+      }
+    }
+    if (fx.length > 60) fx.splice(0, fx.length - 60)
+    if (toastMsg && performance.now() < toastUntil) {
+      var a = Math.min(1, (toastUntil - performance.now()) / 500)
+      ctx.fillStyle = 'rgba(11,16,38,' + 0.82 * a + ')'
+      roundRect(W / 2 - 132, 100, 264, 26, 13); ctx.fill()
+      ctx.fillStyle = 'rgba(255,217,142,' + a + ')'; ctx.font = '11px ' + FONT; ctx.textAlign = 'center'
+      ctx.fillText(toastMsg, W / 2, 117)
+    }
+    if (wheelOpen) drawWheel()
+  }
+  function bubble(x, y, text, w) {
+    ctx.fillStyle = 'rgba(11,16,38,.88)'
+    roundRect(x - w / 2, y - 11, w, 20, 10); ctx.fill()
+    ctx.strokeStyle = 'rgba(255,182,92,.4)'; ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.fillStyle = INK; ctx.font = '10px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText(text, x, y + 2.5)
+  }
+  function drawWheel() {
+    ctx.fillStyle = 'rgba(11,16,38,.45)'; ctx.fillRect(0, 0, W, H)
+    for (var i = 0; i < 8; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 4
+      var px = wheelAt.x + Math.cos(a) * 74, py = wheelAt.y + Math.sin(a) * 74
+      ctx.fillStyle = 'rgba(26,27,58,.95)'
+      ctx.beginPath(); ctx.arc(px, py, 22, 0, 7); ctx.fill()
+      ctx.strokeStyle = 'rgba(255,182,92,.5)'; ctx.stroke()
+      ctx.font = '15px ' + FONT; ctx.textAlign = 'center'; ctx.fillStyle = INK
+      ctx.fillText(EMOTE_GLYPH[i], px, py + 1)
+      ctx.font = '7px ' + FONT; ctx.fillStyle = DIM
+      ctx.fillText(EMOTE_NAME[i], px, py + 14)
+    }
+    ctx.fillStyle = 'rgba(232,236,243,.55)'; ctx.font = '9px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText('点选表情 · 空白处关闭', wheelAt.x, wheelAt.y + 3)
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
+  }
+  function drawStick() {
+    if (!stick.active) return
+    ctx.strokeStyle = 'rgba(232,236,243,.22)'; ctx.lineWidth = 2
+    ctx.beginPath(); ctx.arc(stick.ox, stick.oy, 34, 0, 7); ctx.stroke()
+    var dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.sqrt(dx * dx + dy * dy) || 1
+    var m = Math.min(d, 34)
+    ctx.fillStyle = 'rgba(255,182,92,.5)'
+    ctx.beginPath(); ctx.arc(stick.ox + dx / d * m, stick.oy + dy / d * m, 15, 0, 7); ctx.fill()
+  }
+
+  /* ---------- HUD（顶栏镇进度 / 圆小地图 / 底栏表情快捷条+背包+贡献，§7） ---------- */
+  function drawHud(nowP) {
+    ctx.fillStyle = 'rgba(11,16,38,.92)'; ctx.fillRect(0, 0, W, TOP_H)
+    ctx.strokeStyle = 'rgba(255,182,92,.25)'; ctx.beginPath(); ctx.moveTo(0, TOP_H + .5); ctx.lineTo(W, TOP_H + .5); ctx.stroke()
+    /* 镇徽+等级+镇进度条 */
+    ctx.fillStyle = WARM; ctx.font = 'bold 13px ' + FONT; ctx.textAlign = 'left'
+    ctx.fillText('⌂ Lv' + townPanel.l, 10, 22)
+    var TH = [300, 700, 1200, 1800]
+    var next = TH[townPanel.l - 1] || 1800, prev = townPanel.l > 1 ? TH[townPanel.l - 2] : 0
+    var prog = townPanel.l >= 5 ? 1 : Math.max(0, Math.min(1, (townPanel.e - prev) / (next - prev)))
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; roundRect(10, 30, 128, 8, 4); ctx.fill()
+    if (prog > 0.02) {
+      var g2 = ctx.createLinearGradient(10, 0, 138, 0); g2.addColorStop(0, '#7FE8D8'); g2.addColorStop(1, WARM)
+      ctx.fillStyle = g2; roundRect(10, 30, Math.max(8, 128 * prog), 8, 4); ctx.fill()
+    }
+    ctx.fillStyle = DIM; ctx.font = '8px ' + FONT
+    ctx.fillText(townPanel.l >= 5 ? '镇经验 已满级' : '镇经验 ' + townPanel.e + '/' + next, 10, 50)
+    /* 在线列表（头像点列，bot 灰角标） */
+    var ox = 152
+    for (var seat in roster) {
+      if (ox > W - 62) break
+      var inf = roster[seat]
+      if (inf.kind !== 'human' && inf.kind !== 'bot') continue
+      ctx.fillStyle = inf.kind === 'bot' ? '#5b657d' : 'hsl(' + (seat * 47) % 360 + ',60%,68%)'
+      ctx.beginPath(); ctx.arc(ox, 22, 6, 0, 7); ctx.fill()
+      if (inf.kind === 'bot') { ctx.fillStyle = 'rgba(180,188,210,.9)'; ctx.fillRect(ox + 2, 16, 4, 4) }
+      ox += 15
+    }
+    /* 流星雨倒计时 */
+    var toMeteor = Math.max(0, 2900 - townPanel.dt)
+    var mm = Math.floor(toMeteor / 600), ss = Math.floor(toMeteor / 10) % 60
+    ctx.textAlign = 'right'
+    if (townPanel.ph === 'meteor') {
+      ctx.fillStyle = '#FFD700'; ctx.font = '10px ' + FONT
+      ctx.fillText('★ 流星雨中', W - 10, 22)
+    } else {
+      ctx.fillStyle = 'rgba(159,200,255,.9)'; ctx.font = '10px ' + FONT
+      ctx.fillText('☄ ' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss, W - 10, 22)
+    }
+    ctx.fillStyle = DIM; ctx.font = '8px ' + FONT
+    ctx.fillText('第 ' + townPanel.d + ' 镇日', W - 10, 38)
+    if (mode === 'online' && session) {
+      ctx.fillStyle = 'rgba(139,147,167,.7)'
+      ctx.fillText(session.rttMs ? session.rttMs + 'ms' : '--', W - 10, 50)
+    }
+    /* 圆小地图 Ø92 */
+    var mr = 46, mx0 = W - mr - 8, my0 = TOP_H + mr + 8
+    ctx.save()
+    ctx.beginPath(); ctx.arc(mx0, my0, mr, 0, 7); ctx.clip()
+    ctx.fillStyle = 'rgba(11,16,38,.85)'; ctx.fillRect(mx0 - mr, my0 - mr, mr * 2, mr * 2)
+    var kx = (mr * 2 - 8) / WORLD_W, ky = (mr * 2 - 8) / WORLD_H
+    var zz = [{ x: 0, y: 0, w: 1400, h: 1000 }, { x: 0, y: 1000, w: 420, h: 1400 }, { x: 420, y: 1000, w: 560, h: 1400 }, { x: 980, y: 1000, w: 420, h: 1400 }]
+    for (var zi = 0; zi < 4; zi++) {
+      ctx.fillStyle = ['rgba(127,232,216,.22)', 'rgba(201,143,232,.28)', 'rgba(255,182,92,.32)', 'rgba(111,168,255,.28)'][zi]
+      ctx.fillRect(mx0 - mr + 4 + zz[zi].x * kx, my0 - mr + 4 + zz[zi].y * ky, zz[zi].w * kx, zz[zi].h * ky)
+    }
+    for (var pid in ents) {
+      var pe = ents[pid]
+      if (!pe.rec || pe.rec.k !== 'player') continue
+      var px2 = mx0 - mr + 4 + pe.rec.x / 1000 * kx, py2 = my0 - mr + 4 + pe.rec.y / 1000 * ky
+      if (pe.rec.seat === mySeat && myRole === 'player') {
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px2, py2, 2.6, 0, 7); ctx.fill()
+        ctx.strokeStyle = WARM; ctx.stroke()
+      } else {
+        ctx.fillStyle = roster[pe.rec.seat] && roster[pe.rec.seat].kind === 'bot' ? '#8b93a7' : '#9fd0ff'
+        ctx.beginPath(); ctx.arc(px2, py2, 1.8, 0, 7); ctx.fill()
+      }
+    }
+    ctx.restore()
+    ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.arc(mx0, my0, mr, 0, 7); ctx.stroke()
+    ctx.fillStyle = WARM2; ctx.font = '7px ' + FONT; ctx.textAlign = 'center'
+    ctx.fillText('北', mx0, my0 - mr - 3)
+    /* 底栏 96 */
+    ctx.fillStyle = 'rgba(11,16,38,.92)'; ctx.fillRect(0, H - BOT_H, W, BOT_H)
+    ctx.strokeStyle = 'rgba(255,182,92,.25)'; ctx.beginPath(); ctx.moveTo(0, H - BOT_H + .5); ctx.lineTo(W, H - BOT_H + .5); ctx.stroke()
+    quickZones = []
+    var qy = H - BOT_H + 24
+    for (var q = 0; q <= 4; q++) {
+      var qx = 24 + q * 42
+      var isWheel = q === 4
+      ctx.fillStyle = isWheel ? (wheelOpen ? WARM : 'rgba(255,255,255,.1)') : 'rgba(255,255,255,.07)'
+      ctx.beginPath(); ctx.arc(qx, qy, 17, 0, 7); ctx.fill()
+      ctx.font = isWheel ? '11px ' + FONT : '14px ' + FONT
+      ctx.textAlign = 'center'
+      ctx.fillStyle = isWheel ? (wheelOpen ? '#0B1026' : INK) : INK
+      ctx.fillText(isWheel ? '☰' : EMOTE_GLYPH[EMOTE_QUICK[q]], qx, isWheel ? qy + 4 : qy + 5)
+      quickZones.push(isWheel ? { x: qx, y: qy, r: 20, wheel: true } : { x: qx, y: qy, r: 20, id: EMOTE_QUICK[q] })
+    }
+    /* 背包 6 格（构成序：草→果→矿→星髓 填格） */
+    var bx0 = W / 2 + 34, by0 = H - BOT_H + 12
+    var seq = []
+    var kinds = ['herb', 'berry', 'ore', 'star']
+    for (var bk = 0; bk < kinds.length && seq.length < 6; bk++) {
+      for (var c = 0; c < (mePanel.b[kinds[bk]] || 0) && seq.length < 6; c++) seq.push(kinds[bk])
+    }
+    while (seq.length < 6) seq.push(null)
+    for (var s3 = 0; s3 < 6; s3++) {
+      var sxp = bx0 + (s3 % 6) * 23, syp = by0 + (s3 / 6 | 0) * 0
+      ctx.fillStyle = 'rgba(255,255,255,.07)'
+      roundRect(sxp, syp, 20, 20, 5); ctx.fill()
+      if (seq[s3]) {
+        ctx.fillStyle = RES_COL[seq[s3]]
+        ctx.beginPath(); ctx.arc(sxp + 10, syp + 8, 4.5, 0, 7); ctx.fill()
+        ctx.font = '7px ' + FONT; ctx.textAlign = 'center'; ctx.fillStyle = INK
+        ctx.fillText('×' + (mePanel.b[seq[s3]] || 0), sxp + 10, syp + 18)
+      }
+    }
+    ctx.fillStyle = 'rgba(139,147,167,.7)'; ctx.font = '7px ' + FONT; ctx.textAlign = 'left'
+    ctx.fillText('背包 ' + mePanel.n + '/6', bx0, H - 14)
+    /* 本场贡献 */
+    ctx.fillStyle = WARM2; ctx.font = 'bold 20px ' + FONT; ctx.textAlign = 'right'
+    ctx.fillText(String(mePanel.c), W - 12, H - BOT_H + 34)
+    ctx.fillStyle = DIM; ctx.font = '8px ' + FONT
+    ctx.fillText(mePanel.g ? '🎖 达标（≥120）' : '本场贡献 /120', W - 12, H - BOT_H + 50)
+  }
+
+  /* ---------- 在线接入 ---------- */
+  function startOnline(roomId, spectate) {
+    mode = 'online'
+    document.getElementById('joining').style.display = 'flex'
+    session = G.connect({
+      roomId: roomId || undefined,
+      quick: !roomId,
+      gameId: 'mmo-township',
+      mode: spectate ? 'spectate' : 'play',
+      seqInput: true,
+      onWelcome: function (m) {
+        mySeat = m.seat == null ? -1 : m.seat
+        myRole = m.role
+        for (var i = 0; i < m.room.seats.length; i++) roster[m.room.seats[i].seat] = m.room.seats[i]
+        loadWorld(m.state)
+        if (!started) {
+          started = true
+          document.getElementById('joining').style.display = 'none'
+          report('start', { mode: 'online', room: m.roomId, role: m.role })
+        }
+      },
+      onStarted: function (m) {
+        loadWorld(m.state)
+        if (!started) { started = true; document.getElementById('joining').style.display = 'none' }
+      },
+      onSnapshot: applySnapshot,
+      onState: function (m) { loadWorld(m.state) },
+      onSeat: function (m) { for (var i = 0; i < m.seats.length; i++) roster[m.seats[i].seat] = m.seats[i] },
+      onEnd: function () { toast('本局结束') },
+      onClosed: function () { report('end', { win: mePanel.g ? 1 : 0, score: mePanel.c }) },
+      onError: function (m) {
+        if (m.code === 'reconnect-timeout' || m.code === 'room-gone') {
+          var el = document.getElementById('joining')
+          el.style.display = 'flex'
+          el.textContent = '小镇已回收——回大厅再进'
+        }
+      },
+      onStatus: function (st) {
+        var el = document.getElementById('joining')
+        if (st === 'reconnecting') { el.style.display = 'flex'; el.textContent = '重连中…' }
+        else if (st === 'live') el.style.display = 'none'
+      },
+    })
+    setTimeout(function () { // 网关不可达兜底：本地观景（页面保持活）
+      if (!started) {
+        if (session) { try { session.close() } catch (e) { } }
+        session = null
+        banner('网关不可达，已切换本地观景')
+        startDebug()
+      }
+    }, 8000)
+  }
+  function banner(msg) {
+    var el = document.getElementById('banner')
+    el.textContent = msg; el.style.display = 'block'
+  }
+
+  /* ---------- 幽灵镇（debug/兜底：纯渲染演示，零判定零网络） ---------- */
+  var ghosts = []
+  function startDebug() {
+    mode = 'debug'
+    myRole = 'spectator'
+    world = {
+      map: {
+        w: 14000000, h: 24000000, deposit: { x: 700000, y: 1300000 },
+        zones: [{ id: 0, x: 0, y: 0, w: 1400000, h: 1000000 }, { id: 1, x: 0, y: 1000000, w: 420000, h: 1400000 }, { id: 2, x: 420000, y: 1000000, w: 560000, h: 1400000 }, { id: 3, x: 980000, y: 1000000, w: 420000, h: 1400000 }],
+      },
+      town: { level: 2, exp: 340, day: 1, dayTick: 1200, phase: 'calm' },
+      buildings: [
+        { slot: 0, kind: 'b-fountain', built: true, lv: 1, cost: 0 },
+        { slot: 1, kind: 'b-flower', built: true, lv: 2, cost: 60 },
+        { slot: 2, kind: 'b-lighthouse', built: false, lv: 3, cost: 100 },
+        { slot: 3, kind: 'b-starbridge', built: false, lv: 4, cost: 140 },
+        { slot: 4, kind: 'b-wishingwell', built: false, lv: 5, cost: 180 },
+      ],
+      collide: [],
+    }
+    ents = {}
+    ghosts = []
+    var specs = [
+      { k: 'herb', n: 10, f: function (i) { return { x: 150000 + (i % 5) * 260000, y: 300000 + ((i / 5) | 0) * 450000, cap: 3 } } },
+      { k: 'berry', n: 8, f: function (i) { return { x: 130000 + (i % 2) * 160000, y: 1150000 + ((i / 2) | 0) * 330000, cap: 2 } } },
+      { k: 'ore', n: 6, f: function (i) { return { x: 1110000 + (i % 2) * 180000, y: 1250000 + ((i / 2) | 0) * 430000, cap: 2 } } },
+    ]
+    for (var t = 0; t < specs.length; t++) {
+      for (var i = 0; i < specs[t].n; i++) {
+        var p = specs[t].f(i)
+        upsertEnt({ id: specs[t].k[0] + i, k: specs[t].k, x: p.x, y: p.y, cap: p.cap, stock: 1 + ((i * 7) % p.cap) })
+      }
+    }
+    upsertEnt({ id: 'npc-mayor', k: 'npc-mayor', x: 760000, y: 1240000 })
+    upsertEnt({ id: 'npc-wisp', k: 'npc-wisp', x: 700000, y: 1300000, vx: 0, vy: 0 })
+    for (var g = 0; g < 10; g++) {
+      var seat = g + 1
+      roster[seat] = { seat: seat, kind: g < 7 ? 'bot' : 'human', name: g < 7 ? 'Bot·居民' + seat : '旅行者' + seat }
+      upsertEnt({ id: 'p' + seat, k: 'player', seat: seat, x: 700000 + Math.cos(g * 2.4) * 200000, y: 1300000 + Math.sin(g * 2.4) * 150000, vx: 0, vy: 0 })
+      ghosts.push({ id: 'p' + seat, wp: { x: 300000 + decorRng() * 900000, y: 300000 + decorRng() * 1800000 } })
+    }
+    townPanel = { e: 340, l: 2, d: 1, dt: 1200, ph: 'calm' }
+    started = true
+    document.getElementById('joining').style.display = 'none'
+    report('start', { mode: 'debug' })
+  }
+  setInterval(function () { // 幽灵镇 10Hz 游走（纯表现）
+    if (mode !== 'debug' || !world) return
+    townPanel.dt = (townPanel.dt + 1) % 3000
+    if (townPanel.dt % 40 === 0) townPanel.e += 3
+    if (townPanel.dt === 2900) townPanel.ph = 'meteor'
+    if (townPanel.dt === 0) townPanel.ph = 'calm'
+    for (var i = 0; i < ghosts.length; i++) {
+      var gh = ghosts[i], e = ents[gh.id]
+      if (!e) continue
+      var dx = gh.wp.x - e.rec.x, dy = gh.wp.y - e.rec.y, d = Math.sqrt(dx * dx + dy * dy)
+      if (d < 30000) { gh.wp = { x: 300000 + decorRng() * 900000, y: 300000 + decorRng() * 1800000 }; continue }
+      e.rec.vx = dx / d * 66000; e.rec.vy = dy / d * 66000
+      e.rec.x += e.rec.vx / 10; e.rec.y += e.rec.vy / 10
+      e.buf.push({ t: performance.now(), x: e.rec.x, y: e.rec.y })
+      if (e.buf.length > 4) e.buf.shift()
+    }
+  }, 100)
+
+  /* ---------- 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑） ---------- */
+  window.__GAMES_DEBUG__ = {
+    events: [],
+    start: function () { startDebug() },
+    state: function () { return { tick: townPanel.dt, ents: Object.keys(ents).length, town: townPanel } },
+    seat: function () { return mySeat },
+    roomId: function () { return session ? session.roomId : null },
+    mode: function () { return mode },
+    fps: function () { return fpsV },
+    perf: function () { return { inputMaxMs: Math.round(inputMaxMs), fps: fpsV } },
+  }
+
+  /* ---------- 启动 ---------- */
+  fit()
+  report('boot', { slug: 'mmo-township', version: '1.0.0', mode: 'net' })
+  var q = new URLSearchParams(location.search)
+  requestAnimationFrame(render)
+  if (q.get('debug') === '1') startDebug()
+  else if (q.get('room')) startOnline(q.get('room'), q.get('mode') === 'spectate')
+  else startOnline(null, false)
+})()

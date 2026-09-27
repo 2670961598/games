@@ -125,11 +125,45 @@ const POLICIES = {
     }
     return NOOP
   },
+  /**
+   * 采集推进（mmo-township A2 能赢，设计书 §6 剧本策略）：满包回贡献台自动倾倒；
+   * 否则价值/距离贪心择最近非空资源位直奔，到位持握（服务端 hold 连采、幂等 start）。
+   * S2 语义：move 连续量每拍重发；gather start 幂等（同 entId 续进度），无需跨拍记忆。
+   */
+  'gather-push': (state, seat) => {
+    const NOOP = { mx: 0, my: 0 }
+    const me = state.ents && state.ents['p' + seat]
+    const sess = state.sessions && state.sessions[seat]
+    if (!me || !sess) return NOOP
+    const dist = (x, y) => Math.hypot(x - me.x, y - me.y)
+    const toward = (x, y) => {
+      const dx = x - me.x, dy = y - me.y, d = Math.hypot(dx, dy) || 1
+      return { mx: Math.round(dx / d * 100), my: Math.round(dy / d * 100) }
+    }
+    if (sess.bagN >= 6) { // 满包回城：贡献台 60px 内站定自动倾倒
+      const dp = state.map.deposit
+      return dist(dp.x, dp.y) > 50000 ? toward(dp.x, dp.y) : NOOP
+    }
+    if (sess.g && sess.g.hold) return NOOP // 持握中：站桩续采（进度服务器权威）
+    let best = null, bs = -1
+    for (const id in state.ents) {
+      const e = state.ents[id]
+      if (!e || e.stock <= 0) continue
+      const v = { herb: 2, berry: 3, ore: 5, star: 8 }[e.k]
+      if (!v) continue
+      const s = v / (dist(e.x, e.y) + 200000)
+      if (s > bs) { bs = s; best = e }
+    }
+    if (!best) return NOOP
+    return dist(best.x, best.y) > 52000
+      ? toward(best.x, best.y)
+      : { mx: 0, my: 0, cmd: { k: 'gather', entId: best.id, phase: 'start' } }
+  },
 }
 
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
-async function playScript(roomId, policy, deadlineMs) {
-  let cursor = 0
+async function playScript(roomId, policy, deadlineMs, isS2 = false) {
+  let cursor = 0, seq = 0 // S2：input.frame=客户端输入序号 seq（单调自 0，协议 §6 S2 声明）
   for (;;) {
     const r = await gwState(roomId, cursor)
     if (!r.json || !r.json.ok) return { error: r.json && r.json.error || `HTTP ${r.status}` }
@@ -138,6 +172,7 @@ async function playScript(roomId, policy, deadlineMs) {
     if (Date.now() > deadlineMs) return { error: '剧本超时未终局' }
     if (r.json.phase === 'live') {
       const inp = policy(r.json.state, r.json.playerSeat)
+      if (isS2) inp.frame = seq++
       const i = await gwInput(roomId, r.json.playerSeat, 'ctrl', inp)
       if (!i.json || !i.json.ok) return { error: i.json && i.json.error || `注入失败 HTTP ${i.status}` }
     }
@@ -200,6 +235,7 @@ console.log('[L1] 测试面仅本机可用')
 
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
+const isS2 = meta.net.tech === 'S2'
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
@@ -225,19 +261,43 @@ try {
     }
     smokeEnd.startedSeen = (s.events || []).some((e) => e.msg.t === 'started')
     ok('A1', 'boot→live 状态迁移（开赛）', s.phase === 'live' && smokeEnd.startedSeen, `phase=${s.phase} started=${smokeEnd.startedSeen}`)
-    /* A4 注入 → 帧反映（服务端同钟：receivedAt → 帧广播 ts） */
-    const inj = await gwInput(smoke.roomId, smoke.playerSeat, 'ctrl', { mx: 63, my: 0, fire: 0 })
+    if (isS2) {
+      /* S2 状态同步：welcome.state 全量世界（实体/碰撞表）+ 首张全量快照（设计 §6 A1） */
+      const entN = smoke.state && smoke.state.ents ? Object.keys(smoke.state.ents).length : 0
+      ok('A1', 'S2 welcome.state 含实体/碰撞表', entN > 0 && Array.isArray(smoke.state.collide) && smoke.state.collide.length > 0,
+        `ents=${entN} collide=${smoke.state.collide && smoke.state.collide.length}`)
+      const firstFull = (s.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+        || await (async () => { // live 检测响应可能落在 started 与首张快照之间（1 tick 窗）——短暂轮询补看
+          let r = s, c = cursor, hit = null
+          const tt = Date.now()
+          while (!hit && Date.now() - tt < 2000) {
+            await sleep(40)
+            const q = await gwState(smoke.roomId, c)
+            r = q.json; c = q.json.cursor
+            hit = (r.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+          }
+          return hit
+        })()
+      ok('A1', 'S2 首张全量快照（full=1）', !!firstFull,
+        firstFull ? `snapSeq=${firstFull.msg.snapSeq} ents=${firstFull.msg.ents.length} aoi.r=${firstFull.msg.ext && firstFull.msg.ext.aoi && firstFull.msg.ext.aoi.r}` : '未见快照')
+    }
+    /* A4 注入 → 帧反映（服务端同钟：receivedAt → 帧广播 ts）。
+       S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。 */
+    const injPayload = isS2 ? { mx: 63, my: 0, fire: 0, frame: 1 } : { mx: 63, my: 0, fire: 0 }
+    const inj = await gwInput(smoke.roomId, smoke.playerSeat, 'ctrl', injPayload)
     const receivedAt = inj.json && inj.json.receivedAt
     let refl = null, r4 = s, c4 = cursor
     const t4 = Date.now()
     while (!refl && Date.now() - t4 < 3000) {
       const r = await gwState(smoke.roomId, c4)
       r4 = r.json; c4 = r.json.cursor
-      refl = (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
+      refl = isS2
+        ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && Number(e.msg.ext.ack) >= 1)
+        : (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
       if (!refl) await sleep(30)
     }
     smokeEnd.reflMs = refl ? refl.ts - receivedAt : -1
-    ok('A4', '操作注入→帧反映 <100ms', !!refl && smokeEnd.reflMs < 100, smokeEnd.reflMs >= 0 ? `实测 ${smokeEnd.reflMs}ms（timeScale=${smokeCfg.timeScale}x）` : '3s 内未见帧反映')
+    ok('A4', `操作注入→${isS2 ? '快照 ack 反映' : '帧反映'} <100ms`, !!refl && smokeEnd.reflMs < 100, smokeEnd.reflMs >= 0 ? `实测 ${smokeEnd.reflMs}ms（timeScale=${smokeCfg.timeScale}x）` : '3s 内未见反映')
     const tGet0 = Date.now()
     await gwState(smoke.roomId, 0)
     ok('A4', '状态快照 GET 往返 <100ms', Date.now() - tGet0 < 100, `${Date.now() - tGet0}ms`)
@@ -282,7 +342,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
     const tickMs = (room.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
     const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
     const policy = POLICIES[sc.policy || 'idle'] || POLICIES.idle
-    const r = await playScript(room.roomId, policy, Date.now() + budgetMs)
+    const r = await playScript(room.roomId, policy, Date.now() + budgetMs, isS2)
     const durMs = Date.now() - t0
     if (!r.result) {
       ok(aid, `${name} 达成终态`, false, r.error || '未终局')

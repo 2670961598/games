@@ -1,0 +1,60 @@
+{
+  "slug": "mmo-township",
+  "title": "星海小镇",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 300,
+  "scoring": {
+    "win": "单场贡献 ≥120 获镇民嘉许",
+    "lose": "镇日结算未达标（无惩罚）",
+    "s2": "贡献 +N/资源（草2/果3/矿5/星髓8）",
+    "s3": "常驻世界无对局终点"
+  },
+  "description": "星海夜色里的暖光小镇：走图采集、表情寒暄、协力升级小镇。常驻共享世界，8-12 人同镇，随时进随时玩",
+  "net": {
+    "tech": "S2",
+    "gameId": "mmo-township",
+    "mode": "persistent-town",
+    "seats": 12,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "move":    { "ws": "input", "keys": ["mx","my"], "desc": "移动向量 {mx,my}∈[-100,100] 整数，10Hz 持续上报（静止报 0,0）；input.frame 在 S2 语义=客户端输入序号 seq（预测和解 ack 锚点）" },
+        "emote":   { "ws": "input", "keys": ["cmd"], "desc": "表情：{k:'emote',id:0..7}，广播 events {k:'emote'}" },
+        "gather":  { "ws": "input", "keys": ["cmd"], "desc": "采集：{k:'gather',entId,phase:'start'|'stop'}，服务器权威计时+逐 tick 距离校验 ≤60px；产出入背包，贡献台 60px 自动倾倒（无独立 op）" },
+        "build":   { "ws": "input", "keys": ["cmd"], "desc": "建筑：{k:'build',slot:0..4}，镇等级达标+个人贡献余额足够时落地" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "会话终态投影（仅测试房 maxTicks 强制终局；生产常驻镇不终局——镇日结算在 state 内，见设计书 §1.1）",
+        "winner": "'A'=API 席单场贡献 ≥120（state.sessions[seat].goalMet=true） ｜ 'B'=未达标",
+        "teams": { "A": [0], "B": [] },
+        "reason": "goal（贡献达标） ｜ day-end（镇日结算未达标） ｜ timeout ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：join→live+首张全量快照（welcome.state 含镇等级/分区/实体/碰撞表）",
+        "A2 能赢：gather-push 策略单镇日贡献 ≥120（sessions[seat].goalMet=true）",
+        "A3 能输：idle 策略 + 3×merchant 抢空高价值线 → 镇日结算贡献 0 <120（goalMet=false；state.stats.drainRate 佐证抢空）",
+        "A4 操作注入→快照反映 <100ms（move 位移/gather 状态见下一 snapSeq）",
+        "A5 断线重连 <10s：$reconnect 全量快照恢复位置/背包/贡献"
+      ],
+      "script": {
+        "seed": 20260927, "timeScale": 4, "startDelayMs": 600, "maxTicks": 3000,
+        "scenarios": {
+          "win":  { "botLevels": [null, "balanced", "balanced", "casual", "casual", "casual", "casual", "casual"], "expectWinner": "A", "policy": "gather-push" },
+          "lose": { "botLevels": [null, "competitive", "competitive", "competitive", "casual", "casual", "casual", "casual"], "expectWinner": "B", "policy": "idle" }
+        }
+      }
+    }
+  }
+}

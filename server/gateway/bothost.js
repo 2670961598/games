@@ -16,9 +16,9 @@ export class BotHost {
     this.timer = null
   }
 
-  /** 上线一款联机游戏：常驻配置 + Bot 工厂 */
-  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats }) {
-    this.games.set(gameId, { minLive, levels, maxRooms, seats })
+  /** 上线一款联机游戏：常驻配置 + Bot 工厂（residents: 常驻镇模式，GAMES-52） */
+  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false }) {
+    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents })
   }
 
   /** 统一接口：spawnBot(gameId, level) → Bot（输入生成闭包，由房间按帧调用） */
@@ -45,6 +45,7 @@ export class BotHost {
   ensure() {
     for (const [gameId, cfg] of this.games) {
       const all = this.rooms.roomsFor(gameId).filter((r) => r.phase !== 'ended' && !r.test)
+      if (cfg.residents) { this.ensureResidents(gameId, cfg, all); continue }
       const pureBot = all.filter((r) => this.rooms.humanCount(r) === 0 && r.spectators.size === 0)
       if (pureBot.length >= cfg.minLive || all.length >= cfg.maxRooms) continue
       const level = cfg.levels[pureBot.length % cfg.levels.length]
@@ -61,5 +62,60 @@ export class BotHost {
       })
       this.log({ k: 'bothost-spawn', gameId, level })
     }
+  }
+
+  /* ---------- 常驻镇模式（GAMES-52 §4.1/§8）：镇=长生命周期房间，居民 bot 动态调节 ----------
+   * 镇人口目标 pop = 8+(townLevel−1)；每 ensure 拍校准 bot 活跃数 = clamp(pop−humans,0,seats)：
+   * 真人进镇 → 超员 bot 走屋退场；真人离镇 → 45s 防抖后补位渐入（重连窗 10s 内席位保留不补）；
+   * balanced 主力 + casual 混编，镇等级升 → casual 占比升。 */
+  ensureResidents(gameId, cfg, all) {
+    const sim = this.rooms.sims.get(gameId)
+    if (all.length === 0) {
+      if ((cfg.maxRooms || 1) < 1) return
+      const bots = []
+      for (let i = 0; i < sim.META.seats; i++) {
+        // 开镇 8 居民：勤恳主力 + 游手混编（§8「balanced+casual 居民 8 人开局」）
+        bots.push(i < 8 ? { level: i % 3 === 1 ? 'casual' : 'balanced' } : null)
+      }
+      this.rooms.create({ gameId, name: `${sim.META.title} · 常驻镇`, bots, startDelayMs: 1000 })
+      this.log({ k: 'bothost-town-spawn', gameId })
+      return
+    }
+    for (const room of all) this.calibrateTown(room, sim)
+  }
+
+  calibrateTown(room, sim) {
+    const humans = this.rooms.humanCount(room)
+    if (humans > 0) room.__lastHumanSeen = Date.now()
+    const pop = sim.population ? sim.population(room.state) : 8
+    const target = Math.max(0, Math.min(room.seats.length, pop - humans))
+    let bots = 0
+    for (const s of room.seats) if (s.kind === 'bot') bots++
+    let changed = false
+    while (bots > target) { // 超员退场：高席先走（step 下一 tick 清化身，客户端走屋渐隐）
+      const s = [...room.seats].reverse().find((x) => x.kind === 'bot')
+      if (!s) break
+      s.kind = 'empty'; s.level = null; s.name = null; s.botRng = null; s.pending.clear()
+      bots--; changed = true
+      this.log({ k: 'town-bot-leave', roomId: room.id, seat: s.seat })
+    }
+    if (bots < target && (humans > 0 || !room.hadHuman || Date.now() - (room.__lastHumanSeen || 0) > 45_000)) {
+      const level = room.state.town ? room.state.town.level : 1
+      const casualWanted = Math.ceil(target * (0.25 + (level - 1) * 0.1)) // 等级升 → 烟火气渐浓
+      let casualNow = 0
+      for (const s of room.seats) if (s.kind === 'bot' && s.level === 'casual') casualNow++
+      while (bots < target) {
+        const s = room.seats.find((x) => x.kind === 'empty' && !x.conn)
+        if (!s) break
+        s.kind = 'bot'
+        s.level = casualNow < casualWanted ? 'casual' : 'balanced'
+        s.name = `Bot·${LEVEL_CN[s.level]}`
+        s.botRng = sim.mulberry32(((room.state.seed ^ (s.seat * 0x9e3779b9)) >>> 0))
+        casualNow += s.level === 'casual' ? 1 : 0
+        bots++; changed = true
+        this.log({ k: 'town-bot-join', roomId: room.id, seat: s.seat, level: s.level })
+      }
+    }
+    if (changed) this.rooms.broadcastSeat(room)
   }
 }

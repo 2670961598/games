@@ -15,7 +15,7 @@ const CATALOG = [
   { name: '指挥官战场', track: 'T1 帧同步', tech: 'S1', on: true, url: '/games/multiplayer/slg-battlefield/index.html' },
   { name: '战棋对决', track: 'T1 帧同步', tech: 'S1+S5' },
   { name: '炸弹乱斗', track: 'T1 帧同步', tech: 'S1' },
-  { name: '星海小镇', track: 'T2 状态同步', tech: 'S2' },
+  { name: '星海小镇', track: 'T2 状态同步', tech: 'S2', on: true, url: '/games/multiplayer/mmo-township/index.html' },
   { name: '迷你 MOBA', track: 'T2 状态同步', tech: 'S2' },
   { name: '缩圈大逃杀', track: 'T2 状态同步', tech: 'S2' },
   { name: '帝国萌芽', track: 'T3 混合', tech: 'S3' },

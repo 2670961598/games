@@ -87,7 +87,8 @@ await page.screenshot({ path: `${SHOTS}/lobby.png` })
 /* ---------- N2/N3 点击加入 <2s + bot 让位 ---------- */
 console.log('[N2/N3] 点击加入与 bot 让位')
 const t0 = Date.now()
-await page.locator('.mp-card').first().click()
+// 选 net-tank 卡（后续 N3-N8 断言绑 net-tank 房形状；多游戏注册后首卡不保证是它——GAMES-52）
+await page.locator('.mp-card[href*="net-tank"]').first().click()
 await page.waitForFunction(() => {
   const d = window.__GAMES_DEBUG__
   return d && d.state() && d.events.some((e) => e.event === 'start')
@@ -213,7 +214,7 @@ await p2.close()
 /* ---------- N7 feed 5s 新鲜度 + N8 满员旁观 ---------- */
 console.log('[N7/N8] feed 新鲜度与旁观（WS 直打）')
 const m0 = await feed()
-const target = m0.find((x) => x.joinable && x.bots >= 4)
+const target = m0.find((x) => x.gameId === 'net-tank' && x.joinable && x.bots >= 4) // 绑 net-tank：满员旁观/abandon 语义按对局房断言；常驻镇（GAMES-52）人口动态调节且不 abandon，不可作为该断言对象
 ok(!!target, '存在可入 bot 房')
 const players = []
 for (let i = 0; i < 4; i++) {
