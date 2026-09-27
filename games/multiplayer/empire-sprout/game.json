@@ -1,0 +1,60 @@
+{
+  "slug": "empire-sprout",
+  "title": "帝国萌芽",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap",
+    "secondary": "long-press"
+  },
+  "avgDurationSec": 600,
+  "scoring": {
+    "win": "摧毁敌方城心",
+    "lose": "己方城心被摧毁或超时裁定负",
+    "s2": "战功：击杀+2/破墙+40/城心命中+1",
+    "s3": "超时比城心HP%，平比战功"
+  },
+  "description": "3 分钟筑城，5 分钟出征：种田练兵养军团，双表盘指挥 2v2 军团战。Bot 秒配盟友",
+  "net": {
+    "tech": "S3",
+    "gameId": "empire-sprout",
+    "mode": "2v2-empire",
+    "seats": 4,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "build":  { "ws": "input", "keys": ["o"], "desc": "建造/升级：o={k:'build',plot:0..3,kind:'farm'|'lumber'|'mine'|'camp'|'works'|'range'}——空位=造 Lv1、已建=升 Lv+1（kind 须匹配）；资源不足 reject 事件回流 {k:'reject'}" },
+        "train":  { "ws": "input", "keys": ["o"], "desc": "练兵：o={k:'train',kind:'camp'|'works'|'range',unit:'inf'|'razor'|'arty'|'sniper'|'medic'|'heavy',n:1..5}——须营已建、unit 在营池内、队列余量足；完成入兵池（快照 events {k:'train-done'}）" },
+        "attack": { "ws": "input", "keys": ["o"], "desc": "出征：o={k:'attack',lane:0..2,units:{inf:n,…}}——tick≥1800、CD 好、池够；建设层结算后网关桥注入战斗帧 T+1（军团同帧成组入场）；回执快照 events {k:'march'} + 战斗帧 events {k:'spawn'}" },
+        "rally":  { "ws": "input", "keys": ["c"], "desc": "集结线：c={k:'rally',lane,row}——战斗 cmd 走帧输入日志（S1 语义）；tick<1800 拒绝" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）",
+        "winner": "'A'=偶数席队(0,2) ｜ 'B'=奇数席队(1,3) ｜ 'draw'",
+        "teams": { "A": [0, 2], "B": [1, 3] },
+        "reason": "eliminated（城心摧毁） ｜ timeout（7200 tick 比城心HP%→战功→draw） ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live + welcome.state 双层（build 资源/建筑位 + battle 空态）+ 首张建设快照",
+        "A2 能赢：empire-rush 剧本 A 队 eliminated 终态（对手 3×casual 慢发展被 2-3 波推平）",
+        "A3 能输：idle 剧本 B 队 eliminated 终态（对手 3×competitive tick 1800 timing attack 推平挂机方）",
+        "A4 双通道注入→反映 <100ms：build→下一快照 / attack→战斗帧 ≤2 tick（服务端同钟）",
+        "A5 断线重连 <10s：$reconnect 后 welcome.state 双层恢复（建设资源/兵池 + 战斗 rAF 追帧 ≤4 tick/rAF）"
+      ],
+      "script": {
+        "seed": 20260928, "timeScale": 8, "startDelayMs": 600, "maxTicks": 7200,
+        "scenarios": {
+          "win":  { "botLevels": [null, "casual", "casual", "casual"], "expectWinner": "A", "policy": "empire-rush" },
+          "lose": { "botLevels": [null, "competitive", "competitive", "competitive"], "expectWinner": "B", "policy": "idle" }
+        }
+      }
+    }
+  }
+}
