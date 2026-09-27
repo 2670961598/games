@@ -35,14 +35,14 @@ const html = `<!doctype html>
     flex-direction: column; gap: 12px; z-index: 10; }
   #joining { color: #e8ecf3; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   #banner { display: none; position: absolute; top: 64px; left: 0; right: 0; text-align: center;
-    color: #ffd700; font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
+    color: #ffd700; font: 600 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
   #settle { background: rgba(11,16,38,.78); }
   .sbox { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 280px;
     padding: 18px 16px; background: rgba(26,27,58,.92); border: 1px solid rgba(255,182,92,.35); border-radius: 14px; }
   .stitle { color: #ffd98e; font: 700 16px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   .srank { width: 100%; display: flex; flex-direction: column; gap: 4px; }
   .srow { display: flex; justify-content: space-between; color: #8b93a7;
-    font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; padding: 0 8px; }
+    font: 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; padding: 0 8px; }
   .srow b { color: #e8ecf3; font-weight: 600; }
   .srow.me { color: #ffd98e; }
   .sme { color: #e8ecf3; font: 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
