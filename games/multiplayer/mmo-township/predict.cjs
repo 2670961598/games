@@ -61,7 +61,29 @@
     return Math.trunc(Math.sqrt(dx * dx + dy * dy))
   }
 
-  var api = { W: W, H: H, SPEED: SPEED, ACC: ACC, RADIUS: RADIUS, MARGIN: MARGIN, stepAvatar: stepAvatar, dist: dist, clamp: clamp }
+  /**
+   * 逐帧步进（客户端呈现层外推，GAMES-54 F2）：与 stepAvatar 同式积分+碰撞，
+   * 步长按帧时长 dtMs 比例缩放——起步 ≤1 帧应答，与 10Hz 上报/快照节拍解耦。
+   * 仅客户端渲染路径使用（位置/速度经此为浮点）；服务器与和解重放仍走整拍
+   * stepAvatar（权威积分与 §5.5 语义不变，每张快照重锚定回整数域）。
+   */
+  function stepAvatarFrac(a, mx, my, boxes, dtMs) {
+    if (!(dtMs > 0)) return a
+    var tvx = clamp(mx | 0, -100, 100) * (SPEED / 100)
+    var tvy = clamp(my | 0, -100, 100) * (SPEED / 100)
+    var acc = ACC * dtMs / 100
+    a.vx += clamp(tvx - a.vx, -acc, acc)
+    a.vy += clamp(tvy - a.vy, -acc, acc)
+    moveAxis(a, Math.trunc(a.vx * dtMs / 1000), boxes, true)
+    moveAxis(a, Math.trunc(a.vy * dtMs / 1000), boxes, false)
+    a.x = clamp(a.x, MARGIN, W - MARGIN)
+    a.y = clamp(a.y, MARGIN, H - MARGIN)
+    a.mv = (a.vx !== 0 || a.vy !== 0) ? 1 : 0
+    if (a.mv) a.face = (Math.round(Math.atan2(a.vy, a.vx) * 180 / Math.PI) + 360) % 360
+    return a
+  }
+
+  var api = { W: W, H: H, SPEED: SPEED, ACC: ACC, RADIUS: RADIUS, MARGIN: MARGIN, stepAvatar: stepAvatar, stepAvatarFrac: stepAvatarFrac, dist: dist, clamp: clamp }
   root.MMOPredict = api
   if (typeof module !== 'undefined' && module.exports) module.exports = api // 服务端 require（net-tank sim.cjs 先例）
 })(typeof window !== 'undefined' ? window : globalThis)

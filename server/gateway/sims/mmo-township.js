@@ -372,6 +372,14 @@ function execCmd(st, seat, cmd, dirty, events) {
  * ===================================================================== */
 const BOT_EVERY = { casual: 30, balanced: 12, competitive: 8 }
 const BOT_YIELD_R = 120_000 // 让矿礼貌：目标 120px 内有真人在采 → 非 merchant 让 20 tick
+/* F1 卡死检测（GAMES-54）：有移动意图但连续 25 拍（2.5s@1×）位移 <2px 且无采集/倾倒
+ * 进度 → 判卡，切向绕行航点（130px，45 拍上限）后强制重选目标——喷泉轴向自陷带
+ * （steer 取整把侧向分量吃尽 → mx=0 永钉墙带，QA§7 F1）的兜底解；配合 steer 保底
+ * 侧滑与贡献台散布，三层防钉。 */
+const STUCK_TICKS = 25
+const STUCK_MOVE = 2000
+const DETOUR_MPX = 130_000
+const DETOUR_TICKS = 45
 
 function brain(st, seat, level, rng, env) {
   const av = st.ents['p' + seat]
@@ -463,7 +471,18 @@ function brain(st, seat, level, rng, env) {
     const dx = x - av.x, dy = y - av.y
     const m = d < 45000 ? Math.round(d / 45000 * 60) : 100 // 近处减速防绕圈
     out.mx = Math.round(dx / d * m); out.my = Math.round(dy / d * m)
+    /* F1 轴向陷阱保底：侧向分量被取整吃尽（|dx|/d·m<0.5）时补 ±6（≈7.2px/s 滑墙
+       分量）——moveAxis 推挤只在有侧向速度时产生滑墙，纯轴向会钉死在墙带 */
+    if (!out.mx && dx && out.my) out.mx = dx > 0 ? 6 : -6
+    if (!out.my && dy && out.mx) out.my = dy > 0 ? 6 : -6
     return d
+  }
+
+  /* F1 绕行中：切向航点优先于任何模式目标；到达（或 45 拍超时）→ 强制重选目标 */
+  if (mem.det) {
+    const d0 = steer(mem.det.x, mem.det.y, 26000)
+    if (d0 === 0 || --mem.det.t <= 0) { mem.det = null; mem.dt = 0 }
+    return out
   }
 
   if (mem.mode === 'wander') {
@@ -473,7 +492,13 @@ function brain(st, seat, level, rng, env) {
   } else if (mem.mode === 'stargaze') {
     if (!stars.length) mem.dt = 0
   } else if (mem.mode === 'return') {
-    const d = steer(st.map.deposit.x, st.map.deposit.y, 50000)
+    /* F1 散布（排队语义的散布解）：满包回城目标不再全员瞄准贡献台圆心（正对喷泉
+       盒心的轴向走廊），按席位金角环散布在台热区（60px）内——环点半径 ≤44px +
+       停点半径 ≤(52−r)px，站位恒在热区内，倾倒语义不变 */
+    const ring = seat * 2.399963
+    const rr = 26000 + (seat % 3) * 9000
+    const d = steer(st.map.deposit.x + Math.trunc(Math.cos(ring) * rr),
+      st.map.deposit.y + Math.trunc(Math.sin(ring) * rr), Math.max(8000, 52000 - rr))
     if (sess.bagN === 0) {
       // 倾倒完成：勤恳档歇脚点赞（§4 emote 列），商人/游手立即再出发
       if (level === 'balanced') { mem.mode = 'rest'; mem.restT = 12 + ((rng() * 25) | 0); mem.emotePend = 7 }
@@ -490,6 +515,18 @@ function brain(st, seat, level, rng, env) {
       } else if (sess.g && sess.g.hold) out.cmd = { k: 'gather', entId: sess.g.id, phase: 'stop' }
     }
   }
+
+  /* F1 卡死检测：有移动意图但连续 STUCK_TICKS 拍位移 <2px，且不在采集/倾倒/歇脚
+     进度中 → 判卡，取垂直于当前意图的切向绕行航点（rng 定侧，同 seed 确定性） */
+  const mv = Math.abs(av.x - (mem.lx == null ? av.x : mem.lx)) + Math.abs(av.y - (mem.ly == null ? av.y : mem.ly))
+  mem.lx = av.x; mem.ly = av.y
+  if ((out.mx || out.my) && !(sess.g && sess.g.hold) && sess.dumpT === 0 && mv < STUCK_MOVE) {
+    if ((mem.stk || 0) + 1 >= STUCK_TICKS) {
+      mem.stk = 0
+      const ang = Math.atan2(out.my, out.mx) + (rng() < 0.5 ? 1 : -1) * Math.PI / 2
+      mem.det = { x: av.x + Math.round(Math.cos(ang) * DETOUR_MPX), y: av.y + Math.round(Math.sin(ang) * DETOUR_MPX), t: DETOUR_TICKS }
+    } else mem.stk = (mem.stk || 0) + 1
+  } else mem.stk = 0
   return out
 }
 
@@ -547,14 +584,16 @@ function emitOne(room, ctxRec, r, opt = {}) {
   if (full) {
     for (const c of cand) if (c.e !== own) entsArr.push(c.e)
   } else {
-    for (const id of sendIds) if (id !== own.id) entsArr.push(rec(id))
+    /* F5（GAMES-54）：旁观连接 own=null——增量分支曾裸读 own.id 抛
+       "Cannot read properties of null" 崩整镇（满员旁观=生产崩溃路径） */
+    for (const id of sendIds) if (!own || id !== own.id) entsArr.push(rec(id))
   }
 
   const seat = ctxRec.seat
   const sess = seat >= 0 ? st.sessions[seat] : null
   const msg = {
     t: 'snapshot', frame: st.tick, base: full ? st.tick : b.base,
-    full: full ? 1 : 0, snapSeq: ++b.seq,
+    full: full ? 1 : 0, snapSeq: b.seq + 1, // F3：先探账后落账——退化弃帧不再消耗序号（seq 严格 +1）
     ext: {
       aoi: { x: cx, y: cy, r: AOI_R }, ack: seat >= 0 && room.seats[seat] ? (room.seats[seat].lastSeq ?? -1) : -1,
       // 镇面板/本人会话随流下发（HUD 事实源，防 welcome 后漂移；协议 §6 ext 向后兼容自由键）
@@ -565,10 +604,12 @@ function emitOne(room, ctxRec, r, opt = {}) {
   }
   if (r && r.events && r.events.length) msg.events = r.events
   const text = JSON.stringify(msg)
-  /* 增量字节 > 上次全量 ×0.7 → 退全量（流星雨全场跑动的最坏情形，§5.1） */
+  /* 增量字节 > 上次全量 ×0.7 → 退全量（流星雨全场跑动的最坏情形，§5.1）；
+     F3：探账用 seq=b.seq+1 但未落账——此弃帧路径不再消耗序号（账本 seq+2 跳根除） */
   if (!full && b.lastFullBytes && text.length > b.lastFullBytes * 0.7) {
     return emitOne(room, { ...ctxRec, seat }, r, { force: true })
   }
+  b.seq++
   if (full) { b.lastFullBytes = text.length; b.base = st.tick; b.sinceFull = 0 } else b.sinceFull++
   b.known = keep
   if (ctxRec.ctx.conn && ctxRec.ctx.conn.writable) ctxRec.ctx.conn.send(text)
