@@ -1027,7 +1027,7 @@
         "tech": "S1",
         "bot": "三档(休闲/均衡/竞技)，断线托管=casual"
       },
-      "notes": "GAMES-43 DEV 交付（单链 2/10+）。设计书 docs/designs/slg-battlefield.md（GAMES-42）。自测：api-check 14/14（A2 推平 3×casual tick720 / A3 被竞技快攻 tick1378 / 注入 19ms / 重连 1.2s）；net-check 25/25 回归；perf-smoke 60.1fps 掉帧 0%。待 PM 验收。"
+      "notes": "GAMES-43 DEV 交付（单链 2/10+）。设计书 docs/designs/slg-battlefield.md（GAMES-42）。自测：api-check 14/14（A2 推平 3×casual tick720 / A3 被竞技快攻 tick1378 / 注入 19ms / 重连 1.2s）；net-check 25/25 回归；perf-smoke 60.1fps 掉帧 0%。待 PM 验收。 GAMES-57 VIS 交付（单链 9/10+）：HUD 字号分级落地（P0 数字 13px/600，docs/hud-font-standard.md 平台标准）；阵营色盲双编码（旗形/血条纹理/阴影形状三通道）；GE 壳默认值同步（20 款重建）。自测：api-check 14/14 冻结绿；perf-smoke 59.7fps 掉帧 0.4%；识图 v2 复检 13/13（几何+墨水带+字号快照+DSF=1 截图）。"
     },
     "multiplayer:mmo-township": {
       "stage": "testing",

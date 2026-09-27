@@ -36,19 +36,21 @@ const html = `<!doctype html>
   #joining button { margin-top: 10px; padding: 9px 30px; border-radius: 999px; border: 0; background: #2563eb;
     color: #fff; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   #banner { display: none; position: absolute; top: 66px; left: 0; right: 0; text-align: center;
-    color: #fbbf24; font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
+    color: #fbbf24; font: 600 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
   .rbox { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 300px; }
   .rtitle { font: 700 30px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   .rsub { color: #8b93a7; font: 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   .rtable { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 8px 4px;
     background: rgba(255,255,255,.04); border-radius: 8px; }
-  .rrow { display: flex; justify-content: space-between; font: 12px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: #8b93a7; padding: 0 8px; }
+  .rrow { display: flex; justify-content: space-between; font: 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: #8b93a7; padding: 0 8px; }
   .rrow b { font-weight: 600; }
   .rmvp { color: #fde68a; font: 700 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   .rbox button { padding: 9px 30px; border-radius: 999px; border: 0; background: #2563eb; color: #fff;
     font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
   .rbox button.ghost { background: transparent; border: 1px solid rgba(255,255,255,.2); color: #8b93a7; }
-  .rbox button:disabled { opacity: .4; }
+  /* 战报回放灰置（GAMES-57 视觉预留，QA1 §6 承接）：虚线框+半透明即视"未解锁"，
+     保持可读文案与按钮集合不变（识图断言锚点） */
+  .rbox button:disabled { opacity: .55; border-style: dashed; border-color: rgba(255,255,255,.25); }
 </style>
 </head>
 <body>

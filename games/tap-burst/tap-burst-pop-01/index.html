@@ -85,6 +85,8 @@ const GE = (function () {
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const lerp = (a, b, t) => a + (b - a) * t;
   const TIER_CN = { relaxed: '轻松', simple: '简单', normal: '标准', hard: '困难', master: '大师' };
+  /* GAMES-57 HUD 字号分级（docs/hud-font-standard.md §1）：P0 数字/读数 ≥13px、
+   * P1 交互标签 ≥11px、P2 辅助标注 ≥9px——GE 壳默认值已按此校准 */
   const FONT = (px, w) => `${w || 400} ${px}px -apple-system,"PingFang SC","Noto Sans SC",sans-serif`;
   /** 滑动定向（§12：位移 ≥24px 定向，主轴优先）。不足阈值返回 null。 */
   function swipeDir(dx, dy) {
@@ -432,7 +434,7 @@ const GE = (function () {
       if (!gridMode) {
         btn({ x: 57, y: 210, w: 261, h: 64 }, p.best ? `继续 · 第 ${next} 关` : `开始 · 第 1 关`, () => startLevel(next));
         btn({ x: 57, y: 290, w: 261, h: 52 }, '选关', () => { gridMode = true; homeScroll = 0; });
-        g.fillStyle = '#8b94a7'; g.font = FONT(12, 400);
+        g.fillStyle = '#8b94a7'; g.font = FONT(13, 400);
         g.fillText(`最高通关 ${p.best} / ${cfg.levels}`, W / 2, 372);
       } else {
         g.save(); g.beginPath(); g.rect(0, 150, W, H - 210); g.clip();
@@ -476,7 +478,7 @@ const GE = (function () {
       g.fillStyle = '#e8ecf3'; g.font = FONT(14, 600); g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('‹', back.x + 22, back.y + 17);
       hitButtons.push({ r: back, cb: goHome });
-      g.textAlign = 'left'; g.font = FONT(12, 500); g.fillStyle = '#8b94a7';
+      g.textAlign = 'left'; g.font = FONT(13, 500); g.fillStyle = '#8b94a7';
       g.fillText('第' + curLevel + '关', 64, TOP / 2);
       /* HUD ≤3 组三等分（修复旧壳只画 1/2 组的历史缺陷） */
       const n = hudParts.length;
@@ -486,7 +488,7 @@ const GE = (function () {
         for (let i = 0; i < n; i++) {
           const part = hudParts[i];
           const cx = x0 + i * span;
-          g.fillStyle = '#8b94a7'; g.font = FONT(11, 500); g.fillText(part.t, cx + cw / 2, TOP / 2 - 9);
+          g.fillStyle = '#8b94a7'; g.font = FONT(12, 500); g.fillText(part.t, cx + cw / 2, TOP / 2 - 9);
           g.fillStyle = '#9fc0ff'; g.font = FONT(14, 700); g.fillText(fmt(part.v), cx + cw / 2, TOP / 2 + 9);
         }
       }
