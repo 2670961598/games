@@ -20,6 +20,12 @@
     "s3": "常驻世界无对局终点"
   },
   "description": "星海夜色里的暖光小镇：走图采集、表情寒暄、协力升级小镇。常驻共享世界，8-12 人同镇，随时进随时玩",
+  "residents": {
+    "sched": { "duskAt": 2100, "nightAt": 2700 },
+    "flock": { "aloneMaxHumans": 1, "disperseAt": 3, "zoneR": 160000, "share": { "casual": 0.85, "balanced": 0.5, "competitive": 0.15 } },
+    "social": { "r": 60000, "coolTicks": 120, "merchantCoolTicks": 60 },
+    "work": { "oreClaimR": 300000, "oreWindow": 600, "oreCycle": 1200 }
+  },
   "net": {
     "tech": "S2",
     "gameId": "mmo-township",

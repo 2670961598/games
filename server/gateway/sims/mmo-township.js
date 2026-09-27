@@ -14,6 +14,13 @@
  * maxTicks 强制投影终局（winner A=API 席贡献≥120 / B=未达标）。
  * Bot 居民三档（casual 游手/balanced 勤恳/competitive 商人，设计 §4）：
  * 让矿礼貌层豁免商人档；人口动态调节由 BotHost 常驻镇模式驱动（§4.1）。
+ *
+ * GAMES-55 BOT 深化：居民是内容不是填充——①三档人格化（每档 brain 个性注释+
+ * 行为清单，§4 brain 总纲）②社交涌现（偶遇表情互动/对真人靠近反应差异，全走
+ * 席位 rng 服务端侧）③陪聚集（真人少→贴身陪伴、真人多→让资源散布，动态聚集度
+ * 参数入 game.json residents 节）④日程系统（镇日内虚拟昼夜切行为集：白天采集/
+ * 黄昏集市/夜晚喷泉广场聚集，设计 §1 周期事件对齐）。协议零变更（ext.t.sc 为
+ * §6 向后兼容自由键）；确定性红线：无 Date/random 入判定路径。
  * ===================================================================== */
 import { createRequire } from 'node:module'
 import { writeFileSync, readFileSync, renameSync, mkdirSync } from 'node:fs'
@@ -22,6 +29,10 @@ import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const P = require('../../../games/multiplayer/mmo-township/predict.cjs')
+/* 居民深化参数唯一事实源=game.json residents 节（GAMES-55 任务3：动态聚集度参数
+ * 入 game.json）；此处载入+同值兜底——改 game.json 即调参，无需动 sim */
+const CFG = require('../../../games/multiplayer/mmo-township/game.json')
+const RES = (CFG && CFG.residents) || {}
 
 const SAVE_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'data', 'mmo-township-save.json')
 
@@ -114,7 +125,7 @@ function create(seed, opts = {}) {
     v: 1, gameId: 'mmo-township', seed: seed >>> 0, tick: 0,
     testRoom: !!opts.test, maxTicks: opts.test ? (opts.maxTicks ?? null) : null,
     map: { w: P.W, h: P.H, zones: ZONES, spawn: SPAWN, deposit: { x: 700000, y: 1300000 } },
-    town: { level: 1, exp: 0, day: 1, dayTick: 0, phase: 'calm' },
+    town: { level: 1, exp: 0, day: 1, dayTick: 0, phase: 'calm', sc: 0 },
     buildings,
     collide: buildings.filter((b) => b.built).map((b) => ({ x: BUILDINGS[b.slot].box[0], y: BUILDINGS[b.slot].box[1], w: BUILDINGS[b.slot].box[2], h: BUILDINGS[b.slot].box[3] })),
     ents, sessions: {},
@@ -149,7 +160,10 @@ function ensureSession(st, seat) {
     s = st.sessions[seat] = {
       seat, contrib: 0, total: 0, spent: 0, goalMet: false, badges: 0, hist: [],
       bag: { herb: 0, berry: 0, ore: 0, star: 0 }, bagN: 0, dumpT: 0, g: null,
-      mem: { mode: 'wander', dt: 0, wp: null, tg: null, holdSent: false, emotePend: -1 },
+      /* mem（bot 记忆，GAMES-55 扩展）：soc=社交账本{cool,n}（state 可观测）、socTo=
+         社交对象（事件 to 字段·聊天气泡位预留）、wpK=日程驻留点（mkt 集市/plz 广场）、
+         dw=驻留拍数、flN=陪聚集选点计数（聚集度实测观测位） */
+      mem: { mode: 'wander', dt: 0, wp: null, tg: null, holdSent: false, emotePend: -1, soc: { cool: 0, n: 0 }, socTo: null, wpK: null, dw: 0, flN: 0 },
     }
   }
   return s
@@ -271,6 +285,7 @@ function step(st, inputs, room) {
 
   /* 7. 周期事件（镇日/流星雨，§1.1：世界不清空、房间不 ended） */
   st.town.dayTick++
+  st.town.sc = st.town.dayTick >= SCHED_NIGHT ? 2 : st.town.dayTick >= SCHED_DUSK ? 1 : 0 // 虚拟昼夜时段（日程系统，GAMES-55）
   if (st.town.dayTick === METEOR_AT) {
     st.town.phase = 'meteor'
     const rng2 = mulberry32((st.seed ^ (st.town.day * 0x9e3779b9)) >>> 0)
@@ -294,7 +309,7 @@ function step(st, inputs, room) {
       sess.contrib = 0; sess.goalMet = false
     }
     events.push({ k: 'settle', day: st.town.day })
-    st.town.day++; st.town.dayTick = 0; st.town.phase = 'calm'
+    st.town.day++; st.town.dayTick = 0; st.town.phase = 'calm'; st.town.sc = 0 // 新镇日自白天起
     if (room && !st.testRoom) persist(room)
   }
 
@@ -340,7 +355,13 @@ function execCmd(st, seat, cmd, dirty, events) {
     if (id >= 0 && id < EMOTES) {
       av.em = { id, until: st.tick + 25 }
       dirty.add(av.id)
-      events.push({ k: 'emote', seat, id })
+      /* 社交定向（GAMES-55 §2）：brain 偶遇互动时在 mem.socTo 记对象席位，此处
+         附加到事件——`to` = 聊天气泡位预留（客户端据此刻画社交气泡尾标；真人自
+         发表情无 to，形状向后兼容） */
+      const ev = { k: 'emote', seat, id }
+      if (sess.mem && sess.mem.socTo != null && sess.mem.socTo !== seat) ev.to = sess.mem.socTo
+      if (sess.mem) sess.mem.socTo = null
+      events.push(ev)
     }
   } else if (cmd.k === 'gather') {
     if (typeof cmd.entId === 'string' && cmd.phase === 'start') {
@@ -367,11 +388,69 @@ function execCmd(st, seat, cmd, dirty, events) {
 
 /* =====================================================================
  * Bot 居民 brain（§4 三档人格；mem 挂会话、rng 挂席位——同 seed 双跑一致）
- * casual 游手：闲逛+emote，顺手采草 ｜ balanced 勤恳：草/果轮换标准循环 ｜
- * competitive 商人：星髓>矿>果直奔，满包即回，让矿礼貌豁免
+ * GAMES-55 人格化总纲（超越参数表——档位=居民人格，行为集随时段/社交/陪聚集切换）：
+ *
+ * casual 游手「老闲」：白天闲逛全图+喷泉边驻足社交+顺手采草；黄昏逛集市；夜晚
+ *   喷泉广场内环扎堆；流星雨必驻足发星光（§4 表）。外向：表情最频，真人靠近
+ *   挥手回应并驻足寒暄。
+ * balanced 勤恳「矿工阿勤」：白天上班=矿线(辉石滩)-贡献台通勤（ore 主线带让矿
+ *   礼貌，空线退草/果），满包回程哼歌（星光示意）；倾倒后歇脚点赞；黄昏下班
+ *   清包后集市歇脚；夜晚广场中环。真人靠近点头（点赞示意）不停步。
+ * competitive 商人「摊主金算盘」：白天抢高价值线（星髓>矿>果直奔，让矿豁免；
+ *   流星雨夜也收摊抢星——生意优先于日程）；黄昏蹲集市守摊；夜晚广场外环摆摊
+ *   边。真人靠近鼓掌招揽（冷却最短——生意人勤快）。
  * ===================================================================== */
 const BOT_EVERY = { casual: 30, balanced: 12, competitive: 8 }
 const BOT_YIELD_R = 120_000 // 让矿礼貌：目标 120px 内有真人在采 → 非 merchant 让 20 tick
+/* ---------- GAMES-55 居民深化参数（game.json residents 节为事实源，缺省同值兜底） ---------- */
+/* 日程（§4 任务4）：镇日 3000 tick 内虚拟昼夜——白天采集 / 黄昏(duskAt 起)集市 /
+ * 夜晚(nightAt 起)喷泉广场聚集；流星雨 2900 落在夜段（广场看星，设计 §1 对齐） */
+const SCHED = RES.sched || {}
+const SCHED_DUSK = SCHED.duskAt ?? 2100
+const SCHED_NIGHT = SCHED.nightAt ?? 2700
+/* 陪聚集（§4 任务3）：真人 ≤aloneMaxHumans 时按档位权重贴身陪伴（waypoint 落
+ * 真人活动锚环带），≥disperseAt 时让出资源（闲逛点避开真人所在分区）；区间线性过渡 */
+const FLOCK = RES.flock || {}
+const FLOCK_ALONE = FLOCK.aloneMaxHumans ?? 1
+const FLOCK_DISPERSE = FLOCK.disperseAt ?? 3
+const FLOCK_R = FLOCK.zoneR ?? 160_000
+const FLOCK_SHARE = { casual: 0.85, balanced: 0.5, competitive: 0.15, ...(FLOCK.share || {}) }
+/* 社交涌现（§4 任务2）：偶遇半径内触发互动，冷却防刷屏；商人招揽心切冷却最短 */
+const SOC = RES.social || {}
+const SOC_R = SOC.r ?? 60_000
+const SOC_COOL = SOC.coolTicks ?? 120
+const SOC_COOL_M = SOC.merchantCoolTicks ?? 60
+/* 勤恳上班（§1 任务1）：矿班窗口（oreCycle 内前 oreWindow tick，席位错峰半周期）+
+ * 让线半径（真人身边 oreClaimR 内的矿位整体让出）——"礼让三先"保真人的希望线 */
+const WORK = RES.work || {}
+const ORE_CLAIM_R = WORK.oreClaimR ?? 300_000
+const ORE_WIN = WORK.oreWindow ?? 600
+const ORE_CYCLE = WORK.oreCycle ?? 1200
+/* 日程地标：喷泉广场锚=slot0 盒心；夜聚环带避开喷泉扩张盒外接圆（r≈48px）——
+ * 内环游手（围着喷泉）/中环勤恳/外环商人（广场边"摆摊"）；黄昏集市环带挂贡献台
+ * （无碰撞盒可贴）：勤恳歇脚内环/游手逛摊/商人守摊外环——档位=时空签名 */
+const FOUNTAIN = { x: 700000, y: 1148000 }
+const PLAZA_RING = { casual: [52000, 82000], balanced: [82000, 118000], competitive: [118000, 158000] }
+const MARKET_RING = { balanced: [30000, 70000], casual: [50000, 100000], competitive: [70000, 120000] }
+const HUM_RING = { casual: [60000, 150000], balanced: [80000, 160000], competitive: [90000, 160000] } // 陪玩环带：跟在真人身边晃（不叠身位）
+/** 镇日时段（确定性：仅 dayTick） */
+function schedOf(dayTick) { return dayTick >= SCHED_NIGHT ? 'night' : dayTick >= SCHED_DUSK ? 'dusk' : 'day' }
+/** 真人活动锚（陪聚集）：真人化身质心，每拍由 state 推导（无记忆、零随机） */
+function humanAnchor(st, kinds) {
+  if (!kinds) return null
+  let x = 0, y = 0, n = 0
+  for (const s in st.sessions) {
+    if (kinds[s] !== 'human') continue
+    const av = st.ents['p' + (s | 0)]
+    if (av) { x += av.x; y += av.y; n++ }
+  }
+  return n ? { x: Math.trunc(x / n), y: Math.trunc(y / n), n } : null
+}
+/** 坐标→分区 id（散布让区判定用；镇中心兜底） */
+function zoneOf(x, y) {
+  for (const z of ZONES) if (x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h) return z.id
+  return 2
+}
 /* F1 卡死检测（GAMES-54）：有移动意图但连续 25 拍（2.5s@1×）位移 <2px 且无采集/倾倒
  * 进度 → 判卡，切向绕行航点（130px，45 拍上限）后强制重选目标——喷泉轴向自陷带
  * （steer 取整把侧向分量吃尽 → mx=0 永钉墙带，QA§7 F1）的兜底解；配合 steer 保底
@@ -402,19 +481,64 @@ function brain(st, seat, level, rng, env) {
     for (const h of humansGathering) if (P.dist(h.x, h.y, x, y) < BOT_YIELD_R) return true
     return false
   }
-  const pickSite = (ks, polite) => {
+  /* 让线加码（GAMES-55）：真人 220px 内的矿位整体让出（不只让正在采的）——
+     勤恳"礼让三先"人格；矿线供给慢（40s/株），真人身边的矿是他们的希望线 */
+  const nearHuman = (x, y, r) => {
+    if (!kinds) return false
+    for (const s in st.sessions) {
+      if (kinds[s] !== 'human') continue
+      const h = st.ents['p' + (s | 0)]
+      if (h && P.dist(h.x, h.y, x, y) < r) return true
+    }
+    return false
+  }
+  const pickSite = (ks, polite, claimR = 0) => {
     let best = null, bs = -1
     for (const e of sites(ks)) {
       if (polite && near(e.x, e.y)) continue
+      if (claimR && nearHuman(e.x, e.y, claimR)) continue
       const d = P.dist(av.x, av.y, e.x, e.y) + 1
       const s = e.stock * VALUE[e.k] * 100000 / d * (0.7 + rng() * 0.6) // 抖动散伙：多商人不同最近位，抢收不打堆
       if (s > bs) { bs = s; best = e }
     }
     return best
   }
+  /* ---------- 陪聚集（§3）：真人活动锚+档位聚集权重（参数=game.json residents.flock） ---------- */
+  if (!mem.soc) { mem.soc = { cool: 0, n: 0 }; mem.flN = mem.flN || 0 }
+  const anchor = humanAnchor(st, kinds)
+  const flockW = !anchor || anchor.n >= FLOCK_DISPERSE ? 0
+    : (FLOCK_SHARE[level] ?? 0.5) * (anchor.n <= FLOCK_ALONE ? 1 : 1 - (anchor.n - FLOCK_ALONE) / (FLOCK_DISPERSE - FLOCK_ALONE))
+  /* 真人是否在辉石滩（矿线，ZONES[3]）——勤恳"见客让线"判定（§1 让矿礼貌的深化） */
+  let humansInOreZone = false
+  if (anchor && kinds) {
+    for (const s in st.sessions) {
+      if (kinds[s] !== 'human') continue
+      const h = st.ents['p' + (s | 0)]
+      if (h && zoneOf(h.x, h.y) === 3) { humansInOreZone = true; break }
+    }
+  }
+
   const toWander = (bias) => {
     mem.mode = 'wander'
-    if (bias && bias.length) {
+    if (anchor && flockW > 0 && rng() < flockW) {
+      // 陪聚集：闲逛点落在真人活动锚环带内（陪伴感——真人在线少时最常发生）
+      const a = rng() * Math.PI * 2
+      const r = (0.35 + rng() * 0.65) * FLOCK_R
+      mem.wp = { x: clamp(anchor.x + Math.trunc(Math.cos(a) * r), 40000, P.W - 40000), y: clamp(anchor.y + Math.trunc(Math.sin(a) * r), 40000, P.H - 40000) }
+      mem.flN++
+    } else if (anchor && anchor.n >= FLOCK_DISPERSE && !(bias && bias.length)) {
+      // 真人多 → 让出资源：闲逛点避开真人所在分区（散布语义）
+      const busy = new Set()
+      for (const s in st.sessions) {
+        if (!kinds || kinds[s] !== 'human') continue
+        const h = st.ents['p' + (s | 0)]
+        if (h) busy.add(zoneOf(h.x, h.y))
+      }
+      const free = ZONES.filter((z) => !busy.has(z.id))
+      const pool = free.length ? free : ZONES
+      const z = pool[(rng() * pool.length) | 0]
+      mem.wp = { x: z.x + ((rng() * 0.7 + 0.15) * z.w) | 0, y: z.y + ((rng() * 0.7 + 0.15) * z.h) | 0 }
+    } else if (bias && bias.length) {
       // 蹲守型游荡（商人）：高价值线打空时守在果/矿位附近等刷新，抓即所得
       const e = bias[(rng() * bias.length) | 0]
       mem.wp = { x: e.x + ((rng() * 2 - 1) * 150000) | 0, y: e.y + ((rng() * 2 - 1) * 150000) | 0 }
@@ -425,37 +549,110 @@ function brain(st, seat, level, rng, env) {
     mem.tg = null; mem.holdSent = false
   }
 
+  /* ---------- 日程驻留（§4 任务4）：黄昏集市 mkt / 夜晚喷泉广场 plz / 陪玩 hum ---------- */
+  const hangout = (place0) => {
+    /* 陪玩驻留（§3）：游手白天的小驻优先跟真人——"跟在你身边晃"；真人多/无真人
+       时退回喷泉广场（地盘不变，人格不变，只换陪伴对象） */
+    const place = place0 === 'hum' && (!anchor || flockW <= 0) ? 'plz' : place0
+    mem.mode = 'hangout'; mem.wpK = place
+    const ring = (place === 'mkt' ? MARKET_RING : place === 'hum' ? HUM_RING : PLAZA_RING)[level] || PLAZA_RING.balanced
+    const c = place === 'mkt' ? st.map.deposit : place === 'hum' ? anchor : FOUNTAIN
+    const a = rng() * Math.PI * 2
+    const r = ring[0] + rng() * (ring[1] - ring[0])
+    mem.wp = { x: clamp(c.x + Math.trunc(Math.cos(a) * r), 40000, P.W - 40000), y: clamp(c.y + Math.trunc(Math.sin(a) * r), 40000, P.H - 40000) }
+    if (place === 'hum') mem.flN++
+    mem.dw = 25 + ((rng() * 55) | 0) // 到点小驻再换位——广场/集市里的踱步感
+    mem.tg = null; mem.holdSent = false
+  }
+
+  /* ---------- 社交涌现（§2 任务2）：偶遇互动——全走本席位 rng（服务端侧，不破 S2） ----------
+   * 居民间偶遇（≤SOC_R）：概率闸后挥手/大笑（游手更外向）；真人靠近：恒应答且
+   * 反应随人格分岔——游手挥手+驻足寒暄 / 勤恳点头(点赞)不停步 / 商人鼓掌招揽。 */
+  if (mem.soc.cool > 0) mem.soc.cool--
+  else if (av.em == null || st.tick >= av.em.until) {
+    let mate = null, md = SOC_R, mateHuman = false
+    for (const s in st.sessions) {
+      const s2 = s | 0
+      if (s2 === seat) continue
+      const av2 = st.ents['p' + s2]
+      if (!av2) continue
+      const d = P.dist(av.x, av.y, av2.x, av2.y)
+      if (d < md) { md = d; mate = av2; mateHuman = !!(kinds && kinds[s] === 'human') }
+    }
+    if (mate && (mateHuman || rng() < 0.6)) {
+      mem.emotePend = mateHuman
+        ? (level === 'casual' ? 0 : level === 'balanced' ? 7 : 4) // 回应/点头/招揽（§2 反应差异表）
+        : (rng() < (level === 'casual' ? 0.5 : 0.2) ? 1 : 0)      // 居民间：挥手为主，游手偶发大笑
+      mem.socTo = mate.seat // 事件 to=聊天气泡位预留（execCmd 附加）
+      mem.soc.n++
+      mem.soc.cool = level === 'competitive' ? SOC_COOL_M : SOC_COOL
+      if (mateHuman && level === 'casual') mem.dt = Math.max(mem.dt, 10)       // 游手驻足寒暄
+      else if (mateHuman && level === 'competitive') mem.dt = Math.max(mem.dt, 6) // 商人驻摊多吆喝两声
+    } else if (mate) mem.soc.cool = SOC_COOL >> 2 // 未成交也短冷却（防逐拍掷骰空转）
+  }
+
+  const ph = schedOf(st.town.dayTick) // 当前虚拟昼夜时段（日程系统）
+  const wantHang = ph === 'dusk' ? 'mkt' : 'plz' // 黄昏集市 / 夜晚广场
+
   if (mem.dt <= 0) {
     mem.dt = BOT_EVERY[level] || 12
     mem.holdSent = false
     if (level === 'competitive') {
-      if (sess.bagN >= BAG_CAP) { mem.mode = 'return' }
+      if (stars.length && sess.bagN < BAG_CAP) {
+        // 流星雨抢收（§4 商人人格：收摊不误生意——星髓优先于日程，昼夜里都冲）
+        const tg = stars.reduce((a, b) => (P.dist(av.x, av.y, a.x, a.y) < P.dist(av.x, av.y, b.x, b.y) ? a : b))
+        mem.mode = 'gather'; mem.tg = tg.id
+      } else if (ph !== 'day') {
+        // 黄昏蹲集市守摊 / 夜晚广场外环摆摊边（§1 商人时空签名）
+        if (sess.bagN > 0) mem.mode = 'return' // 收摊先清包
+        else if (mem.mode !== 'hangout' || mem.wpK !== wantHang) hangout(wantHang)
+      } else if (sess.bagN >= BAG_CAP) { mem.mode = 'return' }
       else {
         // 目标粘性：当前目标仍有效则不换（防逐拍改道 ping-pong）
         const cur = mem.tg ? st.ents[mem.tg] : null
-        const tg = stars.length ? stars.reduce((a, b) => (P.dist(av.x, av.y, a.x, a.y) < P.dist(av.x, av.y, b.x, b.y) ? a : b))
-          : (cur && cur.stock > 0 && (cur.k === 'ore' || cur.k === 'berry' || cur.k === 'star')) ? cur
-            : pickSite(['ore', 'berry'], false) || pickSite(null, false)
+        const tg = (cur && cur.stock > 0 && (cur.k === 'ore' || cur.k === 'berry' || cur.k === 'star')) ? cur
+          : pickSite(['ore', 'berry'], false) || pickSite(null, false)
         if (tg) { mem.mode = 'gather'; mem.tg = tg.id }
         else { toWander(sites(['ore', 'berry'])); mem.dt = 5 } // 空线快复查（蹲守刷新）
       }
     } else if (level === 'balanced') {
-      if (sess.bagN >= BAG_CAP) mem.mode = 'return'
+      if (ph !== 'day') {
+        // 下班（定时上下班节奏的"下"半场）：清包 → 黄昏集市歇脚 / 夜晚广场中环
+        if (sess.bagN > 0) mem.mode = 'return'
+        else if (mem.mode !== 'hangout' || mem.wpK !== wantHang) hangout(wantHang)
+      } else if (sess.bagN >= BAG_CAP) mem.mode = 'return'
       else if (mem.mode === 'rest' && mem.restT > 0) { /* 倾倒后歇脚继续 */ }
       else {
+        // 上班：矿线(辉石滩)-贡献台通勤。矿班窗口（oreCycle 内前 oreWindow tick，
+        // 席位错峰半周期——同镇勤恳不同时下矿）+ 见客让线：真人进了辉石滩，
+        // 勤恳整线相让转头采草（礼让三先——A2 可赢线由让渡保住）；真人不在时
+        // 让线半径兜底（身边的矿位让出）
         const enRoute = stars.filter((s) => P.dist(av.x, av.y, s.x, s.y) < 500000)[0] // 顺路捡 1 枚
-        const tg = enRoute || pickSite(['herb', 'berry'], true) || pickSite(['herb', 'berry'], false)
+        const oreShift = (st.town.dayTick + seat * (ORE_CYCLE >> 1)) % ORE_CYCLE < ORE_WIN && !humansInOreZone
+        const tg = enRoute
+          || (oreShift ? pickSite(['ore'], true, ORE_CLAIM_R) || pickSite(['herb', 'berry'], true)
+            : pickSite(['herb', 'berry'], true) || pickSite(['ore'], true, ORE_CLAIM_R))
+          || pickSite(['ore', 'herb', 'berry'], false)
         if (tg) { mem.mode = 'gather'; mem.tg = tg.id } else toWander()
       }
     } else {
-      // casual 游手：流星雨驻足星光；日常闲逛为主，顺手采草
+      // casual 游手「老闲」：流星雨驻足星光；夜晚广场内环；黄昏逛集市；白天闲逛+喷泉社交+顺手采草
       if (stars.length) {
         mem.mode = 'stargaze'; mem.emotePend = 4
         if (sess.bagN >= 3) mem.mode = 'return'
       } else if (sess.bagN >= 3) mem.mode = 'return'
-      else if (rng() < 0.5) {
+      else if (ph === 'night') {
+        if (mem.mode !== 'hangout' || mem.wpK !== 'plz') hangout('plz')
+      } else if (ph === 'dusk') {
+        // 黄昏逛集市：逛摊与随处闲逛对半（游手不守摊，只凑热闹）
+        if (rng() < 0.5) { if (mem.mode !== 'hangout' || mem.wpK !== 'mkt') hangout('mkt') }
+        else toWander()
+      } else if (rng() < 0.45) {
         const tg = pickSite(['herb'], true)
         if (tg && P.dist(av.x, av.y, tg.x, tg.y) < 700000) { mem.mode = 'gather'; mem.tg = tg.id } else toWander()
+      } else if (rng() < 0.35) {
+        // 喷泉边社交/陪玩小驻（白天也常驻广场——游手的地盘；真人少时改跟真人晃 §3）
+        if (mem.mode !== 'hangout' || (mem.wpK !== 'plz' && mem.wpK !== 'hum')) hangout(rng() < flockW ? 'hum' : 'plz')
       } else if (rng() < 0.25) mem.emotePend = (rng() * EMOTES) | 0
       else toWander()
     }
@@ -491,6 +688,15 @@ function brain(st, seat, level, rng, env) {
     if (--mem.restT <= 0) mem.dt = 0
   } else if (mem.mode === 'stargaze') {
     if (!stars.length) mem.dt = 0
+  } else if (mem.mode === 'hangout') {
+    /* 日程驻留（§4 任务4）：到点小驻（dw 拍）后踱步换位——黄昏/夜晚的广场集市感；
+       白天（游手喷泉社交/商人白日游摊）短驻即回决策拍 */
+    if (!mem.wp || steer(mem.wp.x, mem.wp.y, 26000) === 0) {
+      if (mem.dw > 0) mem.dw--
+      else if (mem.wpK === 'hum') hangout('hum') // 陪玩驻留：到点换位即重锚真人（跟着走）
+      else if (ph === 'day') mem.dt = 0
+      else hangout(mem.wpK)
+    }
   } else if (mem.mode === 'return') {
     /* F1 散布（排队语义的散布解）：满包回城目标不再全员瞄准贡献台圆心（正对喷泉
        盒心的轴向走廊），按席位金角环散布在台热区（60px）内——环点半径 ≤44px +
@@ -500,10 +706,14 @@ function brain(st, seat, level, rng, env) {
     const d = steer(st.map.deposit.x + Math.trunc(Math.cos(ring) * rr),
       st.map.deposit.y + Math.trunc(Math.sin(ring) * rr), Math.max(8000, 52000 - rr))
     if (sess.bagN === 0) {
-      // 倾倒完成：勤恳档歇脚点赞（§4 emote 列），商人/游手立即再出发
+      // 倾倒完成：勤恳档歇脚点赞（§4 emote 列）并翻班（矿班↔草班），商人/游手立即再出发
       if (level === 'balanced') { mem.mode = 'rest'; mem.restT = 12 + ((rng() * 25) | 0); mem.emotePend = 7 }
       else mem.dt = 0
-    } else if (d === 0 && sess.dumpT < DEPOSIT_TICKS) { /* 站定等倾倒 */ }
+    } else {
+      // 满包哼歌（勤恳人格 §1）：回程/排队小概率哼小调（星光示意）
+      if (level === 'balanced' && rng() < 0.15 && (av.em == null || st.tick >= av.em.until)) mem.emotePend = 3
+      if (d === 0 && sess.dumpT < DEPOSIT_TICKS) { /* 站定等倾倒 */ }
+    }
   } else if (mem.mode === 'gather') {
     const tg = mem.tg ? st.ents[mem.tg] : null
     if (!tg || tg.stock <= 0 || (sess.g && sess.g.id !== tg.id && sess.bagN >= BAG_CAP)) { mem.dt = 0; if (sess.g && sess.g.hold) out.cmd = { k: 'gather', entId: sess.g.id, phase: 'stop' } }
@@ -597,7 +807,7 @@ function emitOne(room, ctxRec, r, opt = {}) {
     ext: {
       aoi: { x: cx, y: cy, r: AOI_R }, ack: seat >= 0 && room.seats[seat] ? (room.seats[seat].lastSeq ?? -1) : -1,
       // 镇面板/本人会话随流下发（HUD 事实源，防 welcome 后漂移；协议 §6 ext 向后兼容自由键）
-      t: { e: st.town.exp, l: st.town.level, d: st.town.day, dt: st.town.dayTick, ph: st.town.phase },
+      t: { e: st.town.exp, l: st.town.level, d: st.town.day, dt: st.town.dayTick, ph: st.town.phase, sc: st.town.sc || 0 },
       me: sess ? { c: sess.contrib, t: sess.total, b: sess.bag, n: sess.bagN, g: sess.goalMet ? 1 : 0 } : undefined,
     },
     ents: entsArr, leave: full ? [] : leave,
