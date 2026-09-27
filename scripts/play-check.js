@@ -27,14 +27,19 @@ const argOf = (k) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ?
 const SLUG = argOf('--slug')
 const TYPE = argOf('--type')
 const TRACE = !!process.env.G30_TRACE                      // 调试轨迹（G30_TRACE=1）
-const SHOTS = argOf('--out') || '/Volumes/BigDisk/Studio/kernel/workers/GAMES-30-shots'
+const SHOTS = argOf('--out') || '/Volumes/BigDisk/Studio/kernel/workers/GAMES-49-shots'
 const INPUT_LINE = 100                       // 红线：输入→呈现 <100ms
-const PILOT_TYPES = ['tap-burst', 'lane-runner']
+const WAVE_TYPES = ['tap-burst', 'lane-runner', 'block-drop', 'block-fit']   // 已迁移波次（GAMES-30 + GAMES-49）
 
 async function collectGames() {
+  let types = WAVE_TYPES
+  if (TYPE) types = [TYPE]
+  else if (SLUG) {                                         // --slug 可指向任意类型：全目录扫描（防清单外空集假绿——冻结命令 --slug block-* 须真实命中）
+    types = (await readdir(join(ROOT, 'games'), { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && !d.name.startsWith('_') && d.name !== 'demo').map((d) => d.name)
+  }
   const list = []
-  for (const type of PILOT_TYPES) {
-    if (TYPE && type !== TYPE) continue
+  for (const type of types) {
     const dirs = (await readdir(join(ROOT, 'games', type), { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name).sort()
     for (const slug of dirs) list.push({ type, slug })
   }
@@ -49,6 +54,8 @@ const ev = (page, name) => page.waitForFunction(
 /* ---------- 神仙模拟（受信输入；状态读取走 debug 钩子，决策与 GAMES-24 bench 机器人同源思路） ---------- */
 async function godPlay(page, type, rect, slug) {
   if (type === 'lane-runner') return runnerTimeline(page, rect, slug)
+  if (type === 'block-drop') return dropBot(page, rect, slug)
+  if (type === 'block-fit') return fitBot(page, rect, slug)
 
   const toCss = (x, y) => ({ cx: rect.left + x / 375 * rect.width, cy: rect.top + y / 667 * rect.height })
   const deadline = Date.now() + 42_000
@@ -77,6 +84,234 @@ async function godPlay(page, type, rect, slug) {
       }
     }
     await page.waitForTimeout(90)
+  }
+  return null
+}
+
+/* ---------- block-drop：旋转×列枚举贪心（test-b 5e 同源评估器）----------
+ * 逐块决策：evaluate 镜像（消行×5000 − 洞×60 − 聚高×4 − 崎岖×3）枚举 4 旋转×全列；
+ * 执行=受信手势序列（§25 手势映射逐字一致）：点按=旋转，横拖每 22px 移一格，
+ * 单事件下移 >44px = fling 硬降；旋转踢墙的 x 漂移在读态后按目标列补拖。 */
+async function dropBot(page, rect, slug) {
+  const toCss = (x, y) => ({ cx: rect.left + x / 375 * rect.width, cy: rect.top + y / 667 * rect.height })
+  const deadline = Date.now() + 42_000
+  let playShotDone = false, guard = 0
+  while (Date.now() < deadline) {
+    const snap = await page.evaluate(() => {
+      const d = window.__GAMES_DEBUG__
+      const le = d.events.find((e) => e.event === 'levelEnd')
+      return { le: le ? le.payload : null, st: d.state() }
+    })
+    if (snap.le) return snap.le
+    const st = snap.st
+    guard++
+    if (st && st.screen === 'play' && st.engine && st.engine.piece) {
+      if (!playShotDone && (st.engine.lines >= 1 || guard > 24)) {
+        await page.evaluate(() => window.__GAMES_DEBUG__.pause(true))
+        await page.screenshot({ path: join(SHOTS, slug + '-play.png') })
+        await page.evaluate(() => window.__GAMES_DEBUG__.pause(false))
+        playShotDone = true
+      }
+      /* 单次 evaluate 枚举 4 旋转 × 全列（页面内计算，无逐格 IPC） */
+      const plan = await page.evaluate(() => {
+        const COLS = 10, ROWS = 20
+        const s = window.__GAMES_DEBUG__.state().engine
+        if (!s || !s.piece) return null
+        const rotCW = (cells) => {
+          const h = cells.length, w = cells[0].length, r = []
+          for (let j = 0; j < w; j++) { r.push([]); for (let i = h - 1; i >= 0; i--) r[j].push(cells[i][j]) }
+          return r
+        }
+        const parseCells = (str) => str.split('/').map((row) => row.split('').map(Number))
+        function evaluate(grid, cells, x) {
+          const g = grid.map((r) => r.split('').map(Number))
+          const fits = (yy) => cells.every((row, i) => row.every((v, j) => {
+            if (!v) return true
+            const cy = yy + i, cx = x + j
+            return cx >= 0 && cx < COLS && cy < ROWS && (cy < 0 || g[cy][cx] === 0)
+          }))
+          if (!fits(0)) return null
+          let y = 0
+          while (fits(y + 1)) y++
+          let top = false
+          cells.forEach((row, i) => row.forEach((v, j) => {
+            if (!v) return
+            const cy = y + i
+            if (cy < 0) { top = true; return }
+            g[cy][x + j] = 1
+          }))
+          if (top) return null
+          let cleared = 0
+          for (let r = ROWS - 1; r >= 0; r--) if (g[r].every((v) => v)) { g.splice(r, 1); g.unshift(new Array(COLS).fill(0)); cleared++; r++ }
+          let holes = 0, bump = 0, prevH = null, agg = 0
+          for (let c = 0; c < COLS; c++) {
+            let h = 0, seen = false
+            for (let r = 0; r < ROWS; r++) {
+              if (g[r][c]) { if (!seen) { h = ROWS - r; seen = true } }
+              else if (seen) holes++
+            }
+            agg += h
+            if (prevH !== null) bump += Math.abs(h - prevH)
+            prevH = h
+          }
+          return { rank: cleared * 5000 - holes * 60 - agg * 4 - bump * 3 - y * 0.1 }
+        }
+        let cells = parseCells(s.piece.cells), best = null
+        for (let r = 0; r < 4; r++) {
+          const w = cells[0].length
+          for (let x = 0; x <= COLS - w; x++) {
+            const ev = evaluate(s.grid.split('|'), cells, x)
+            if (ev && (!best || ev.rank > best.rank)) best = { rot: r, x, rank: ev.rank }
+          }
+          cells = rotCW(cells)
+        }
+        return best
+      })
+      if (!plan) { await page.waitForTimeout(60); continue }
+      const tap = toCss(187, 350)
+      for (let r = 0; r < plan.rot; r++) await page.mouse.click(tap.cx, tap.cy)
+      const px = await page.evaluate(() => {
+        const s = window.__GAMES_DEBUG__.state().engine
+        return s && s.piece ? s.piece.x : null
+      })
+      if (px == null) { await page.waitForTimeout(60); continue }
+      const moves = plan.x - px
+      if (TRACE) {
+        const st3 = await page.evaluate(() => window.__GAMES_DEBUG__.state().engine)
+        console.error(`[trace] plan rot=${plan.rot} x=${plan.x} px=${px} → piece k=${st3.piece && st3.piece.k} x=${st3.piece && st3.piece.x} y=${st3.piece && st3.piece.y} lines=${st3.lines} grid0=${st3.grid.split('|')[0]} grid1=${st3.grid.split('|')[1]}`)
+      }
+      const a = toCss(187, 350), b = toCss(187 + moves * 22, 350), c = toCss(187 + moves * 22, 440)
+      await page.mouse.move(a.cx, a.cy)                   // 先归位再按下（mouse.down 不收坐标，按在当前位）
+      await page.mouse.down()
+      if (moves) await page.mouse.move(b.cx, b.cy, { steps: Math.min(12, Math.abs(moves)) })
+      await page.mouse.move(c.cx, c.cy, { steps: 1 })     // 单事件下移 >44px：fling 硬降
+      await page.mouse.up()
+      await page.waitForTimeout(40)
+    } else {
+      await page.waitForTimeout(60)
+    }
+  }
+  return null
+}
+
+/* ---------- block-fit：二阶前瞻拖放（test-c 5f placeSmart 扩展版）----------
+ * 逐块决策：枚举 3 块 × 全格位 × 次块最优跟放，rank=消行×1e5 + 他块可落×3e4
+ *   − 孤立空穴×40 + 格数×50 + 低行×5 − 左列 + 0.9×次步值——hard/master（refresh=0）
+ *   实测死局主因是盘面碎片化，一阶贪心权重在种子间不稳（见 GAMES-49 REPORT 对照实验），
+ *   二阶前瞻 + 碎片惩罚五档全胜；
+ * 执行=受信拖放：块槽按下 → 棋盘目标锚点（块 bbox 中心 = 指上 24px，ghostAnchor 逆推）→ 抬起确认。 */
+async function fitBot(page, rect, slug) {
+  const toCss = (x, y) => ({ cx: rect.left + x / 375 * rect.width, cy: rect.top + y / 667 * rect.height })
+  const deadline = Date.now() + 42_000
+  let playShotDone = false, placed = 0
+  while (Date.now() < deadline) {
+    const snap = await page.evaluate(() => {
+      const d = window.__GAMES_DEBUG__
+      const le = d.events.find((e) => e.event === 'levelEnd')
+      return { le: le ? le.payload : null, st: d.state() }
+    })
+    if (snap.le) return snap.le
+    const st = snap.st
+    if (st && st.screen === 'play' && st.engine) {
+      if (!playShotDone && (st.engine.score > 300 || placed > 8)) {
+        await page.evaluate(() => window.__GAMES_DEBUG__.pause(true))
+        await page.screenshot({ path: join(SHOTS, slug + '-play.png') })
+        await page.evaluate(() => window.__GAMES_DEBUG__.pause(false))
+        playShotDone = true
+      }
+      const best = await page.evaluate(() => {
+        const N = 10
+        const s = window.__GAMES_DEBUG__.state().engine
+        if (!s) return null
+        const parseCells = (p) => p.split('|').map((c) => c.split(',').map(Number))
+        const fits = (cells, r, c, g) => cells.every(([dx, dy]) => {
+          const x = c + dx, y = r + dy
+          return x >= 0 && x < N && y >= 0 && y < N && g[y * N + x] === 0
+        })
+        const anyPlacement = (cells, g) => {
+          for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (fits(cells, r, c, g)) return true
+          return false
+        }
+        const clears = (cells, r, c, g) => {
+          const after = g.slice()
+          for (const [dx, dy] of cells) after[(r + dy) * N + (c + dx)] = 1
+          let lines = 0
+          for (let rr = 0; rr < N; rr++) { let f = true; for (let cc = 0; cc < N; cc++) if (after[rr * N + cc] === 0) { f = false; break } if (f) lines++ }
+          for (let cc = 0; cc < N; cc++) { let f = true; for (let rr = 0; rr < N; rr++) if (after[rr * N + cc] === 0) { f = false; break } if (f) lines++ }
+          return { lines, after }
+        }
+        const placementList = (cells, g) => {
+          const list = []
+          for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (fits(cells, r, c, g)) list.push({ r, c })
+          return list
+        }
+        /* 碎片度：连续空邻 <3 的空穴数（hard/master refresh=0 死局主因） */
+        const fragOf = (g) => {
+          let frag = 0
+          for (let rr = 0; rr < N; rr++) for (let cc = 0; cc < N; cc++) {
+            if (g[rr * N + cc] !== 0) continue
+            let n = 1
+            if (rr > 0 && g[(rr - 1) * N + cc] === 0) n++
+            if (rr < N - 1 && g[(rr + 1) * N + cc] === 0) n++
+            if (cc > 0 && g[rr * N + cc - 1] === 0) n++
+            if (cc < N - 1 && g[rr * N + cc + 1] === 0) n++
+            if (n < 3) frag++
+          }
+          return frag
+        }
+        /* 二阶前瞻：本块放置 × 次块最优跟放的组合评估（滚动重规划，只执行第一步）；
+         * vm 层对照（GAMES-49）：一阶贪心权重在种子间不稳（无 frag 项 04/05 双败，
+         * 有 frag 项 01 反败），二阶前瞻五档全胜（66/47/56/72/81 步） */
+        let best = null
+        for (let i = 0; i < s.pieces.length; i++) {
+          const p = s.pieces[i]
+          if (!p) continue
+          const cells = parseCells(p)
+          let w = 0, h = 0
+          for (const [dx, dy] of cells) { w = Math.max(w, dx + 1); h = Math.max(h, dy + 1) }
+          for (const pos of placementList(cells, s.grid)) {
+            const { lines, after } = clears(cells, pos.r, pos.c, s.grid)
+            let othersOk = true
+            for (let j = 0; j < s.pieces.length; j++) {
+              if (j === i || !s.pieces[j]) continue
+              if (!anyPlacement(parseCells(s.pieces[j]), after)) { othersOk = false; break }
+            }
+            let best2 = null
+            for (let j = 0; j < s.pieces.length; j++) {
+              if (j === i || !s.pieces[j]) continue
+              const cells2 = parseCells(s.pieces[j])
+              for (const pos2 of placementList(cells2, after)) {
+                const cl2 = clears(cells2, pos2.r, pos2.c, after)
+                let thirdOk = true
+                for (let k = 0; k < s.pieces.length; k++) {
+                  if (k === i || k === j || !s.pieces[k]) continue
+                  if (!anyPlacement(parseCells(s.pieces[k]), cl2.after)) { thirdOk = false; break }
+                }
+                const v2 = cl2.lines * 100000 + (thirdOk ? 30000 : 0) - fragOf(cl2.after) * 40 + cells2.length * 50
+                if (best2 == null || v2 > best2) best2 = v2
+              }
+            }
+            const rank = lines * 100000 + (othersOk ? 30000 : 0) - fragOf(after) * 40 + cells.length * 50 + (N - 1 - pos.r) * 5 - pos.c
+              + 0.9 * (best2 == null ? -50000 : best2)
+            if (!best || rank > best.rank) best = { i, r: pos.r, c: pos.c, w, h, rank }
+          }
+        }
+        return best
+      })
+      if (!best) { await page.waitForTimeout(80); continue }
+      /* 引擎锚点换算：块 bbox 中心 = 手指上方 24px（ghostAnchor 逆推；test-c 同式） */
+      const fx = 37.5 + (best.c + best.w / 2) * 30
+      const fy = 62 + 24 + (best.r + best.h / 2) * 30
+      const slotX = 12 + best.i * ((375 - 24) / 3) + 20
+      const a = toCss(slotX, 590), b = toCss(fx, fy)
+      await page.mouse.move(a.cx, a.cy)                   // 先归位再按下（mouse.down 不收坐标，按在当前位）
+      await page.mouse.down()
+      await page.mouse.move(b.cx, b.cy, { steps: 6 })
+      await page.mouse.up()
+      placed++
+    } else {
+      await page.waitForTimeout(80)
+    }
   }
   return null
 }
