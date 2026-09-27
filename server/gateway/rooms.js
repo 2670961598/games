@@ -184,7 +184,6 @@ export class RoomManager {
     const s = room.seats[connCtx.seat]
     if (!s || s.conn !== connCtx) return
     const keys = sanitizeKeys(msg.keys)
-    s.lastInput = keys
     const f = Number(msg.frame)
     if (Number.isInteger(f) && f > room.frame && f <= room.frame + 8) {
       s.pending.set(f, keys)
@@ -192,6 +191,13 @@ export class RoomManager {
         const min = Math.min(...s.pending.keys())
         s.pending.delete(min)
       }
+      // 离散 cmd 严格一次（GAMES-51 F1）：带预约帧的 cmd 不落 lastInput——否则同一注入
+      // 经宽限通道提前执行＋预约帧二次执行（QA二号 echo-sem 实测 spawned×2）。真客户端
+      // input delay=1 恒带 frame，此后 cmd 的唯一执行通道就是 pending。
+      // 连续键（mx/my/fire）仍写 lastInput：宽限"沿用最近输入"语义不变（net-tank 零感知）。
+      if (!keys.cmd) s.lastInput = keys
+    } else {
+      s.lastInput = keys
     }
   }
 
@@ -223,7 +229,9 @@ export class RoomManager {
       // abandon：曾有真人、现在无人（无玩家连接也无旁观）
       const anyConn = room.seats.some((s) => s.conn) || room.spectators.size > 0
       if (room.hadHuman && !anyConn && now - room.lastHumanAt > ABANDON_MS) {
-        this.finish(room, { winner: 'draw', scores: { ...room.state.kills }, reason: 'abandon' })
+        // scores 语义=积分（协议 §4.2；GAMES-51 F2：此前误传 kills 冒充）。有积分通道的
+        // 游戏传 state.score；kills 即积分的游戏（net-tank 无 score 字段）回退 kills。
+        this.finish(room, { winner: 'draw', scores: { ...(room.state.score || room.state.kills) }, reason: 'abandon' })
         return
       }
       // 帧距/追帧上限随 timeScale 缩放（测试房假时钟倍速；timeScale=1 与原语义逐字节一致）

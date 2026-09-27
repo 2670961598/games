@@ -60,6 +60,7 @@
 
     var ws = null;
     var userClose = false;
+    var roomGone = false;          // 房间已回收（曾入房后 join 得 room-gone）：重试已无意义，终结会话
     var lastFrame = 0;             // 最近收到的帧号（输入自动标 lastFrame+1）
     var rtts = [], offsets = [];
     var pingTimer = 0, backoffIdx = 0, retryTimer = 0;
@@ -150,13 +151,20 @@
             emit('onPong', { rttMs: session.rttMs, offsetMs: session.offsetMs });
             break;
           case 'error':
+            // BACKOFF→lost 路径同步（GAMES-51 F3）：曾入房后房已回收——清重连凭证并终结
+            // 重试（否则 BACKOFF 空转 10s 后误报 reconnect-timeout，盖掉"对局已结束"语义）
+            if (msg.code === 'room-gone' && session.roomId) {
+              roomGone = true;
+              clearResume(session.roomId);
+              try { ws.close(); } catch (e) { /* 已断 */ }
+            }
             emit('onError', msg);
             break;
         }
       };
       ws.onclose = function () {
         root.clearInterval(pingTimer);
-        if (userClose) { setStatus('closed'); return; }
+        if (userClose || roomGone) { setStatus('closed'); return; }
         if (session.status === 'lost') return;
         if (!lostAt) lostAt = root.Date.now();
         if (root.Date.now() - lostAt > 10000) { // 10s 重连窗（协议 §2）

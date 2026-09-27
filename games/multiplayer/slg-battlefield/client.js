@@ -1003,7 +1003,10 @@
       onEnd: function (m) { finish(m.result); },
       onClosed: function () { if (!matchOver) showResult({ winner: 'draw', reason: 'abandon' }); },
       onError: function (m) {
-        if (m.code === 'reconnect-timeout' || m.code === 'room-gone') fallbackOffline('对局已结束');
+        /* 文案分家（GAMES-51 F3）：room-gone=房已回收（对局真的结束）；reconnect-timeout=
+           仅重连窗耗尽——对局多半仍在（托管 bot 续打），重进可让位拿回席位，不可误导弃局 */
+        if (m.code === 'room-gone') fallbackOffline('对局已结束');
+        else if (m.code === 'reconnect-timeout') showRejoin();
       },
       onStatus: function (st) {
         var el = document.getElementById('joining');
@@ -1025,6 +1028,27 @@
     var el = document.getElementById('banner');
     el.textContent = reason; el.style.display = 'block';
     startOffline();
+  }
+
+  /* 重连窗耗尽（GAMES-51 F3）：不切离线、不报"对局已结束"——覆盖层提示 + 一键重进。
+     ?room= 直达后 SDK 自动携 sessionStorage token 复席（窗内）；已逾时转托管则走让位
+     入席照常参战；房已回收则服务端回 room-gone → 上面"对局已结束"分支。 */
+  function showRejoin() {
+    if (matchOver || fellBack) return;
+    var roomId = session ? session.roomId : null;
+    var el = document.getElementById('joining');
+    el.textContent = '连接已断，可重新进入对战';
+    if (roomId) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'rejoin'; btn.textContent = '重新进入对战';
+      btn.onclick = function () { // 保留 gw/maxTicks 等现有参数，只改 room
+        var q = new URLSearchParams(location.search);
+        q.set('room', roomId);
+        location.href = location.pathname + '?' + q.toString();
+      };
+      el.appendChild(btn);
+    }
+    el.style.display = 'flex';
   }
 
   /* ---------- 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑） ---------- */
