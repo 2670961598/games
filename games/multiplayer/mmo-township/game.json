@@ -26,6 +26,7 @@
     "social": { "r": 60000, "coolTicks": 120, "merchantCoolTicks": 60 },
     "work": { "oreClaimR": 300000, "oreWindow": 600, "oreCycle": 1200 }
   },
+  "session": { "inheritOnTakeover": false },
   "net": {
     "tech": "S2",
     "gameId": "mmo-township",

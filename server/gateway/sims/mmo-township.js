@@ -33,6 +33,11 @@ const P = require('../../../games/multiplayer/mmo-township/predict.cjs')
  * 入 game.json）；此处载入+同值兜底——改 game.json 即调参，无需动 sim */
 const CFG = require('../../../games/multiplayer/mmo-township/game.json')
 const RES = (CFG && CFG.residents) || {}
+/* F1'（GAMES-63）席位会话继承开关：false=新语义（默认）——真人接管席位时会话战绩
+ * 重开（"延续的是身份不是战绩"）；true=回退旧"席位延续"（托管/前任的 contrib/total
+ * 随席位传给新加入者，QA二号 F1' 实测 me.c=42 上手）。改 game.json 即回退，无需动 sim */
+const SESS_CFG = (CFG && CFG.session) || {}
+const SESS_INHERIT = SESS_CFG.inheritOnTakeover === true
 
 const SAVE_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'data', 'mmo-township-save.json')
 
@@ -128,7 +133,7 @@ function create(seed, opts = {}) {
     town: { level: 1, exp: 0, day: 1, dayTick: 0, phase: 'calm', sc: 0 },
     buildings,
     collide: buildings.filter((b) => b.built).map((b) => ({ x: BUILDINGS[b.slot].box[0], y: BUILDINGS[b.slot].box[1], w: BUILDINGS[b.slot].box[2], h: BUILDINGS[b.slot].box[3] })),
-    ents, sessions: {},
+    ents, sessions: {}, seatKinds: [],
     stats: { drainRate: 0, online: 0, pop: POP_BASE },
   }
 
@@ -168,6 +173,15 @@ function ensureSession(st, seat) {
   }
   return s
 }
+/* F1'（GAMES-63）席位易主会话重开：化身身份延续（位置/镇貌/镇等级不动），战绩不传——
+ * 当日贡献/背包/达标/累计/已花/徽记/历史全部归零；mem（bot 记忆）保留，再托管时
+ * 居民行为连续性不变。镇经验不回滚（托管期倾倒已入镇账，属镇不属人） */
+function resetSession(st, seat) {
+  const s = st.sessions[seat]
+  if (!s) return
+  s.contrib = 0; s.total = 0; s.spent = 0; s.goalMet = false; s.badges = 0; s.hist = []
+  s.bag = { herb: 0, berry: 0, ore: 0, star: 0 }; s.bagN = 0; s.dumpT = 0; s.g = null
+}
 function spawnAvatar(st, seat) {
   const id = 'p' + seat
   if (st.ents[id]) return st.ents[id]
@@ -190,10 +204,16 @@ function step(st, inputs, room) {
   /* 0. 席位自愈：激活席（human/bot）补化身+会话；空位化身清场（BotHost 调节/离镇） */
   if (room) {
     for (let i = 0; i < room.seats.length; i++) {
-      const active = room.seats[i].kind === 'human' || room.seats[i].kind === 'bot'
+      const kind = room.seats[i].kind
+      const active = kind === 'human' || kind === 'bot'
       const av = st.ents['p' + i]
       if (active && !av) { spawnAvatar(st, i); ensureSession(st, i); dirty.add('p' + i) }
       if (!active && av) delete st.ents['p' + i] // 出视野 leave 由各连接 known 集自动下发
+      /* F1'（GAMES-63）席位会话继承收口：kind 首次转 human（真人接管托管席/空位）→
+       * 会话战绩重开；重连窗内复席（kind 全程 human）不触发。开关见 game.json
+       * session.inheritOnTakeover（true=旧席位延续语义，回退位） */
+      if (!SESS_INHERIT && kind === 'human' && st.seatKinds[i] !== 'human') resetSession(st, i)
+      st.seatKinds[i] = kind
     }
   }
   const activeSeats = Object.keys(st.sessions)

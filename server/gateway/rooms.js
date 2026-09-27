@@ -269,8 +269,13 @@ export class RoomManager {
 
   doFrame(room, now) {
     // 托管：真人断线逾 10s → 席位转 bot（默认均衡档；游戏可经 META.takeOver 定档），名册广播
+    // F2'（GAMES-63）重连窗边界粒度收口：托管判定加 1 拍宽限（本游戏 tickMs）——此前
+    // goneAt 落点与帧栅格相位任意，边界拍 (10s, 10s+1拍] 内复席成败靠相位运气（QA二号
+    // F2' 实测 gap 10004ms 复席成功仅因帧未到）；加宽限后口径确定：gap ≤ RECONNECT_MS+1拍
+    // 的复席必先于托管转换落地（协议 §5.4 重连窗=10s+1 拍宽限），超窗复席走 bot 让位路径
+    const graceMs = room.sim.META.tickMs || 0
     for (const s of room.seats) {
-      if (s.kind === 'human' && !s.conn && s.goneAt && now - s.goneAt > RECONNECT_MS) {
+      if (s.kind === 'human' && !s.conn && s.goneAt && now - s.goneAt > RECONNECT_MS + graceMs) {
         s.kind = 'bot'
         s.level = room.sim.META.takeOver || 'balanced'
         s.name = 'Bot·托管'
