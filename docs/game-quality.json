@@ -1,1046 +1,1047 @@
 {
-  "_meta": {
-    "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 backlog/designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail；iterations 记迭代轮数；notes 记案例库编号引用",
-    "更新人": "PM（每波交付后回填）",
-    "SOP": "docs/quality-pipeline.md v2"
+ "_meta": {
+  "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 backlog/designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail；iterations 记迭代轮数；notes 记案例库编号引用",
+  "更新人": "PM（每波交付后回填）",
+  "SOP": "docs/quality-pipeline.md v2"
+ },
+ "games": {
+  "block-drop:block-drop-cascade-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
   },
-  "games": {
-    "block-drop:block-drop-cascade-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-drop:block-drop-cascade-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-drop:block-drop-cascade-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-drop:block-drop-cascade-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-drop:block-drop-cascade-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-fit:block-fit-mosaic-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-fit:block-fit-mosaic-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-fit:block-fit-mosaic-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-fit:block-fit-mosaic-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "block-fit:block-fit-mosaic-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:color-strike": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
-    },
-    "demo:mole-grid": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:number-hunt": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:pop-dot": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:quick-math": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pass",
-      "iterations": 2,
-      "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
-    },
-    "drop-catcher:drop-catcher-harvest-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "lane-runner:lane-runner-dash-01": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-02": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-03": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-04": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-05": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "match3:match3-candy-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-burst:tap-burst-pop-01": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-02": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-03": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-04": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-05": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-jump:tap-jump-flap-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "multiplayer:net-tank": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 2,
-      "net": {
-        "tech": "S1",
-        "bot": "三档(休闲/均衡/竞技)+真人让位"
-      },
-      "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
-    },
-    "multiplayer:slg-battlefield": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 1,
-      "net": {
-        "tech": "S1",
-        "bot": "三档(休闲/均衡/竞技)，断线托管=casual"
-      },
-      "notes": "GAMES-43 DEV 交付（单链 2/10+）。设计书 docs/designs/slg-battlefield.md（GAMES-42）。自测：api-check 14/14（A2 推平 3×casual tick720 / A3 被竞技快攻 tick1378 / 注入 19ms / 重连 1.2s）；net-check 25/25 回归；perf-smoke 60.1fps 掉帧 0%。待 PM 验收。 GAMES-57 VIS 交付（单链 9/10+）：HUD 字号分级落地（P0 数字 13px/600，docs/hud-font-standard.md 平台标准）；阵营色盲双编码（旗形/血条纹理/阴影形状三通道）；GE 壳默认值同步（20 款重建）。自测：api-check 14/14 冻结绿；perf-smoke 59.7fps 掉帧 0.4%；识图 v2 复检 13/13（几何+墨水带+字号快照+DSF=1 截图）。"
-    },
-    "multiplayer:mmo-township": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 1,
-      "net": {
-        "tech": "S2",
-        "bot": "三档居民(游手/勤恳/商人)+常驻镇人口动态 8-12",
-        "aoi": "r=300px 滞回 15px 预算 40"
-      },
-      "notes": "GAMES-52 DEV 交付（单链 2/10+，S2 状态同步首证）。设计书 docs/designs/mmo-township.md（GAMES-50）。自测：api-check 16/16（A2 gather-push tick2386 达标 120 / A3 idle+3商人 day-end / 注入 27ms / 重连 1.2s）；存量回归见 REPORT。待 PM 验收。"
-    }
+  "block-drop:block-drop-cascade-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-drop:block-drop-cascade-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "block-fit:block-fit-mosaic-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:color-strike": {
+   "stage": "testing",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
+  },
+  "demo:mole-grid": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:number-hunt": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:pop-dot": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:quick-math": {
+   "stage": "testing",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pass",
+   "iterations": 2,
+   "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
+  },
+  "drop-catcher:drop-catcher-harvest-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "lane-runner:lane-runner-dash-01": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-02": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-03": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-04": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-05": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "match3:match3-candy-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-burst:tap-burst-pop-01": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-02": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-03": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-04": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-05": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-jump:tap-jump-flap-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "multiplayer:net-tank": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 2,
+   "net": {
+    "tech": "S1",
+    "bot": "三档(休闲/均衡/竞技)+真人让位"
+   },
+   "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
+  },
+  "multiplayer:slg-battlefield": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "net": {
+    "tech": "S1",
+    "bot": "三档人格(陪玩/让力/开局树)",
+    "chain": "GAMES-42..58 十单链完整"
+   },
+   "notes": "E6 首条完整 10/10 单链。STRESS 三组 PASS（PM 亲自组装五跑工件，Q-007）；QA1/QA2 红线全过；200ms 延迟无偏置；确定性与压测零泄漏。合并链 8078586→7c35b30→e8b03f7（第 6 跑收官复核：修正 2 口径+B 组实测入表+T2b 补跑）"
+  },
+  "multiplayer:mmo-township": {
+   "stage": "testing",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 1,
+   "net": {
+    "tech": "S2",
+    "bot": "三档居民(游手/勤恳/商人)+常驻镇人口动态 8-12",
+    "aoi": "r=300px 滞回 15px 预算 40"
+   },
+   "notes": "GAMES-52 DEV 交付（单链 2/10+，S2 状态同步首证）。设计书 docs/designs/mmo-township.md（GAMES-50）。自测：api-check 16/16（A2 gather-push tick2386 达标 120 / A3 idle+3商人 day-end / 注入 27ms / 重连 1.2s）；存量回归见 REPORT。待 PM 验收。"
   }
+ }
 }
