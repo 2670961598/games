@@ -99,7 +99,29 @@
     return Math.trunc(Math.sqrt(dx * dx + dy * dy))
   }
 
-  var api = { W: W, H: H, SPEED: SPEED, ACC: ACC, RADIUS: RADIUS, MARGIN: MARGIN, stepAvatar: stepAvatar, dist: dist, clamp: clamp }
+  /**
+   * 逐帧步进（客户端呈现层外推，GAMES-54 F2）：与 stepAvatar 同式积分+碰撞，
+   * 步长按帧时长 dtMs 比例缩放——起步 ≤1 帧应答，与 10Hz 上报/快照节拍解耦。
+   * 仅客户端渲染路径使用（位置/速度经此为浮点）；服务器与和解重放仍走整拍
+   * stepAvatar（权威积分与 §5.5 语义不变，每张快照重锚定回整数域）。
+   */
+  function stepAvatarFrac(a, mx, my, boxes, dtMs) {
+    if (!(dtMs > 0)) return a
+    var tvx = clamp(mx | 0, -100, 100) * (SPEED / 100)
+    var tvy = clamp(my | 0, -100, 100) * (SPEED / 100)
+    var acc = ACC * dtMs / 100
+    a.vx += clamp(tvx - a.vx, -acc, acc)
+    a.vy += clamp(tvy - a.vy, -acc, acc)
+    moveAxis(a, Math.trunc(a.vx * dtMs / 1000), boxes, true)
+    moveAxis(a, Math.trunc(a.vy * dtMs / 1000), boxes, false)
+    a.x = clamp(a.x, MARGIN, W - MARGIN)
+    a.y = clamp(a.y, MARGIN, H - MARGIN)
+    a.mv = (a.vx !== 0 || a.vy !== 0) ? 1 : 0
+    if (a.mv) a.face = (Math.round(Math.atan2(a.vy, a.vx) * 180 / Math.PI) + 360) % 360
+    return a
+  }
+
+  var api = { W: W, H: H, SPEED: SPEED, ACC: ACC, RADIUS: RADIUS, MARGIN: MARGIN, stepAvatar: stepAvatar, stepAvatarFrac: stepAvatarFrac, dist: dist, clamp: clamp }
   root.MMOPredict = api
   if (typeof module !== 'undefined' && module.exports) module.exports = api // 服务端 require（net-tank sim.cjs 先例）
 })(typeof window !== 'undefined' ? window : globalThis)
@@ -444,7 +466,7 @@
       if (me) {
         own.ghost = { x: me.rec.x, y: me.rec.y, vx: me.rec.vx || 0, vy: me.rec.vy || 0, face: 0, mv: 0 }
         own.rx = me.rec.x; own.ry = me.rec.y
-        own.pending = []; own.slide = null
+        own.pending = []; own.slide = null; own.cx = 0; own.cy = 0
         cam.x = me.rec.x / 1000; cam.y = me.rec.y / 1000
       }
     }
@@ -468,8 +490,16 @@
     lastSnapSeq = m.snapSeq
     var i
     if (m.full) {
+      /* F2b（GAMES-54）：全量重建携带旧插值缓冲——F1 修复后全镇活性使字节退化
+         常态触发（增量≈全量74%>0.7），全量若清缓冲会让他人恒为单样本=10Hz 阶梯 */
+      var prevBuf = {}
+      for (var pid in ents) prevBuf[pid] = ents[pid].buf
       ents = {}
-      for (i = 0; i < m.ents.length; i++) upsertEnt(m.ents[i])
+      for (i = 0; i < m.ents.length; i++) {
+        var eNew = upsertEnt(m.ents[i])
+        var ob = prevBuf[m.ents[i].id]
+        if (ob && ob.length) eNew.buf = ob.concat(eNew.buf).slice(-4)
+      }
     } else {
       for (i = 0; i < m.ents.length; i++) upsertEnt(m.ents[i])
       if (m.leave) for (i = 0; i < m.leave.length; i++) {
@@ -489,15 +519,21 @@
     if (m.events) for (i = 0; i < m.events.length; i++) applyEvent(m.events[i])
   }
 
-  /* 预测和解（§5.5）：丢弃 ack 前历史，从权威位重放未确认输入 */
+  /* 预测和解（§5.5）：丢弃 ack 前历史，从权威位重放未确认输入。
+     F2：权威重锚定的跳变量（逐帧外推与整拍积分的正常微分差 + 真修正）走独立
+     收敛通道 own.cx/cy——预测位移不再被一并平滑（起步/跟手 ≤1 帧） */
   function reconcile(meRec, ack) {
     own.pending = own.pending.filter(function (p) { return p.seq > ack })
     var gh = { x: meRec.x, y: meRec.y, vx: meRec.vx || 0, vy: meRec.vy || 0, face: 0, mv: 0 }
     for (var i = 0; i < own.pending.length; i++) P.stepAvatar(gh, own.pending[i].mx, own.pending[i].my, world.collide)
     if (own.ghost) {
-      var d = Math.sqrt((gh.x - own.ghost.x) * (gh.x - own.ghost.x) + (gh.y - own.ghost.y) * (gh.y - own.ghost.y))
+      var jx = gh.x - own.ghost.x, jy = gh.y - own.ghost.y
+      var d = Math.sqrt(jx * jx + jy * jy)
       own.ghost = gh
-      if (d > 32000 && !own.slide) own.slide = { fx: own.rx, fy: own.ry, until: performance.now() + 200 } // >32px：200ms 滑移不闪跳
+      if (d > 32000) {
+        if (!own.slide) own.slide = { fx: own.rx, fy: own.ry, until: performance.now() + 200 } // >32px：200ms 滑移不闪跳
+        own.cx = 0; own.cy = 0
+      } else { own.cx = (own.cx || 0) + jx; own.cy = (own.cy || 0) + jy } // ≤32px 修正余量（渲染层逐帧显影）
     } else own.ghost = gh
   }
 
@@ -700,20 +736,22 @@
     return Math.abs(p.x - ax) < 40 && Math.abs(p.y - ay) < 14
   }
 
-  /* ---------- 10Hz 输入上报 + 预测步进（与服务器同式积分，§5.5） ---------- */
+  /* ---------- 10Hz 输入上报 + 预测步进（F2：逐帧外推，与 10Hz 上报/快照节拍解耦） ---------- */
   var predAcc = 0
   function netTick(dt) {
     if (mode !== 'online' || !session || session.role !== 'player' || !started) return
+    var inp = currentInput()
+    /* 预测：每 rAF 帧按帧时长积分（与服务器同式移动/碰撞，predict.cjs 单一事实源）
+       ——输入读入到预测应用 ≤1 帧（设计 §3.1），不再隔着 10Hz netTick 拍 */
+    if (own.ghost) P.stepAvatarFrac(own.ghost, inp.mx, inp.my, world.collide, dt)
     predAcc += dt
     while (predAcc >= 100) {
       predAcc -= 100
-      var inp = currentInput()
       var msg = { mx: inp.mx, my: inp.my }
       if (pendingCmd) { msg.cmd = pendingCmd; pendingCmd = null }
-      session.sendInput(msg)               // seqInput：SDK 标 seq
+      session.sendInput(msg)               // seqInput：SDK 标 seq（10Hz 上报节拍不变）
       own.pending.push({ seq: seqCounter++, mx: inp.mx, my: inp.my })
       if (own.pending.length > 12) own.pending.shift()
-      if (own.ghost) P.stepAvatar(own.ghost, inp.mx, inp.my, world.collide)
     }
   }
 
@@ -755,7 +793,8 @@
     for (var f = fades.length - 1; f >= 0; f--) if (nowP - fades[f].at > 300) fades.splice(f, 1)
     if (!world) { drawBoot(); return }
 
-    /* 自身呈现位（预测和解平滑：≤32px 指数收敛，>32px 滑移） */
+    /* 自身呈现位（F2）：预测位移逐帧直通（起步/跟手 ≤1 帧，无收敛滞后）；
+       和解修正量独立通道每帧显影 25%（≤32px）/200ms 滑移（>32px）不闪跳 */
     if (own.ghost && myRole === 'player') {
       var tx = own.ghost.x, ty = own.ghost.y
       if (own.slide) {
@@ -764,10 +803,16 @@
           tx = own.slide.fx + (own.ghost.x - own.slide.fx) * fr
           ty = own.slide.fy + (own.ghost.y - own.slide.fy) * fr
         } else own.slide = null
+        own.cx = 0; own.cy = 0
       }
-      var ex = tx - own.rx, ey = ty - own.ry
-      if (ex * ex + ey * ey > 32000 * 32000) { own.rx = tx; own.ry = ty }
-      else { own.rx += ex * 0.25; own.ry += ey * 0.25 }
+      var ex = (tx - (own.cx || 0)) - own.rx, ey = (ty - (own.cy || 0)) - own.ry
+      if (ex * ex + ey * ey > 32000 * 32000) { own.cx = 0; own.cy = 0; own.rx = tx; own.ry = ty }
+      else {
+        own.rx += ex; own.ry += ey                                  // 预测位移直通
+        own.rx += (own.cx || 0) * 0.25; own.ry += (own.cy || 0) * 0.25 // 修正余量显影 25%/帧
+        own.cx = (own.cx || 0) * 0.75; own.cy = (own.cy || 0) * 0.75
+        if (Math.abs(own.cx) + Math.abs(own.cy) < 100) { own.cx = 0; own.cy = 0 } // 余量归零（防渐近残留）
+      }
     }
     /* 镜头：角色居中、世界滚动（§1.5） */
     var tgt = (myRole === 'player' && own.ghost) ? { x: own.rx / 1000, y: own.ry / 1000 } : { x: world.map.deposit.x / 1000, y: world.map.deposit.y / 1000 }
