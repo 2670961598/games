@@ -538,17 +538,38 @@
    * （slg 接线先例：资源就绪门控 + 攒钱闸门实现）。
    *   casual 慢发展：农本 build order（lumber→farm→farm Lv2→camp）、inf 连练池 6 止步、
    *     爆发后池 ≥6 且 CD 好才征（首征常 2100+）、固定 lane1、无 rally、被破墙 30% 补征。
-   *   balanced 均衡：lumber→farm→camp→mine→works、camp Lv2@~1500、混编 inf:razor 2:1、
+   *   balanced 均衡：farm→mine→camp→works（经济先手）、camp Lv2@~1500、混编 inf:razor 2:1、
    *     池 ≥8 即征、敌方最薄车道、前线 1/2 rally、被破墙即满池再征、营 Lv2 后回补经济。
-   *   competitive 军备竞速：lumber→camp→farm→works、camp Lv2@~1200+Lv3@~2400（S3 并行秀）、
+   *   competitive 军备竞速：farm→camp→mine→works（camp 抢先=军备）、camp Lv2@~1200+Lv3@~2400、
    *     情报克制（读敌最近军团构成）无情报 inf:heavy 2:1、tick1800 CD 即满池 timing attack、
    *     双线分压 lane0/2 交替+破墙后集火 lane1、动态 rally、被破墙即征+补 mine 转 heavy。
+   *
+   * ── 建造死锁三例警示（GAMES-70 跨游戏教训，改本段前必读）──────────────────
+   * REFINE v1 共性根因 P1（docs/qa/refine-v1.md §3）：设计书与实现只定义 happy path
+   * 的状态转移，不为"进入不可达/无进展状态"定义逃逸路径。三例同构，全在边界
+   * 类（槽位/闸门/窗口）上翻车——边界条件必须显式处理越界，禁止假设"总能成功"：
+   *   ① 槽位类（empire F1·GAMES-70）：build order 5 项 > PLOTS=4 → indexOf(null)=-1
+   *     永不建造且 mem.bi 卡死 → 升级线 else 分支永不可达。教训：order 项数必须
+   *     ≤ 槽位数（升級项不占新槽除外），且选址失败要有 bi++ 溢出兜底（防卡死）。
+   *   ② 闸门类（slg QA1 F2·GAMES-31）："有 CP 即花"闸门互锁 → 克制兵 45/70CP 在
+   *     2CP/s 收入下永不可攒，5 局 0 次非 inf 出兵。教训：闸门门槛必须 ≤ 收入上限
+   *     可达（可达性钳制），否则闸门=永久关闭。
+   *   ③ 窗口类（empire F2·GAMES-70）：heavy 触发窗 (pool+q)%3===2 依赖池态取模——
+   *     出征清池/练兵完成的非线性跳变会让窗口系统性错位（实测唯一窗口 10%3=1）；
+   *     加上 4 槽占满 → 危机补 mine 分支死 + 被动铁 100/tick 撑不起 T1 铁系兵。
+   *     教训：节奏窗口用决策侧计数器（mem.trainSeq）不用池态取模；铁系兵前置
+   *     mine 进线性 order；克制/混编兵支付不起时降级 inf（先 inf 后换装）不断档。
    * ===================================================================== */
   const DECIDE = { casual: 50, balanced: 20, competitive: 10 };
+  /* order 项数必须 ≤ PLOTS=4（警示①：5 项时第 5 座 indexOf(null)=-1 永不建造+bi 卡死）。
+   * F1/F2 修复口径：farm+mine+camp+works 四件套为必集（粮/铁/两营——缺 mine 则被动铁
+   * 100/tick 撑不起 razor 90k/heavy 220k 的 T1 铁价，缺 farm 则粮 300/tick 练不满池），
+   * 让出 lumber（被动木 200/tick 足够付四件 230k 造价 + 升级线）；balanced 经济先手
+   * （mine 先），competitive 军备竞速（camp 先）保档差。 */
   const BUILD_ORDER = {
     casual: [['lumber', 0], ['farm', 0], ['farm', 1], ['camp', 0]],                       // 农本（军事最后）
-    balanced: [['lumber', 0], ['farm', 0], ['camp', 0], ['mine', 0], ['works', 0]],
-    competitive: [['lumber', 0], ['camp', 0], ['farm', 0], ['works', 0]],                  // 军备
+    balanced: [['farm', 0], ['mine', 0], ['camp', 0], ['works', 0]],                      // 均衡：经济先手
+    competitive: [['farm', 0], ['camp', 0], ['mine', 0], ['works', 0]],                   // 军备：camp 抢先
   };
   const botMem = new WeakMap();
   function memOf(st, seat) {
@@ -609,6 +630,7 @@
         if (afford) {
           const plot = camp ? camp.plot : s.plots.indexOf(null);
           if (plot >= 0) { mem.bi++; return { o: { k: 'build', plot, kind } }; }
+          mem.bi++;   // 溢出兜底（警示①）：目标不可达（无空位）也推进 bi——防 bi 永卡把升级线 else 分支饿死
         } else if (level === 'competitive' && lv === 0 && s.res.w >= cost.w * 2) { /* 快开档硬等 */ }
       }
     } else {
@@ -641,6 +663,8 @@
           }
         }
       }
+      /* 危机补 mine（警示①③：mine 已进线性 order 常态提前建成，此分支退化为兜底；
+       * plot>=0 显式判空——槽满时静默让路，不做永假死分支） */
       if (level === 'competitive' && wallDown && !campOf(s, 'mine')) {  // 危机补 mine 采铁转 heavy
         const plot = s.plots.indexOf(null);
         const cost = BUILDS.mine.cost[0];
@@ -675,7 +699,12 @@
       }
     }
 
-    /* ---- 练兵（营池内；池上限门控） ---- */
+    /* ---- 练兵（营池内；池上限门控；混编三重防线——警示③教训逐层叠加：
+       ① 池态取模 (pool+q)%3 会被出征清池/练兵完成的非线性跳变系统性错位；
+       ② 发单序计数也不够——works 建成前 inf 已把池填满（pool+queued 恒=上限，
+         完成只是挪位不开新窗），special 永挤不进 → 首征纯 inf；
+       正解 a=铁系预留：inf 只填到出征 gate（casual 不混编不留），works 兵走余位；
+       正解 b=比例自纠：inf 份额不足 2:1 即发 special，出征清池后从 0:0 重建） ---- */
     const camps = ['camp', 'works', 'range'].filter((k) => campOf(s, k));
     if (camps.length) {
       const pool = poolN(s);
@@ -683,19 +712,37 @@
       if (pool + queuedN(s) < wantPool) {
         let unit = 'inf', kind = 'camp';
         const campKindOf = (u) => (u === 'inf' || u === 'medic') ? 'camp' : (u === 'razor' || u === 'heavy') ? 'works' : 'range';
+        const unitN = (c) => { let n = s.pools[c].length; for (let i = 0; i < s.queues.length; i++) if (s.queues[i].unit === c) n += s.queues[i].n; return n; };
+        const gate = level === 'casual' ? 6 : level === 'balanced' ? 8 : 10;                  // 与出征 gate 同值（铁系预留位=wantPool-gate）
+        const infCap = level === 'casual' ? wantPool : gate;                                  // casual 无混编不留位
+        const special = (2 * unitN(level === 'competitive' ? 'heavy' : 'razor') <= unitN('inf'));   // inf:special ≥2:1 断言
         if (level === 'balanced') {
-          if (camps.indexOf('works') >= 0 && (pool + queuedN(s)) % 3 === 2) { unit = 'razor'; kind = 'works'; }
+          if (camps.indexOf('works') >= 0 && special) { unit = 'razor'; kind = 'works'; }
         } else if (level === 'competitive') {
           if (enemyMode) { unit = COUNTER_PICK[enemyMode]; kind = campKindOf(unit); }          // 情报克制
-          else if (campOf(s, 'works') && (pool + queuedN(s)) % 3 === 2) { unit = 'heavy'; kind = 'works'; } // 无情报 inf:heavy 2:1
+          else if (campOf(s, 'works') && special) { unit = 'heavy'; kind = 'works'; }          // 无情报 inf:heavy 2:1
         }
         if (!campOf(s, kind)) kind = camps[0];
         if (BUILDS[kind] && BUILDS[kind].pool.indexOf(unit) < 0) unit = BUILDS[kind].pool[0];
+        const nInf = unitN('inf');
         const camp = campOf(s, kind);
         const c = UNITS[unit].cost[camp.lv - 1];
         const roomN = Math.min(QUEUE_MAX - queuedN(s, kind), POOL_MAX - poolN(s) - queuedN(s));
-        if (roomN >= 1 && s.res.g >= c[0] * 1000 && s.res.i >= c[1] * 1000) {
+        if (unit !== 'inf' && roomN >= 1 && s.res.g >= c[0] * 1000 && s.res.i >= c[1] * 1000) {
           return { o: { k: 'train', kind, unit, n: Math.min(5, roomN) } };   // n 夹池/队列余量（防 >12 永拒卡死）
+        }
+        /* 支付档降级（警示②：克制/混编兵铁价付不起时先练 inf 不断档——"先 inf 后
+           换装"；比例断言未被满足，铁价后续拍自然补上铁系）+ 预留位护栏（inf 到
+           infCap 即停，给 works 铁系留位） */
+        if (unit !== 'inf' && nInf < infCap && campOf(s, 'camp')) {
+          const ic = campOf(s, 'camp'), ci = UNITS.inf.cost[ic.lv - 1];
+          const roomI = Math.min(QUEUE_MAX - queuedN(s, 'camp'), POOL_MAX - poolN(s) - queuedN(s));
+          if (roomI >= 1 && s.res.g >= ci[0] * 1000 && s.res.i >= ci[1] * 1000) {
+            return { o: { k: 'train', kind: 'camp', unit: 'inf', n: Math.min(5, roomI) } };
+          }
+        }
+        if (unit === 'inf' && nInf < infCap && roomN >= 1 && s.res.g >= c[0] * 1000 && s.res.i >= c[1] * 1000) {
+          return { o: { k: 'train', kind, unit, n: Math.min(5, roomN) } };
         }
       }
     }
