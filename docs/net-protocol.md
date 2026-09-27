@@ -34,8 +34,10 @@ waiting ──(满最低人数或倒计时到)──▶ live ──(胜负判定
 - 席位类型 kind：`human` ｜ `bot`（bot 带 `level`: `casual|balanced|competitive`）。
 - **真人加入让位**：满员 bot 房来了真人 → 服务端选一个 bot 席（优先 seat 最大的 bot 席）就地接管
   （`kind: bot→human`，该席 bot 消失，真人继承当前比分/位置），广播 `seat` 名册；无 bot 席可让且满员 → 进 `spectate`。
-- **断线重连**：真人断开 → 席位保留 10s；客户端凭 `roomId + seat + token`（welcome 下发的接管凭证）重连，
-  服务端下发全量 `state` 重同步后继续 lockstep。逾时：席位转 bot 托管（有 bot 可用）或空置至终局。
+- **断线重连**：真人断开 → 席位保留 10s（+1 拍宽限——托管转换逐拍判定，gap ≤ 10s+本游戏 1 拍
+  的复席必先于转换落地，边界确定不靠帧相位运气，GAMES-63 F2' 口径）；客户端凭 `roomId + seat + token`
+  （welcome 下发的接管凭证）重连，服务端下发全量 `state` 重同步后继续 lockstep。逾时：席位转 bot 托管
+  （有 bot 可用）或空置至终局。
 - 旁观：不占席、只收帧；`spectators` 计数进 feed。
 
 ## 3. feed schema（GET /api/matches）
