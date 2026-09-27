@@ -74,8 +74,9 @@ export class BotHost {
       if ((cfg.maxRooms || 1) < 1) return
       const bots = []
       for (let i = 0; i < sim.META.seats; i++) {
-        // 开镇 8 居民：勤恳主力 + 游手混编（§8「balanced+casual 居民 8 人开局」）
-        bots.push(i < 8 ? { level: i % 3 === 1 ? 'casual' : 'balanced' } : null)
+        // 开镇 8 居民：勤恳主力 + 游手混编 + 1 商人（§8「8 人开局」；GAMES-55
+        // 三档人格同镇可见——商人蹲集市/黄昏守摊是镇的烟火气一角，坐席 3）
+        bots.push(i < 8 ? { level: i === 3 ? 'competitive' : i % 3 === 1 ? 'casual' : 'balanced' } : null)
       }
       this.rooms.create({ gameId, name: `${sim.META.title} · 常驻镇`, bots, startDelayMs: 1000 })
       this.log({ k: 'bothost-town-spawn', gameId })
@@ -102,16 +103,21 @@ export class BotHost {
     if (bots < target && (humans > 0 || !room.hadHuman || Date.now() - (room.__lastHumanSeen || 0) > 45_000)) {
       const level = room.state.town ? room.state.town.level : 1
       const casualWanted = Math.ceil(target * (0.25 + (level - 1) * 0.1)) // 等级升 → 烟火气渐浓
-      let casualNow = 0
-      for (const s of room.seats) if (s.kind === 'bot' && s.level === 'casual') casualNow++
+      const merchWanted = level >= 3 ? 2 : 1 // 商人驻镇（GAMES-55）：Lv1 一摊、Lv3 起两摊
+      let casualNow = 0, merchNow = 0
+      for (const s of room.seats) if (s.kind === 'bot') {
+        if (s.level === 'casual') casualNow++
+        else if (s.level === 'competitive') merchNow++
+      }
       while (bots < target) {
         const s = room.seats.find((x) => x.kind === 'empty' && !x.conn)
         if (!s) break
         s.kind = 'bot'
-        s.level = casualNow < casualWanted ? 'casual' : 'balanced'
+        s.level = merchNow < merchWanted ? 'competitive' : casualNow < casualWanted ? 'casual' : 'balanced'
         s.name = `Bot·${LEVEL_CN[s.level]}`
         s.botRng = sim.mulberry32(((room.state.seed ^ (s.seat * 0x9e3779b9)) >>> 0))
-        casualNow += s.level === 'casual' ? 1 : 0
+        if (s.level === 'casual') casualNow++
+        else if (s.level === 'competitive') merchNow++
         bots++; changed = true
         this.log({ k: 'town-bot-join', roomId: room.id, seat: s.seat, level: s.level })
       }

@@ -126,7 +126,7 @@
     ents = {}
     fades = []
     for (var id in state.ents) upsertEnt(state.ents[id])
-    townPanel = { e: state.town.exp, l: state.town.level, d: state.town.day, dt: state.town.dayTick, ph: state.town.phase }
+    townPanel = { e: state.town.exp, l: state.town.level, d: state.town.day, dt: state.town.dayTick, ph: state.town.phase, sc: state.town.sc || 0 }
     if (state.sessions && state.sessions[mySeat]) {
       var s = state.sessions[mySeat]
       mePanel = { c: s.contrib, t: s.total, b: { herb: s.bag.herb, berry: s.bag.berry, ore: s.bag.ore, star: s.bag.star }, n: s.bagN, g: s.goalMet ? 1 : 0 }
@@ -179,7 +179,7 @@
       }
     }
     if (m.ext) {
-      if (m.ext.t) townPanel = { e: m.ext.t.e, l: m.ext.t.l, d: m.ext.t.d, dt: m.ext.t.dt, ph: m.ext.t.ph }
+      if (m.ext.t) townPanel = { e: m.ext.t.e, l: m.ext.t.l, d: m.ext.t.d, dt: m.ext.t.dt, ph: m.ext.t.ph, sc: m.ext.t.sc || 0 }
       if (m.ext.me) mePanel = { c: m.ext.me.c, t: m.ext.me.t, b: m.ext.me.b, n: m.ext.me.n, g: m.ext.me.g }
       if (myRole === 'player' && typeof m.ext.ack === 'number') {
         var meRec = null
@@ -213,7 +213,8 @@
     if (ev.k === 'emote') {
       if (ev.seat !== mySeat) {
         var p = ents['p' + ev.seat]
-        if (p) fx.push({ k: 'bubble', seat: ev.seat, id: ev.id, ttl: 2500 })
+        /* to=社交定向（GAMES-55）：居民偶遇/对真人反应的互动气泡带尾标——聊天气泡位预留 */
+        if (p) fx.push({ k: 'bubble', seat: ev.seat, id: ev.id, ttl: 2500, to: ev.to })
       } // 自己乐观已弹
     } else if (ev.k === 'gather-done') {
       var site = ents[ev.entId]
@@ -743,7 +744,7 @@
         var bx = pe ? sx(interp(pe, performance.now()).x) : W / 2
         var by = pe ? sy(interp(pe, performance.now()).y) : H / 2
         var rise = (2500 - f.ttl) / 2500 * 8
-        bubble(bx, by - 26 - rise, EMOTE_GLYPH[f.id] + ' ' + EMOTE_NAME[f.id], 62)
+        bubble(bx, by - 26 - rise, EMOTE_GLYPH[f.id] + ' ' + EMOTE_NAME[f.id], 62, f.to, f.seat)
       } else if (f.k === 'pop') {
         ctx.globalAlpha = f.ttl / 350
         ctx.fillStyle = f.col
@@ -781,11 +782,19 @@
     }
     if (wheelOpen) drawWheel()
   }
-  function bubble(x, y, text, w) {
+  /* 气泡（§3.2）。to≠null=社交定向气泡（GAMES-55）：带尾标=聊天气泡位预留；
+     to===mySeat 时描金边——居民对我挥手/点头/招揽一眼可辨 */
+  function bubble(x, y, text, w, to) {
     ctx.fillStyle = 'rgba(11,16,38,.88)'
     roundRect(x - w / 2, y - 11, w, 20, 10); ctx.fill()
-    ctx.strokeStyle = 'rgba(255,182,92,.4)'; ctx.lineWidth = 1
+    ctx.strokeStyle = to != null ? (to === mySeat ? 'rgba(255,215,0,.85)' : 'rgba(255,182,92,.6)') : 'rgba(255,182,92,.4)'
+    ctx.lineWidth = 1
     ctx.stroke()
+    if (to != null) { // 尾标（指向发起者——聊天气泡位）
+      ctx.beginPath()
+      ctx.moveTo(x - 3, y + 9); ctx.lineTo(x + 3, y + 9); ctx.lineTo(x, y + 14)
+      ctx.closePath(); ctx.fill()
+    }
     ctx.fillStyle = INK; ctx.font = '10px ' + FONT; ctx.textAlign = 'center'
     ctx.fillText(text, x, y + 2.5)
   }
@@ -860,7 +869,10 @@
       ctx.fillText('☄ ' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss, W - 10, 22)
     }
     ctx.fillStyle = DIM; ctx.font = '8px ' + FONT
-    ctx.fillText('第 ' + townPanel.d + ' 镇日', W - 10, 38)
+    /* 虚拟昼夜时段（GAMES-55 日程）：sc 随流下发；兜底按 dt 推导（与服务端
+       game.json residents.sched {duskAt:2100, nightAt:2700} 对齐——debug 幽灵镇路径） */
+    var scPh = townPanel.sc != null ? townPanel.sc : (townPanel.dt >= 2700 ? 2 : townPanel.dt >= 2100 ? 1 : 0)
+    ctx.fillText('第 ' + townPanel.d + ' 镇日 · ' + ['白天', '黄昏', '夜晚'][scPh], W - 10, 38)
     if (mode === 'online' && session) {
       ctx.fillStyle = 'rgba(139,147,167,.7)'
       ctx.fillText(session.rttMs ? session.rttMs + 'ms' : '--', W - 10, 50)
