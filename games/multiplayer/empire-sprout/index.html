@@ -1,0 +1,1753 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>帝国萌芽</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #171009; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+  #wrap { position: relative; }
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px; background: rgba(23,16,9,.86); z-index: 10; }
+  #joining { color: #e8ecf3; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  #joining button { margin-top: 10px; padding: 9px 30px; border-radius: 999px; border: 0; background: #b3801f;
+    color: #fff; font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  #banner { display: none; position: absolute; top: 66px; left: 0; right: 0; text-align: center;
+    color: #fbbf24; font: 600 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; z-index: 9; }
+  .rbox { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 300px; }
+  .rtitle { font: 700 30px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  .rsub { color: #8b93a7; font: 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  .rtable { width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 8px 4px;
+    background: rgba(255,255,255,.04); border-radius: 8px; }
+  .rrow { display: flex; justify-content: space-between; font: 13px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; color: #8b93a7; padding: 0 8px; }
+  .rrow b { font-weight: 600; }
+  .rbox button { padding: 9px 30px; border-radius: 999px; border: 0; background: #b3801f; color: #fff;
+    font: 15px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+  .rbox button.ghost { background: transparent; border: 1px solid rgba(255,255,255,.2); color: #8b93a7; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="banner"></div>
+  <div id="joining" class="overlay">正在加入对局…</div>
+  <div id="result" class="overlay"></div>
+</div>
+<script>
+/* =====================================================================
+ * 帝国萌芽 empire-sprout —— S3 混合同步共享确定性模拟（GAMES-68）
+ * 单一事实源：服务端（server/gateway/sims/empire-sprout.js 经 require 载入本文件）
+ * 与客户端（构建期内联进 index.html，设 window.EMPSim）跑同一份代码。
+ * 设计事实源：docs/designs/empire-sprout.md（GAMES-66 评审通过版）。
+ *
+ * S3 双层一钟（设计 §5.1，核心节）：
+ *   - 单一 tick 源：state.tick 同时是建设层快照序与战斗层帧号（无相位漂移）。
+ *   - 建设层（S2，服务器权威）：资源/建筑/队列/兵池/CD——客户端零判定，快照渲染。
+ *   - 战斗层（S1，确定性帧同步）：客户端镜像 battleStep（与 slg §5.2 八条纪律全套继承）。
+ *   - attack 桥（§5.4 唯一玩家可见跨层路径）：o 壳出征在建设层 tick T 结算 →
+ *     合成 {k:'attack'} cmd 写入战斗帧 T+1 的输入集（本 step 内桥投喂，时序承诺零相位运气）。
+ *   - 静默期：tick < 1800 战斗通道不下发（本文件 battle 段不推进）；
+ *     首战斗帧 frame=1800（inputs 全 noop + events [{k:'erupt'}]）。
+ *
+ * 确定性纪律（slg §5.2 全套继承，红线）：
+ *   - 全整数模拟：位置/速度 milli-px，HP/伤害/资源（milli 单位）整型；
+ *     运算只有 + - * 与 >>，无 Math.random/Date.now/浮点字面量进判定路径。
+ *   - Q8 定点乘子：克制/攻城乘数全定点（×1.25=320 ×1.5=384 ×1.75=448 ×2=512）。
+ *   - 索敌全序 tie-break：dist2 = (Δlane*125_000)² + Δy²（墙/城心全宽 → 只算 Δy），
+ *     候选按 (dist2, entityId) 字典序取最小；AOE/遍历按 entityId 升序。
+ *   - sim 本体零随机：seed=fnv1a32(roomId) 仅记录（判定路径不消耗）；
+ *     随机只在 Bot brain（服务端侧 rng，客户端只回放输入）。
+ *   - 同 tick 固定结算序（§5.2/§5.3）：建设 ops→资源产出→训练推进→attack 结算/桥投喂
+ *     →战斗（attack 入场→移动→医疗光环→普攻/AOE→战功→胜负）→投影→组包。
+ * ===================================================================== */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api; // Node（.cjs）
+  root.EMPSim = api;                                                      // 浏览器内联（classic script）
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  /* ---------- §5.6 PRNG 参考实现（与 games/_shared/common.js 逐字一致，冻结；仅 Bot 用） ---------- */
+  function fnv1a32(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+  function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  /* ---------- 常量（数值表=设计书 §1/§2 抄录；全整数 milli 单位） ---------- */
+  const SEATS = 4;
+  const ROW_M = 25000, LANE_M = 125000, FIELD_H_M = 500000;   // 战场 20 行×25px（§2.1）
+  const ERUPT_AT = 1800;                                      // 爆发帧（§1.1 固定，非触发式）
+  const MAX_TICKS = 7200;                                     // 12 分钟硬顶（§1.1）
+  const MARCH_CD = 200;                                       // 出征 CD 20s/席（§1.2）
+  const POOL_MAX = 12;                                        // 兵池上限/席（§2.3）
+  const QUEUE_MAX = 5;                                        // 每营队列串行 ≤5（§2.3）
+  const TRAIN_TICKS = [60, 90, 120];                          // T1/T2/T3 每单位训练时长
+  const WALL_HP = 800, KEEP_HP = 1200;                        // 城墙/城心（§1.3）
+  const AOE2 = 30000 * 30000;                                 // arty AOE 半径 30px
+  const PLOTS = 4;                                            // 每席建筑位（§2.2）
+
+  /* 被动产出（milli/秒 → milli/tick）：粮 3/木 2/铁 1（§1.2） */
+  const PASSIVE = { g: 300, w: 200, i: 100 };
+  /* 建筑 × 等级表（§2.2；造价 milli，产出 milli/秒→/tick×0.1） */
+  const BUILDS = {
+    farm:   { cn: '农田',   cost: [{ w: 40000 }, { w: 80000, i: 20000 }, { w: 140000, i: 50000 }], yield: [{ g: 400 }, { g: 900 }, { g: 1500 }] },
+    lumber: { cn: '伐木场', cost: [{ w: 30000 }, { w: 60000, i: 15000 }, { w: 110000, i: 40000 }], yield: [{ w: 300 }, { w: 700 }, { w: 1200 }] },
+    mine:   { cn: '铁矿场', cost: [{ w: 50000, i: 10000 }, { w: 90000, i: 30000 }, { w: 150000, i: 70000 }], yield: [{ i: 200 }, { i: 500 }, { i: 900 }] },
+    camp:   { cn: '步兵营', cost: [{ w: 60000, i: 40000 }, { w: 100000, i: 80000 }, { w: 160000, i: 140000 }], pool: ['inf', 'medic'] },
+    works:  { cn: '车械厂', cost: [{ w: 80000, i: 60000 }, { w: 130000, i: 110000 }, { w: 200000, i: 180000 }], pool: ['razor', 'heavy'] },
+    range:  { cn: '靶场',   cost: [{ w: 70000, i: 50000 }, { w: 110000, i: 90000 }, { w: 170000, i: 150000 }], pool: ['arty', 'sniper'] },
+  };
+  const BUILD_CODES = ['farm', 'lumber', 'mine', 'camp', 'works', 'range'];
+
+  /* 兵种 × 三阶数值表（§2.3；速度/射程/攻速三阶不变，D4 已 ×0.9 取整；
+   * cost=[T1,T2,T3] 各 [粮,铁]，HP/攻同 slg T2/T3 表；D3 heavy 间隔 16） */
+  const UNITS = {
+    inf:    { cn: '步兵',   cost: [[100, 0], [150, 0], [200, 0]],       hp: [60, 85, 120],    atk: [8, 10, 14],   interval: 8,  range: 30000,  spd: 4100 },
+    razor:  { cn: '装甲车', cost: [[225, 90], [325, 130], [425, 170]],  hp: [180, 250, 360],  atk: [16, 21, 29],  interval: 9,  range: 35000,  spd: 5400 },
+    arty:   { cn: '炮兵',   cost: [[350, 140], [500, 200], [650, 260]], hp: [90, 125, 180],   atk: [26, 34, 47],  interval: 18, range: 120000, spd: 2900, aoe: true },
+    sniper: { cn: '狙击手', cost: [[300, 120], [425, 170], [575, 230]], hp: [70, 100, 140],   atk: [34, 44, 61],  interval: 22, range: 150000, spd: 3400 },
+    medic:  { cn: '军医',   cost: [[175, 0], [250, 0], [325, 0]],       hp: [80, 115, 160],   atk: [0, 0, 0],     interval: 0,  range: 0,      spd: 3800, heal: [60, 80, 110], aura: 45000 },
+    heavy:  { cn: '重坦克', cost: [[550, 220], [775, 310], [1050, 440]], hp: [520, 730, 1040], atk: [46, 60, 83],  interval: 16, range: 40000,  spd: 2500 },
+  };
+  const UNIT_CODES = ['inf', 'razor', 'arty', 'sniper', 'medic', 'heavy'];
+  const isUnit = (c) => UNIT_CODES.indexOf(c) >= 0;
+  /* 编队展开序（§5.3：兵种代码字母序 arty→heavy→inf→medic→razor→sniper） */
+  const FORMA_ORDER = ['arty', 'heavy', 'inf', 'medic', 'razor', 'sniper'];
+
+  /* 克制表（Q8 定点，§2.3/§2.4 D2：sniper→inf ×1.75=448）；
+   * 对建筑（§2.4 D5）：inf ×1.25=320、heavy ×2.0=512（D3 校核 §2.5b） */
+  const COUNTER = { inf: { arty: 384 }, razor: { inf: 384 }, arty: { razor: 448 }, sniper: { inf: 448 }, medic: {}, heavy: {} };
+  const BLD_MULT = { inf: 320, heavy: 512 };
+
+  const META = {
+    gameId: 'empire-sprout', title: '帝国萌芽', seats: SEATS, tickMs: 100, maxTicks: MAX_TICKS,
+    mode: '2v2-empire', teams: { A: [0, 2], B: [1, 3] },
+    cmdInput: true,           // 离散指令输入（rooms.js 宽限沿用=静默、cmd/o/c 一次性语义）
+    takeOver: 'casual',       // 断线逾时托管档（§4：casual 慢发展，体验友好）
+    tech: 'S3',               // 混合同步（建设 S2 快照 + 战斗 S1 帧，单 tick 源）
+    roomPrefix: 'emp',        // 房间 ID 前缀（§7：feed 字典序 mmo-<net-<slg- 之后）
+    W: 375, H: 667, fieldH: 500, rows: 20, cell: 25, lanes: 3, eruptAt: ERUPT_AT,
+  };
+
+  const teamOf = (seat) => (seat % 2 === 0 ? 'A' : 'B');
+  const clamp0 = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+  /* 距离平方（全序比较用；整数精确 <2^53，禁 imul） */
+  function laneDist2(ul, uy, tl, ty) { const dl = (ul - tl) * LANE_M, dy = uy - ty; return dl * dl + dy * dy; }
+
+  /* =====================================================================
+   * 初始态（§2.1 战场骨架 + §5.2 建设实体）
+   * ===================================================================== */
+  function create(seed, opts) {
+    const maxTicks = (opts && Number.isInteger(opts.maxTicks) && opts.maxTicks > 0) ? opts.maxTicks : MAX_TICKS;
+    const seats = [];
+    for (let i = 0; i < SEATS; i++) {
+      seats.push({
+        seat: i, team: teamOf(i),
+        res: { g: 0, w: 0, i: 0 },                 // 三资源（milli；被动即刻起算）
+        plots: [null, null, null, null],            // 4 建筑位（null=空位；{kind,lv}）
+        queues: [],                                 // [{kind(营), unit, n, prog}]（串行 ≤5/营）
+        pools: { inf: [], razor: [], arty: [], sniper: [], medic: [], heavy: [] }, // 兵池（出生即快照：元素=档位）
+        marchCd: 0, trained: 0, marched: 0,
+      });
+    }
+    return {
+      v: 1, seed: (seed >>> 0), tick: 0, maxTicks,
+      build: { seats },
+      battle: {
+        units: [],
+        bld: [                                  // 固定 id 实体（§5.3：1=A墙 2=A心 3=B墙 4=B心；全宽→距离只算 Δy）
+          { id: 1, kind: 'wall', team: 'A', hp: WALL_HP, max: WALL_HP, y: 18 * ROW_M + 12500, lane: 0 },
+          { id: 2, kind: 'keep', team: 'A', hp: KEEP_HP, max: KEEP_HP, y: 19 * ROW_M + 12500, lane: 0 },
+          { id: 3, kind: 'wall', team: 'B', hp: WALL_HP, max: WALL_HP, y: 1 * ROW_M + 12500, lane: 0 },
+          { id: 4, kind: 'keep', team: 'B', hp: KEEP_HP, max: KEEP_HP, y: 0 + 12500, lane: 0 },
+        ],
+        rally: [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]], // 每席每车道集结行（-1=无→推进到底）
+        merit: { A: 0, B: 0 }, kills: { A: 0, B: 0 },
+        nextId: 100,
+      },
+      teams: { A: { wall: WALL_HP, keep: KEEP_HP, merit: 0 }, B: { wall: WALL_HP, keep: KEEP_HP, merit: 0 } }, // 只读投影（§5.2）
+      bridge: {},   // 席位 → {k:'attack',lane,units}（本 step 内桥投喂，§5.4）
+      cDefer: {},   // 席位 → 被桥让路的 c 壳 cmd（下一拍补发，确定性）
+    };
+  }
+
+  /* ---------- 小工具 ---------- */
+  const poolTotal = (s) => { let n = 0; for (let i = 0; i < UNIT_CODES.length; i++) n += s.pools[UNIT_CODES[i]].length; return n; };
+  const queuedN = (s, kind) => { let n = 0; for (let i = 0; i < s.queues.length; i++) if (!kind || s.queues[i].kind === kind) n += s.queues[i].n; return n; };
+  function campOf(s, kind) { for (let p = 0; p < PLOTS; p++) if (s.plots[p] && s.plots[p].kind === kind) return { plot: p, lv: s.plots[p].lv }; return null; }
+
+  /* =====================================================================
+   * 建设层 ops（o 壳；畸形=静默 noop，reject 走 events——§5.2）
+   * ===================================================================== */
+  function execOp(st, seat, op, ev) {
+    if (!op || typeof op.k !== 'string') return;
+    const s = st.build.seats[seat];
+    if (op.k === 'build') {
+      const plot = Number.isInteger(op.plot) && op.plot >= 0 && op.plot < PLOTS ? op.plot : null;
+      const kind = BUILD_CODES.indexOf(op.kind) >= 0 ? op.kind : null;
+      if (plot === null || kind === null) return;
+      const cur = s.plots[plot];
+      if (cur) {
+        if (cur.kind !== kind || cur.lv >= 3) { ev.push({ k: 'reject', seat, op: 'build', why: cur.kind !== kind ? 'kind-mismatch' : 'max-lv' }); return; }
+        const cost = BUILDS[kind].cost[cur.lv];
+        for (const r in cost) if (s.res[r] < cost[r]) { ev.push({ k: 'reject', seat, op: 'build', why: 'res' + r }); return; }
+        for (const r in cost) s.res[r] -= cost[r];
+        cur.lv++;
+        ev.push({ k: 'built', seat, plot, kind, lv: cur.lv });
+      } else {
+        // 同类每席至多 1 座（§2.2）
+        if (campOf(s, kind)) { ev.push({ k: 'reject', seat, op: 'build', why: 'dup-kind' }); return; }
+        const cost = BUILDS[kind].cost[0];
+        for (const r in cost) if (s.res[r] < cost[r]) { ev.push({ k: 'reject', seat, op: 'build', why: 'res' + r }); return; }
+        for (const r in cost) s.res[r] -= cost[r];
+        s.plots[plot] = { kind, lv: 1 };
+        ev.push({ k: 'built', seat, plot, kind, lv: 1 });
+      }
+    } else if (op.k === 'train') {
+      const kind = ['camp', 'works', 'range'].indexOf(op.kind) >= 0 ? op.kind : null;
+      const unit = isUnit(op.unit) ? op.unit : null;
+      const n = Number.isInteger(op.n) && op.n >= 1 && op.n <= 5 ? op.n : null;
+      if (!kind || !unit || n === null) return;
+      const camp = campOf(s, kind);
+      if (!camp) { ev.push({ k: 'reject', seat, op: 'train', why: 'no-camp' }); return; }
+      if (BUILDS[kind].pool.indexOf(unit) < 0) { ev.push({ k: 'reject', seat, op: 'train', why: 'not-in-pool' }); return; }
+      if (queuedN(s, kind) + n > QUEUE_MAX) { ev.push({ k: 'reject', seat, op: 'train', why: 'queue-full' }); return; }
+      if (poolTotal(s) + queuedN(s) + n > POOL_MAX) { ev.push({ k: 'reject', seat, op: 'train', why: 'pool-full' }); return; }
+      const c = UNITS[unit].cost[camp.lv - 1];
+      if (s.res.g < c[0] * 1000 || s.res.i < c[1] * 1000) { ev.push({ k: 'reject', seat, op: 'train', why: 'res' }); return; }
+      s.res.g -= c[0] * 1000; s.res.i -= c[1] * 1000;
+      s.queues.push({ kind, unit, n, prog: 0, tier: camp.lv });   // 入队档位快照（升级不回溯 §2.2）
+      ev.push({ k: 'train-q', seat, kind, unit, n });
+    } else if (op.k === 'attack') {
+      const lane = Number.isInteger(op.lane) && op.lane >= 0 && op.lane <= 2 ? op.lane : null;
+      if (lane === null || !op.units || typeof op.units !== 'object') return;
+      let total = 0;
+      const want = {};
+      for (const c in op.units) {
+        if (!isUnit(c)) continue;
+        const n = Number.isInteger(op.units[c]) && op.units[c] > 0 ? op.units[c] : 0;
+        if (n > 0) { want[c] = n; total += n; }
+      }
+      if (total < 1 || total > POOL_MAX) { ev.push({ k: 'reject', seat, op: 'attack', why: 'bad-units' }); return; }
+      if (st.tick < ERUPT_AT) { ev.push({ k: 'reject', seat, op: 'attack', why: 'peace' }); return; }         // 和平期出征（§5.2）
+      if (s.marchCd > 0) { ev.push({ k: 'reject', seat, op: 'attack', why: 'cd' }); return; }
+      for (const c in want) if (s.pools[c].length < want[c]) { ev.push({ k: 'reject', seat, op: 'attack', why: 'pool' + c }); return; }
+      const tiers = {};                                       // 出生即快照：出征档位随军团移交战斗层（§2.2）
+      for (const c in want) tiers[c] = s.pools[c].splice(0, want[c]);   // FIFO 扣池
+      s.marchCd = MARCH_CD; s.marched++;
+      st.bridge[seat] = { k: 'attack', lane, units: want, tiers };  // 桥投喂（§5.4：本 step 战斗相位消费→帧 T+1）
+      ev.push({ k: 'march', seat, lane, units: want });
+    }
+    /* 'noop' 与未知 k：静默 */
+  }
+
+  /* =====================================================================
+   * 战斗层 battleStep（S1；服务端 step 与客户端镜像同函数）
+   * inputs: {<seat>:{cmd:{…}}}（缺=noop）；结算序 §5.3：
+   * attack 入场（含桥注入）→ 移动 → 医疗光环 → 普攻/AOE（攻击者 id 升序）→ 战功 → 胜负
+   * ===================================================================== */
+  function battleStep(st, inputs) {
+    const bt = st.battle, ev = [], hits = {};
+    const T = st.tick;
+
+    /* 1) attack 入场（含桥注入；编队表 §5.3：字母序展开，每 3 单位一行向己方纵深） */
+    for (let i = 0; i < SEATS; i++) {
+      const inp = inputs[i] || inputs[String(i)];
+      const cmd = inp && inp.cmd;
+      if (!cmd || cmd.k !== 'attack') continue;
+      const lane = Number.isInteger(cmd.lane) && cmd.lane >= 0 && cmd.lane <= 2 ? cmd.lane : null;
+      if (lane === null || !cmd.units || typeof cmd.units !== 'object') continue;
+      const team = teamOf(i);
+      let seq = 0;                                            // 编队序（字母序展开后的第几个单位）
+      for (let f = 0; f < FORMA_ORDER.length; f++) {
+        const code = FORMA_ORDER[f];
+        const n = Number.isInteger(cmd.units[code]) && cmd.units[code] > 0 ? cmd.units[code] : 0;
+        for (let j = 0; j < n; j++) {
+          const tier = cmd.tiers && cmd.tiers[code] ? (cmd.tiers[code][j] || 1) : 1;   // 桥注入档位快照（出生即快照）；直发默认 T1
+          const row = team === 'A' ? 17 - ((seq / 3) | 0) : 2 + ((seq / 3) | 0);
+          if (row < 0 || row > 19) continue;
+          pushUnit(bt, i, code, tier, lane, row * ROW_M + 12500);
+          ev.push({ k: 'spawn', seat: i, unit: code, lane, row });
+          seq++;
+        }
+      }
+    }
+
+    /* 2) rally（集结线：state 内镜像同步，无事件） */
+    for (let i = 0; i < SEATS; i++) {
+      const inp = inputs[i] || inputs[String(i)];
+      const cmd = inp && inp.cmd;
+      if (!cmd || cmd.k !== 'rally') continue;
+      const lane = Number.isInteger(cmd.lane) && cmd.lane >= 0 && cmd.lane <= 2 ? cmd.lane : null;
+      const row = Number.isInteger(cmd.row) && cmd.row >= 0 && cmd.row <= 19 ? cmd.row : null;
+      if (lane === null || row === null) continue;
+      bt.rally[i][lane] = row;
+      ev.push({ k: 'rally', seat: i, lane, row });
+    }
+
+    /* 3) 移动（id 升序）：站定判定（射程内有敌/军医有伤员）→ 车道推进（集结线夹取） */
+    const units = bt.units;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.hp <= 0) continue;
+      const hold = u.atk > 0 ? !!findTarget(bt, u) : hurtAllyInAura(bt, u);
+      if (hold) continue;
+      let ny = u.y + u.dir * u.spd;
+      const rl = bt.rally[u.seat][u.lane];
+      if (rl >= 0) { const ry = rl * ROW_M + 12500; ny = u.dir < 0 ? (ny < ry ? ry : ny) : (ny > ry ? ry : ny); }
+      u.y = clamp0(ny, 0, FIELD_H_M);
+    }
+
+    /* 4) 医疗光环（每 10 tick；同光环不叠加取最高——先收集每单位最大治疗量再统一应用） */
+    if (T % 10 === 0) {
+      const healPlan = [];
+      for (let i = 0; i < units.length; i++) {
+        const m = units[i];
+        if (m.hp <= 0 || m.code !== 'medic') continue;
+        const amt = UNITS.medic.heal[m.tier - 1];
+        const r2 = UNITS.medic.aura * UNITS.medic.aura;
+        for (let j = 0; j < units.length; j++) {
+          const t = units[j];
+          if (t.hp <= 0 || t.team !== m.team || t.id === m.id || t.hp >= t.maxHp) continue;
+          if (laneDist2(m.lane, m.y, t.lane, t.y) <= r2) healPlan.push({ id: t.id, amt });
+        }
+      }
+      if (healPlan.length) {
+        const best = {};
+        for (let i = 0; i < healPlan.length; i++) { const h = healPlan[i]; if (!best[h.id] || best[h.id] < h.amt) best[h.id] = h.amt; }
+        const ids = Object.keys(best).sort();
+        for (let i = 0; i < ids.length; i++) {
+          const want = Number(ids[i]), amt = best[ids[i]];
+          for (let j = 0; j < units.length; j++) if (units[j].id === want) { units[j].hp = clamp0(units[j].hp + amt, 0, units[j].maxHp); break; }
+        }
+      }
+    }
+
+    /* 5) 普攻/AOE（攻击者 id 升序；阵亡者即时退出后续目标候选） */
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.hp <= 0 || u.atk <= 0) continue;
+      if (u.cd > 0) { u.cd--; continue; }
+      const tgt = findTarget(bt, u);
+      if (!tgt) continue;
+      const mult = tgt.kind ? (BLD_MULT[u.code] || 256) : (COUNTER[u.code][tgt.code] || 256);
+      const dmg = (u.atk * mult) >> 8;
+      applyDmg(bt, hits, tgt, dmg, u.seat, ev);
+      if (UNITS[u.code].aoe && !tgt.kind) {
+        for (let j = 0; j < units.length; j++) {
+          const o = units[j];
+          if (o.hp <= 0 || o.team === u.team || o.id === tgt.id) continue;
+          if (laneDist2(tgt.lane, tgt.y, o.lane, o.y) <= AOE2) applyDmg(bt, hits, o, dmg, u.seat, ev);
+        }
+      }
+      u.cd = u.interval;
+    }
+
+    /* 6) 战功结算（受击者 id 升序；击杀+2/破墙+40/城心命中+1——§1.3） */
+    flushHits(bt, ev, hits);
+    if (units.some((u) => u.hp <= 0)) bt.units = units.filter((u) => u.hp > 0);
+    bt.bld = bt.bld.filter((b) => b.hp > 0);
+    return ev;
+  }
+
+  function pushUnit(bt, seat, code, tier, lane, y) {
+    const spec = UNITS[code], t = tier - 1;
+    bt.units.push({
+      id: bt.nextId++, seat, team: teamOf(seat), code, tier,
+      lane, y, dir: teamOf(seat) === 'A' ? -1 : 1,
+      hp: spec.hp[t], maxHp: spec.hp[t], atk: spec.atk[t],
+      rng: spec.range, spd: spec.spd, interval: spec.interval, cd: 0,
+    });
+  }
+
+  /* 索敌：候选 = 敌方单位 + 敌方墙/心（全宽只算 Δy）；按 (dist2, id) 字典序取最小，再验射程 */
+  function findTarget(bt, u) {
+    let best = null, bd = 0, bid = 0;
+    const units = bt.units;
+    for (let i = 0; i < units.length; i++) {
+      const t = units[i];
+      if (t.hp <= 0 || t.team === u.team) continue;
+      const d = laneDist2(u.lane, u.y, t.lane, t.y);
+      if (best === null || d < bd || (d === bd && t.id < bid)) { best = t; bd = d; bid = t.id; }
+    }
+    const bld = bt.bld;
+    for (let i = 0; i < bld.length; i++) {
+      const b = bld[i];
+      if (b.hp <= 0 || b.team === u.team) continue;
+      const dy = u.y - b.y;
+      const d = dy * dy;                                       // 全宽实体（slg base 同式）
+      if (best === null || d < bd || (d === bd && b.id < bid)) { best = b; bd = d; bid = b.id; }
+    }
+    if (best === null || bd > u.rng * u.rng) return null;
+    return best;
+  }
+
+  function hurtAllyInAura(bt, u) {
+    const r2 = UNITS.medic.aura * UNITS.medic.aura;
+    const units = bt.units;
+    for (let i = 0; i < units.length; i++) {
+      const t = units[i];
+      if (t.hp <= 0 || t.team !== u.team || t.id === u.id || t.hp >= t.maxHp) continue;
+      if (laneDist2(u.lane, u.y, t.lane, t.y) <= r2) return true;
+    }
+    return false;
+  }
+
+  /* 伤害结算（每帧每受击者聚合一条 hit 事件；战功随落账——城心命中+1） */
+  function applyDmg(bt, hits, tgt, dmg, bySeat, ev) {
+    if (tgt.hp <= 0 || dmg <= 0) return;
+    tgt.hp -= dmg;
+    const key = tgt.kind ? 'b' + tgt.id : 'u' + tgt.id;
+    const h = hits[key];
+    if (h) h.dmg += dmg;
+    else hits[key] = { unit: tgt.kind ? null : tgt, bld: tgt.kind ? tgt : null, by: bySeat, dmg };
+  }
+
+  function flushHits(bt, ev, hits) {
+    const keys = Object.keys(hits).sort();
+    for (let i = 0; i < keys.length; i++) {
+      const h = hits[keys[i]];
+      const byTeam = teamOf(h.by);
+      if (h.unit) {
+        const u = h.unit;
+        ev.push({ k: 'hit', seat: u.seat, by: h.by, dmg: h.dmg });
+        if (u.hp <= 0) {
+          bt.kills[byTeam]++;
+          bt.merit[byTeam] += 2;                                // 击杀 +2（§1.3）
+          ev.push({ k: 'die', seat: u.seat, by: h.by, unit: u.code });
+        }
+      } else {
+        const b = h.bld;
+        ev.push({ k: b.kind === 'wall' ? 'wallhp' : 'keephp', team: b.team, hp: Math.max(0, b.hp) });
+        if (b.kind === 'keep' && b.hp > 0) bt.merit[byTeam] += 1;  // 城心命中 +1
+        if (b.hp <= 0) {
+          if (b.kind === 'wall') { bt.merit[byTeam] += 40; ev.push({ k: 'walldown', team: b.team }); } // 破墙 +40
+          else ev.push({ k: 'keepdown', team: b.team });
+        }
+      }
+    }
+  }
+
+  /* =====================================================================
+   * step(state, inputs, room) —— 单 tick 双层推进（服务端权威；客户端离线模式同函数）
+   * 返回 { events(建设), battleInputs, battleEvents, over, result, dirty }
+   * ===================================================================== */
+  function step(st, inputs, room) {
+    const ev = [];
+    const dirty = new Set();
+
+    /* 1) 建设 ops（o 壳；席位升序） */
+    for (let i = 0; i < SEATS; i++) {
+      const inp = inputs[i] || inputs[String(i)];
+      if (inp && inp.o) { execOp(st, i, inp.o, ev); dirty.add(i); }
+    }
+
+    /* 2) 资源产出（被动 + 建筑；milli/tick） */
+    for (let i = 0; i < SEATS; i++) {
+      const s = st.build.seats[i];
+      s.res.g += PASSIVE.g; s.res.w += PASSIVE.w; s.res.i += PASSIVE.i;
+      for (let p = 0; p < PLOTS; p++) {
+        const b = s.plots[p];
+        if (!b) continue;
+        const y = BUILDS[b.kind].yield ? BUILDS[b.kind].yield[b.lv - 1] : null;   // 营类无产出（§2.2 经济三选）
+        for (const r in y) s.res[r] += y[r];
+      }
+      if (st.tick % 10 === 0) dirty.add(i);                    // 资源整秒粒度（§5.2：省 90% 增量字节）
+    }
+
+    /* 3) 训练队列推进（串行；完成入池）+ 出征 CD */
+    for (let i = 0; i < SEATS; i++) {
+      const s = st.build.seats[i];
+      if (s.queues.length) {
+        const q = s.queues[0];
+        q.prog++;
+        const dur = TRAIN_TICKS[(q.tier || 1) - 1];            // 入队时档位快照（§2.2：升级期间按升级前档位照常练）
+        if (q.prog >= dur) {
+          q.prog = 0; q.n--;
+          s.pools[q.unit].push(q.tier || 1);                   // 出生即快照（§2.2：升级不回溯）
+          s.trained++;
+          ev.push({ k: 'train-done', seat: i, unit: q.unit });
+          dirty.add(i);
+          if (q.n <= 0) s.queues.shift();
+        }
+      }
+      if (s.marchCd > 0) { s.marchCd--; if (s.marchCd === 0) ev.push({ k: 'cd', seat: i, remain: 0 }); }
+    }
+
+    /* 4) 战斗相位（静默期后；§5.1：tick+1 ≥ ERUPT_AT 才推进，首帧 frame=1800） */
+    let battleInputs = null, battleEvents = null;
+    if (st.tick + 1 >= ERUPT_AT) {
+      battleInputs = {};
+      for (let i = 0; i < SEATS; i++) {
+        const inp = inputs[i] || inputs[String(i)];
+        const c = inp && inp.c && typeof inp.c === 'object' ? inp.c : null;
+        if (st.bridge[i]) {
+          // 桥优先（§5.4 时序承诺：建设 tick T 结算 → 战斗帧 T+1）；同拍 c 让路延后一拍（确定性）
+          battleInputs[i] = { cmd: st.bridge[i] };
+          if (c) st.cDefer[i] = c;
+        } else if (c) battleInputs[i] = { cmd: c };
+        else if (st.cDefer[i]) { battleInputs[i] = { cmd: st.cDefer[i] }; delete st.cDefer[i]; }
+        else battleInputs[i] = { cmd: { k: 'noop' } };
+      }
+      st.bridge = {};
+      battleEvents = battleStep(st, battleInputs);
+      if (st.tick + 1 === ERUPT_AT) battleEvents.unshift({ k: 'erupt' }); // 爆发演出（首战斗帧）
+    }
+
+    /* 5) 投影（战斗→建设只读镜像，§5.4 规则 2） */
+    const wa = st.battle.bld.find((b) => b.kind === 'wall' && b.team === 'A');
+    const ka = st.battle.bld.find((b) => b.kind === 'keep' && b.team === 'A');
+    const wb = st.battle.bld.find((b) => b.kind === 'wall' && b.team === 'B');
+    const kb = st.battle.bld.find((b) => b.kind === 'keep' && b.team === 'B');
+    st.teams.A.wall = wa ? wa.hp : 0; st.teams.A.keep = ka ? ka.hp : 0; st.teams.A.merit = st.battle.merit.A;
+    st.teams.B.wall = wb ? wb.hp : 0; st.teams.B.keep = kb ? kb.hp : 0; st.teams.B.merit = st.battle.merit.B;
+
+    st.tick++;
+
+    /* 6) 终局判定（战斗层权威，§5.4 规则 3：keep ≤0 或 tick 硬顶） */
+    const deadA = !ka || ka.hp <= 0, deadB = !kb || kb.hp <= 0;
+    if (deadA || deadB) {
+      const result = {
+        winner: deadA && deadB ? 'draw' : (deadA ? 'B' : 'A'), reason: 'eliminated',
+        scores: { A: st.battle.merit.A, B: st.battle.merit.B }, kills: { ...st.battle.kills },
+      };
+      return { events: ev, battleInputs, battleEvents, over: true, result, dirty };
+    }
+    if (st.tick >= st.maxTicks) {
+      let w;
+      const hpA = ka ? ka.hp : 0, hpB = kb ? kb.hp : 0;
+      if (hpA !== hpB) w = hpA > hpB ? 'A' : 'B';              // 比城心 HP%（同 max 即比 HP）
+      else if (st.battle.merit.A !== st.battle.merit.B) w = st.battle.merit.A > st.battle.merit.B ? 'A' : 'B';
+      else w = 'draw';
+      const result = { winner: w, reason: 'timeout', scores: { A: st.battle.merit.A, B: st.battle.merit.B }, kills: { ...st.battle.kills } };
+      return { events: ev, battleInputs, battleEvents, over: true, result, dirty };
+    }
+    return { events: ev, battleInputs, battleEvents, over: false, result: null, dirty };
+  }
+
+  const serialize = (st) => JSON.stringify(st);
+  const deserialize = (json) => JSON.parse(json);
+
+  /* =====================================================================
+   * Bot 决策 brain(st, seat, level, rng, env?) → {o:…}|{c:…}|{}
+   * §4 三档（建设倾向 × 战斗时机双轴）：单 brain 双通道输出——建设 op 走 o 壳、
+   * 战斗 cmd 走 c 壳，与真人逐字节同路径。绝对 tick 为"顺序与风格"非字面
+   * （slg 接线先例：资源就绪门控 + 攒钱闸门实现）。
+   *   casual 慢发展：农本 build order（lumber→farm→farm Lv2→camp）、inf 连练池 6 止步、
+   *     爆发后池 ≥6 且 CD 好才征（首征常 2100+）、固定 lane1、无 rally、被破墙 30% 补征。
+   *   balanced 均衡：lumber→farm→camp→mine→works、camp Lv2@~1500、混编 inf:razor 2:1、
+   *     池 ≥8 即征、敌方最薄车道、前线 1/2 rally、被破墙即满池再征、营 Lv2 后回补经济。
+   *   competitive 军备竞速：lumber→camp→farm→works、camp Lv2@~1200+Lv3@~2400（S3 并行秀）、
+   *     情报克制（读敌最近军团构成）无情报 inf:heavy 2:1、tick1800 CD 即满池 timing attack、
+   *     双线分压 lane0/2 交替+破墙后集火 lane1、动态 rally、被破墙即征+补 mine 转 heavy。
+   * ===================================================================== */
+  const DECIDE = { casual: 50, balanced: 20, competitive: 10 };
+  const BUILD_ORDER = {
+    casual: [['lumber', 0], ['farm', 0], ['farm', 1], ['camp', 0]],                       // 农本（军事最后）
+    balanced: [['lumber', 0], ['farm', 0], ['camp', 0], ['mine', 0], ['works', 0]],
+    competitive: [['lumber', 0], ['camp', 0], ['farm', 0], ['works', 0]],                  // 军备
+  };
+  const botMem = new WeakMap();
+  function memOf(st, seat) {
+    let m = botMem.get(st);
+    if (!m) { m = {}; botMem.set(st, m); }
+    let s = m[seat];
+    if (!s) {
+      s = { lastDecide: -1, bi: 0, lastRallyRow: [-9, -9, -9], laneFlip: 0, seenTick: -1, seen: new Set(), enemyLog: [], provoked: -1, firstAt: -1 };
+      m[seat] = s;
+    }
+    return s;
+  }
+  const poolN = (s) => poolTotal(s);
+
+  function brain(st, seat, level, rng, env) {
+    const s = st.build.seats[seat];
+    if (!s) return {};
+    const mem = memOf(st, seat);
+    const my = teamOf(seat), foe = my === 'A' ? 'B' : 'A';
+    if (mem.lastDecide < 0) mem.lastDecide = st.tick;
+    else if (st.tick - mem.lastDecide < (DECIDE[level] || 20)) return {};
+    mem.lastDecide = st.tick;
+
+    /* 情报（competitive 克制）：读敌方最近军团构成（服务器侧合法，§4） */
+    if (mem.seenTick !== st.tick) {
+      mem.seenTick = st.tick;
+      const units = st.battle.units;
+      for (let i = 0; i < units.length; i++) {
+        const u = units[i];
+        if (u.team === my || mem.seen.has(u.id)) continue;
+        mem.seen.add(u.id);
+        mem.enemyLog.push(u.code);
+        if (mem.enemyLog.length > 8) mem.enemyLog.shift();
+      }
+    }
+    const enemyMode = (() => {
+      const log = mem.enemyLog.slice(-4), cnt = {};
+      let best = null, bn = 0;
+      for (let i = 0; i < log.length; i++) { cnt[log[i]] = (cnt[log[i]] || 0) + 1; if (cnt[log[i]] > bn) { bn = cnt[log[i]]; best = log[i]; } }
+      return best;
+    })();
+    const COUNTER_PICK = { inf: 'razor', razor: 'arty', arty: 'inf', sniper: 'razor', heavy: 'arty', medic: 'razor' };
+
+    /* ---- 建设（build order 查表 + 资源就绪门控 + 升级线） ---- */
+    const wallDown = st.teams[my].wall <= 0;                   // 危机态（被破墙）
+    const order = BUILD_ORDER[level] || BUILD_ORDER.balanced;
+    if (mem.bi < order.length) {
+      const [kind, upLv] = order[mem.bi];
+      const camp = campOf(s, kind);
+      const wantLv = upLv + 1;
+      if (camp && camp.lv >= wantLv) { mem.bi++; }
+      else {
+        // 找空位（同类至多 1 座；已有则原位升级）
+        const lv = camp ? camp.lv : 0;
+        const cost = BUILDS[kind].cost[lv];
+        let afford = true;
+        for (const r in cost) if (s.res[r] < cost[r]) afford = false;
+        if (afford) {
+          const plot = camp ? camp.plot : s.plots.indexOf(null);
+          if (plot >= 0) { mem.bi++; return { o: { k: 'build', plot, kind } }; }
+        } else if (level === 'competitive' && lv === 0 && s.res.w >= cost.w * 2) { /* 快开档硬等 */ }
+      }
+    } else {
+      /* 升级线（档位差异化） */
+      const upCamp = (lvGate) => {
+        for (const kind of ['camp', 'works', 'range']) {
+          const camp = campOf(s, kind);
+          if (camp && camp.lv === lvGate && camp.lv < 3) {
+            const cost = BUILDS[kind].cost[camp.lv];
+            let afford = true;
+            for (const r in cost) if (s.res[r] < cost[r]) afford = false;
+            if (afford) return { o: { k: 'build', plot: camp.plot, kind } };
+          }
+        }
+        return null;
+      };
+      if (level === 'balanced' && st.tick >= 1500) { const u = upCamp(1); if (u) return u; }
+      if (level === 'competitive') {
+        if (st.tick >= 1200 && st.tick < 2400) { const u = upCamp(1); if (u) return u; }
+        if (st.tick >= 2400) { const u = upCamp(2); if (u) return u; }
+      }
+      if (level === 'balanced' && st.tick >= 1800) {          // 营 Lv2 后回补经济 Lv2
+        for (const kind of ['farm', 'lumber', 'mine']) {
+          const b = campOf(s, kind);
+          if (b && b.lv === 1) {
+            const cost = BUILDS[kind].cost[1];
+            let afford = true;
+            for (const r in cost) if (s.res[r] < cost[r]) afford = false;
+            if (afford) return { o: { k: 'build', plot: b.plot, kind } };
+          }
+        }
+      }
+      if (level === 'competitive' && wallDown && !campOf(s, 'mine')) {  // 危机补 mine 采铁转 heavy
+        const plot = s.plots.indexOf(null);
+        const cost = BUILDS.mine.cost[0];
+        if (plot >= 0 && s.res.w >= cost.w && s.res.i >= cost.i) return { o: { k: 'build', plot, kind: 'mine' } };
+      }
+    }
+
+    /* ---- 出征（战斗时机差异化，§4 主轴；置于练兵前——CD 好即压上不被练兵饿死） ---- */
+    if (st.tick >= ERUPT_AT && s.marchCd <= 0) {
+      const pool = poolN(s);
+      const gate = level === 'casual' ? 6 : level === 'balanced' ? 8 : 10;
+      if (mem.firstAt < 0) mem.firstAt = 2050 + ((rng() * 150) | 0);   // casual 首征慢半拍（§4：常 tick 2100+）
+      /* 危机反应（§4）：破墙后 casual 30% 补征 / 其余档即征；城墙受损（未破）= 回防警报，
+         全档即征——空城流不被首波白拆（§1.3 预期对局长的前提） */
+      const wallHurt = st.teams[my].wall > 0 && st.teams[my].wall < WALL_HP;
+      const crisis = (wallDown && (level === 'casual' ? rng() < 0.3 : true)) || wallHurt;
+      if (pool >= gate && (level !== 'casual' || st.tick >= mem.firstAt || crisis) || (crisis && pool >= 4)) {
+        const units = {};
+        for (let i = 0; i < UNIT_CODES.length; i++) { const c = UNIT_CODES[i]; if (s.pools[c].length) units[c] = s.pools[c].length; }
+        let lane = 1;
+        if (level === 'balanced') {                            // 敌方最薄车道（slg F2 同款计数法）
+          const cnt = [0, 0, 0];
+          for (let i = 0; i < st.battle.units.length; i++) { const u = st.battle.units[i]; if (u.team === foe && u.hp > 0) cnt[u.lane]++; }
+          let min = cnt[0] + cnt[1] + cnt[2] + 1;
+          for (let l = 0; l < 3; l++) if (cnt[l] < min) min = cnt[l];
+          lane = cnt[1] === min ? 1 : cnt[0] === min ? 0 : 2;
+        } else if (level === 'competitive') {
+          lane = st.teams[foe].wall <= 0 ? 1 : (mem.laneFlip === 0 ? 0 : 2); // 破墙后集火 lane1，否则双线分压
+          mem.laneFlip = 1 - mem.laneFlip;
+        }
+        return { o: { k: 'attack', lane, units } };
+      }
+    }
+
+    /* ---- 练兵（营池内；池上限门控） ---- */
+    const camps = ['camp', 'works', 'range'].filter((k) => campOf(s, k));
+    if (camps.length) {
+      const pool = poolN(s);
+      const wantPool = level === 'casual' ? 6 : 12;
+      if (pool + queuedN(s) < wantPool) {
+        let unit = 'inf', kind = 'camp';
+        const campKindOf = (u) => (u === 'inf' || u === 'medic') ? 'camp' : (u === 'razor' || u === 'heavy') ? 'works' : 'range';
+        if (level === 'balanced') {
+          if (camps.indexOf('works') >= 0 && (pool + queuedN(s)) % 3 === 2) { unit = 'razor'; kind = 'works'; }
+        } else if (level === 'competitive') {
+          if (enemyMode) { unit = COUNTER_PICK[enemyMode]; kind = campKindOf(unit); }          // 情报克制
+          else if (campOf(s, 'works') && (pool + queuedN(s)) % 3 === 2) { unit = 'heavy'; kind = 'works'; } // 无情报 inf:heavy 2:1
+        }
+        if (!campOf(s, kind)) kind = camps[0];
+        if (BUILDS[kind] && BUILDS[kind].pool.indexOf(unit) < 0) unit = BUILDS[kind].pool[0];
+        const camp = campOf(s, kind);
+        const c = UNITS[unit].cost[camp.lv - 1];
+        const roomN = Math.min(QUEUE_MAX - queuedN(s, kind), POOL_MAX - poolN(s) - queuedN(s));
+        if (roomN >= 1 && s.res.g >= c[0] * 1000 && s.res.i >= c[1] * 1000) {
+          return { o: { k: 'train', kind, unit, n: Math.min(5, roomN) } };   // n 夹池/队列余量（防 >12 永拒卡死）
+        }
+      }
+    }
+
+    /* ---- rally（战斗层 c 壳；动态随战团——slg competitive 同款前导式：集结线=己方
+       最前单位行再前导 2 行，战线推进则集结线随之前压（静态线会把军团钉死在中场
+       永不能攻城）；balanced 初值=前线 1/2 深度（§4）；competitive 破墙后压敌城心行 ---- */
+    if (st.tick >= ERUPT_AT && level !== 'casual') {
+      for (let l = 0; l < 3; l++) {
+        let front = -1;
+        for (let i = 0; i < st.battle.units.length; i++) {
+          const u = st.battle.units[i];
+          if (u.seat !== seat || u.hp <= 0 || u.lane !== l) continue;
+          const rr = (u.y / ROW_M) | 0;
+          if (front < 0 || (my === 'A' ? rr < front : rr > front)) front = rr;
+        }
+        let target;
+        if (level === 'competitive' && st.teams[foe].wall <= 0) target = my === 'A' ? 0 : 19;      // 破墙后压敌城心行
+        else if (front < 0) target = my === 'A' ? 9 : 10;                                          // 无兵：中线集结位
+        else target = my === 'A' ? Math.max(0, front - 2) : Math.min(19, front + 2);               // 随战团前压（2 行前导）
+        if (Math.abs(target - mem.lastRallyRow[l]) >= 2) { mem.lastRallyRow[l] = target; return { c: { k: 'rally', lane: l, row: target } }; }
+      }
+    }
+    return {};
+  }
+
+  const LEVELS = ['casual', 'balanced', 'competitive'];
+
+  return { META, UNITS, BUILDS, LEVELS, FORMA_ORDER, create, step, battleStep, execOp, serialize, deserialize, brain, fnv1a32, mulberry32,
+           consts: { ERUPT_AT, MARCH_CD, POOL_MAX, QUEUE_MAX, TRAIN_TICKS, WALL_HP, KEEP_HP, ROW_M, LANE_M, FIELD_H_M, PASSIVE } };
+});
+
+</script>
+<script>
+/* =====================================================================
+ * GAMES 联机客户端 SDK（games/_shared/net.js · GAMES-40）——联机游戏页唯一网络出口。
+ * 职责（docs/net-protocol.md §7）：连接/入房（含快速匹配）/输入上报/S1 帧与快照接收/
+ * 时钟同步（ping/pong 偏移）/ping 显示/自动重连（10s 重连窗内凭 token 复席）。
+ *
+ * 形态：classic script（构建期内联进游戏页，server 对 /games/_* 一律 404，无外链可能），
+ *       暴露全局 GNet。零依赖、单文件；协议 JSON 文本帧。
+ * ===================================================================== */
+(function (root) {
+  'use strict';
+
+  var GW_PORT = 4400; // 网关默认端口（协议 §1）
+
+  /** 网关 origin：<scheme>://<hostname>:4400；?gw=<origin> 可覆盖（LAN/调试） */
+  function gwOrigin() {
+    var o = null;
+    try { o = new URL(root.location.href).searchParams.get('gw'); } catch (e) { /* 非浏览器环境 */ }
+    if (o) return o.replace(/\/+$/, '');
+    if (!root.location) return 'ws://127.0.0.1:' + GW_PORT;
+    var scheme = root.location.protocol === 'https:' ? 'wss' : 'ws';
+    return scheme + '://' + root.location.hostname + ':' + GW_PORT;
+  }
+
+  /** 会话 sessionStorage 的重连凭证（刷新/崩溃后 ?room= 直达自动复席） */
+  function saveResume(roomId, seat, token) {
+    try { root.sessionStorage.setItem('gnet:resume:' + roomId, JSON.stringify({ seat: seat, token: token })); } catch (e) { /* 隐私模式 */ }
+  }
+  function getResume(roomId) {
+    try {
+      var raw = root.sessionStorage.getItem('gnet:resume:' + roomId);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+  function clearResume(roomId) {
+    try { root.sessionStorage.removeItem('gnet:resume:' + roomId); } catch (e) { /* 忽略 */ }
+  }
+
+  var median = function (arr) {
+    var a = arr.slice().sort(function (x, y) { return x - y; });
+    var m = a.length >> 1;
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  };
+
+  /**
+   * connect(opts) → session
+   *   opts: { url?, roomId?|quick:true, gameId, mode?, level?, maxTicks?, resume?,
+   *           onWelcome, onStarted, onFrame, onState, onSeat, onEnd, onClosed,
+   *           onError, onStatus(status), seqInput?（S2：input.frame=本地输入序号） }
+   *   status: connecting → open → live → reconnecting → lost / closed
+   *   S2 状态同步（协议 §6 预留位，GAMES-52 实启）：onSnapshot(m) 收二式快照；
+   *   seqInput:true 时 sendInput 自动标单调 seq（0 起）——预测和解 ack 锚点。
+   */
+  function connect(opts) {
+    var url = (opts.url || gwOrigin()).replace(/^http/, 'ws') + '/ws';
+    var session = {
+      rttMs: 0, offsetMs: 0, status: 'connecting',
+      seat: -1, role: null, token: null, roomId: null, frame: 0, tickMs: 100,
+      sendInput: function (keys) { sendInput(keys); },
+      sync: function () { send({ t: 'sync' }); }, // 缺帧时请求全量重同步（协议 §4.1）
+      close: function () { userClose = true; try { ws.close(); } catch (e) { /* 已断 */ } },
+    };
+
+    var ws = null;
+    var userClose = false;
+    var roomGone = false;          // 房间已回收（曾入房后 join 得 room-gone）：重试已无意义，终结会话
+    var lastFrame = 0;             // 最近收到的帧号（输入自动标 lastFrame+1）
+    var inputSeq = 0;              // S2 seqInput 模式：客户端输入序号（0 起单调，GAMES-52）
+    var rtts = [], offsets = [];
+    var pingTimer = 0, backoffIdx = 0, retryTimer = 0;
+    var lostAt = 0;                // 断线时刻（10s 重连窗）
+    var BACKOFF = [500, 1000, 2000, 4000];
+
+    function setStatus(s) {
+      session.status = s;
+      if (opts.onStatus) opts.onStatus(s);
+    }
+    function emit(name, arg) {
+      var fn = opts[name];
+      if (fn) fn(arg);
+    }
+    function send(obj) {
+      if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(obj)); return true; } catch (e) { return false; } }
+      return false;
+    }
+
+    function open() {
+      setStatus(session.status === 'reconnecting' ? 'reconnecting' : 'connecting');
+      try {
+        ws = new root.WebSocket(url);
+      } catch (e) {
+        emit('onError', { code: 'no-ws', message: String(e) });
+        setStatus('lost');
+        return;
+      }
+      ws.onopen = function () {
+        backoffIdx = 0;
+        setStatus('open');
+        var resume = opts.resume || (opts.roomId ? getResume(opts.roomId) : null);
+        if (opts.quick) send({ t: 'quick', gameId: opts.gameId, level: opts.level, maxTicks: opts.maxTicks });
+        else send({ t: 'join', roomId: opts.roomId, mode: opts.mode || 'play', resume: resume || undefined, name: opts.name });
+        pingTimer = root.setInterval(function () { send({ t: 'ping', c: root.Date.now() }); }, 2000);
+      };
+      ws.onmessage = function (ev) {
+        var msg = null;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (!msg || typeof msg.t !== 'string') return;
+        switch (msg.t) {
+          case 'welcome':
+            session.roomId = msg.roomId;
+            session.role = msg.role;
+            session.seat = msg.role === 'player' ? msg.seat : -1;
+            session.token = msg.token || null;
+            session.frame = msg.frame;
+            session.tickMs = msg.tickMs || 100;
+            lastFrame = msg.frame;
+            if (msg.role === 'player') saveResume(msg.roomId, msg.seat, msg.token);
+            setStatus('live');
+            emit('onWelcome', msg);
+            break;
+          case 'started':
+            emit('onStarted', msg);
+            break;
+          case 'frame':
+            lastFrame = msg.frame;
+            session.frame = msg.frame;
+            emit('onFrame', msg);
+            break;
+          case 'state':
+            session.frame = msg.frame;
+            lastFrame = msg.frame;
+            emit('onState', msg);
+            break;
+          case 'snapshot':          // S2 状态同步（GAMES-52）：二式快照（全量/增量+ext.aoi/ack）
+            session.frame = msg.frame;
+            emit('onSnapshot', msg);
+            break;
+          case 'seat':
+            emit('onSeat', msg);
+            break;
+          case 'end':
+            if (session.roomId) clearResume(session.roomId);
+            emit('onEnd', msg);
+            break;
+          case 'closed':
+            if (session.roomId) clearResume(session.roomId);
+            emit('onClosed', msg);
+            break;
+          case 'pong':
+            var now = root.Date.now();
+            var rtt = now - msg.c;
+            if (rtt >= 0 && rtt < 10000) {
+              rtts.push(rtt); if (rtts.length > 5) rtts.shift();
+              session.rttMs = Math.round(median(rtts));
+              var off = msg.s + rtt / 2 - now;
+              offsets.push(off); if (offsets.length > 5) offsets.shift();
+              session.offsetMs = Math.round(median(offsets));
+            }
+            emit('onPong', { rttMs: session.rttMs, offsetMs: session.offsetMs });
+            break;
+          case 'error':
+            // BACKOFF→lost 路径同步（GAMES-51 F3）：曾入房后房已回收——清重连凭证并终结
+            // 重试（否则 BACKOFF 空转 10s 后误报 reconnect-timeout，盖掉"对局已结束"语义）
+            if (msg.code === 'room-gone' && session.roomId) {
+              roomGone = true;
+              clearResume(session.roomId);
+              try { ws.close(); } catch (e) { /* 已断 */ }
+            }
+            emit('onError', msg);
+            break;
+        }
+      };
+      ws.onclose = function () {
+        root.clearInterval(pingTimer);
+        if (userClose || roomGone) { setStatus('closed'); return; }
+        if (session.status === 'lost') return;
+        if (!lostAt) lostAt = root.Date.now();
+        if (root.Date.now() - lostAt > 10000) { // 10s 重连窗（协议 §2）
+          setStatus('lost');
+          emit('onError', { code: 'reconnect-timeout', message: '10s 未能重连' });
+          return;
+        }
+        setStatus('reconnecting');
+        retryTimer = root.setTimeout(open, BACKOFF[Math.min(backoffIdx++, BACKOFF.length - 1)]);
+      };
+      ws.onerror = function () { /* onclose 跟进，重连逻辑在那边 */ };
+    }
+
+    function sendInput(keys) {
+      if (session.role !== 'player') return false;
+      return send({ t: 'input', frame: opts.seqInput ? inputSeq++ : lastFrame + 1, keys: keys });
+    }
+
+    open();
+    return session;
+  }
+
+  root.GNet = {
+    gwOrigin: gwOrigin,
+    connect: connect,
+    getResume: getResume,
+    clearResume: clearResume,
+    GW_PORT: GW_PORT,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* =====================================================================
+ * 帝国萌芽 empire-sprout 客户端逻辑（GAMES-68）——构建期内联进 index.html。
+ * 依赖前置内联：sim.cjs（window.EMPSim）+ _shared/net.js（window.GNet）。
+ * 模式：
+ *   online —— ?room=<id> 指定房或快速匹配；S3 双通道（§5.1）：
+ *     建设=S2 快照渲染（onSnapshot 二式合并，客户端零判定）；
+ *     战斗=S1 帧镜像（onFrame → battleStep 本地推进，缺帧 sync 重同步）；
+ *     出征走 o 壳（建设层权威）→ 桥合成战斗帧 T+1（spawn 事件随帧到）。
+ *   offline —— 网关不可达/?debug=1 离线练习（同 sim 同 brain，本地 100ms 推进）。
+ * 单拇指映射（设计 §1.4）：领地表盘点选（建造/练兵/出征面板）；
+ * 战场表盘长按 ≥400ms 设集结线、快出条一键出征；〔城〕⟷〔军〕切换钮。
+ * 视觉（§7）：晨曦绿野×夯土城邦——建设盘 #241B12 深耕土 / 战斗盘 #14201A 暮草原；
+ * 阵营 A 琥珀 #E8A33D / B 青 #3DC8E8（形状第二通道：A 椭圆底盘/B 方形、A 实心/B 分段血条）。
+ * ===================================================================== */
+(function () {
+  'use strict';
+
+  var S = window.EMPSim, G = window.GNet;
+  var W = 375, H = 667, TOP_H = 56, BOT_H = 106, MID_H = 505;
+  var ROW_PX = 25, ROWS = 20, LANES = 3;
+  var TEAM_COLOR = { A: '#E8A33D', B: '#3DC8E8' };
+  var RES_COLOR = { g: '#E8C46A', w: '#B08A5A', i: '#8FB8C8' };
+  var RES_CN = { g: '粮', w: '木', i: '铁' };
+  var BG_CITY = '#241B12', BG_WAR = '#14201A';
+  var FONT = "-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',Roboto,sans-serif";
+  var UNIT_CN = { inf: '步兵', razor: '装甲', arty: '炮兵', sniper: '狙击', medic: '军医', heavy: '重坦' };
+  var UNIT_CODES = ['inf', 'razor', 'arty', 'sniper', 'medic', 'heavy'];
+  var LONGPRESS_MS = 400, ERUPT_AT = 1800, MARCH_CD = 200;
+
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  var mode = 'offline', session = null, mySeat = 0, myTeam = 'A';
+  var simState = null;               // 离线=本地 sim；在线=welcome/state 权威引用（battle 镜像种子）
+  var battle = null, warTick = -1;   // 战斗层本地镜像 + 已应用帧号（S1）
+  var snap = null;                   // 建设层快照视图（S2 二式合并：seats/teams）
+  var dial = 'city';                 // 表盘：city | war
+  var started = false, matchOver = false;
+  var rosterMap = {};
+  var bots = {}, offlineTimer = 0;
+  var press = null, longfired = false;
+  var panel = null;                  // {type:'build',plot}|{type:'train',kind}|{type:'attack',sel,lane}
+  var trainN = 1, atkSel = null, lastAtk = null;
+  var bannerTxt = '', bannerTtl = 0, eruptSeen = false;
+  var fx = [], shake = 0, marchPend = null;
+  var fpsV = 60, inputMaxMs = 0, lastInputAt = 0;
+  var HUDF = {};                     // GAMES-57 字号自证登记表（每帧覆写；识图复检断言源）
+  var qCmd = [];                     // 离线/QA 指令队列（cmd 注入通道）
+
+  /* ---------- 上报（宿主钩子优先，本地兜底） ---------- */
+  function report(event, payload) {
+    try { if (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) window.__GAMES_HOOK__.report(event, payload); } catch (e) { /* 永不抛 */ }
+    if (window.__GAMES_DEBUG__) window.__GAMES_DEBUG__.events.push({ event: event, payload: payload, at: Date.now() });
+  }
+
+  function fit() {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /* ================= 视图取数（离线=simState 直读；在线=快照合并） ================= */
+  function seatView(i) {
+    if (mode === 'offline') {
+      var s = simState.build.seats[i];
+      var pool = {}; for (var c in s.pools) pool[c] = s.pools[c].length;
+      return { seat: i, res: { g: (s.res.g / 1000) | 0, w: (s.res.w / 1000) | 0, i: (s.res.i / 1000) | 0 }, plots: s.plots, queues: s.queues, pool: pool, marchCd: s.marchCd };
+    }
+    return snap && snap.seats[i] || null;
+  }
+  function teamsView() {
+    if (mode === 'offline') return simState.teams;
+    return snap && snap.teams || { A: { wall: 800, keep: 1200, merit: 0 }, B: { wall: 800, keep: 1200, merit: 0 } };
+  }
+  function tickView() { return mode === 'offline' ? simState.tick : (snap ? snap.tick : 0); }
+  function poolN(seatV) { var n = 0; if (seatV) for (var c in seatV.pool) n += seatV.pool[c]; return n; }
+
+  /* ================= 布局几何 ================= */
+  var GEO = {
+    plotsOwn: [], plotsAlly: [],
+    poolBtn: null, qBox: null, togCity: null, togWar: null, quickBar: null,
+    panelClose: null, panelCards: [], panelOk: null, panelMinus: null, panelPlus: null, panelLanes: [],
+  };
+  (function () {
+    for (var i = 0; i < 4; i++) {
+      GEO.plotsOwn.push({ x: 214 + (i % 2) * 74, y: 88 + ((i / 2) | 0) * 106, w: 66, h: 82 });
+      GEO.plotsAlly.push({ x: 12 + (i % 2) * 66, y: 88 + ((i / 2) | 0) * 106, w: 58, h: 74 });
+    }
+    GEO.qBox = { x: 96, y: H - 78, w: 130, h: 30 };
+    GEO.togCity = { x: 232, y: H - 84, w: 62, h: 38 };
+    GEO.togWar = { x: 300, y: H - 84, w: 62, h: 38 };
+    GEO.quickBar = { x: 12, y: H - 44, w: 150, h: 34 };
+  })();
+
+  /* ================= 渲染 ================= */
+  var lastFrameT = 0, fpsAcc = 0, fpsN = 0, fpsAt = 0;
+  function render(now) {
+    requestAnimationFrame(render);
+    if (!simState && !snap) return;
+    var t0 = performance.now();
+    if (lastInputAt && !inputMaxMs) inputMaxMs = Math.max(0, t0 - lastInputAt);
+    ctx.save();
+    if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.88; if (shake < 0.4) shake = 0; }
+    drawTop(now);
+    if (dial === 'city') drawCity(); else drawWar(now);
+    drawBottom();
+    if (panel) drawPanel();
+    drawFx(now);
+    drawBanner(now);
+    ctx.restore();
+    var dt = performance.now() - t0;
+    fpsAcc += dt; fpsN++;
+    if (now - fpsAt > 500) { fpsV = Math.round(1000 / Math.max(0.1, fpsAcc / Math.max(1, fpsN))); fpsAt = now; fpsAcc = 0; fpsN = 0; }
+  }
+
+  function drawTop(now) {
+    var me = seatView(mySeat) || seatView(0);
+    ctx.fillStyle = '#1a130c'; ctx.fillRect(0, 0, W, TOP_H);
+    ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, TOP_H - 1, W, 1);
+    var t = tickView();
+    HUDF.top = { res: 13, rate: 11, clock: 13, merit: 13 };
+    if (me) {
+      var xs = [12, 128, 244];
+      ['g', 'w', 'i'].forEach(function (r, idx) {
+        ctx.fillStyle = RES_COLOR[r]; ctx.font = '600 11px ' + FONT;
+        ctx.fillText(RES_CN[r], xs[idx], 20);
+        ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT;
+        var rate = { g: 3, w: 2, i: 1 }[r] + ecoYield(me, r);
+        ctx.fillText(String(me.res[r]) + '  +' + rate + '/s', xs[idx] + 14, 21);
+      });
+    }
+    if (t < ERUPT_AT) {
+      var left = Math.ceil((ERUPT_AT - t) / 10);
+      ctx.fillStyle = '#e8c46a'; ctx.font = '600 13px ' + FONT; ctx.textAlign = 'center';
+      ctx.fillText('军团战爆发 ' + String(Math.floor(left / 60)) + ':' + String(left % 60).padStart(2, '0'), W / 2, 43);
+    } else {
+      var tm = teamsView();
+      ctx.font = '600 13px ' + FONT; ctx.textAlign = 'center';
+      ctx.fillStyle = TEAM_COLOR.A; ctx.fillText('战功 ' + tm.A.merit, W / 2 - 55, 43);
+      ctx.fillStyle = '#8b93a7'; ctx.fillText(':', W / 2, 43);
+      ctx.fillStyle = TEAM_COLOR.B; ctx.fillText(String(tm.B.merit), W / 2 + 32, 43);
+      ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT;
+      ctx.fillText(Math.floor(t / 600) + ':' + String(Math.floor(t / 10) % 60).padStart(2, '0'), W - 30, 21);
+    }
+    ctx.textAlign = 'left';
+  }
+  function ecoYield(me, r) {  // 建筑产出率（快照 plots 求和）
+    var y = { farm: { 1: 4, 2: 9, 3: 15 }, lumber: { 1: 3, 2: 7, 3: 12 }, mine: { 1: 2, 2: 5, 3: 9 } };
+    var n = 0; if (me && me.plots) for (var i = 0; i < me.plots.length; i++) { var p = me.plots[i]; if (p && y[p.kind]) n += y[p.kind][p.lv] || 0; }
+    return n;
+  }
+
+  /* ---------- 领地表盘（§2.1） ---------- */
+  function drawCity() {
+    ctx.fillStyle = BG_CITY; ctx.fillRect(0, TOP_H, W, MID_H);
+    ctx.strokeStyle = 'rgba(232,196,106,.05)'; ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 25) { ctx.beginPath(); ctx.moveTo(gx, TOP_H); ctx.lineTo(gx, TOP_H + MID_H); ctx.stroke(); }
+    for (var gy = TOP_H; gy < TOP_H + MID_H; gy += 25) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    HUDF.city = { bname: 11, blv: 11, hplabel: 11, hp: 13, ally: 9 };
+    var allySeat = mySeat ^ 2;
+    var av = seatView(allySeat);
+    ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+    ctx.fillText('盟友领地（' + ((rosterMap[allySeat] && rosterMap[allySeat].name) || 'Bot') + '）', 12, TOP_H + 14);
+    for (var i = 0; i < 4; i++) {
+      var r = GEO.plotsAlly[i], p = av && av.plots && av.plots[i];
+      ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.fillRect(r.x, r.y, r.w, r.h);
+      if (p) { ctx.fillStyle = 'rgba(176,138,90,.35)'; ctx.fillRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8); ctx.fillStyle = '#a89a80'; ctx.font = '9px ' + FONT; ctx.fillText(S.BUILDS[p.kind].cn + ' Lv' + p.lv, r.x + 6, r.y + 16); }
+    }
+    var me = seatView(mySeat);
+    ctx.fillStyle = '#e8c46a'; ctx.font = '11px ' + FONT;
+    ctx.fillText('己方建筑位（6 选 4）', 214, TOP_H + 14);
+    for (var j = 0; j < 4; j++) {
+      var rr = GEO.plotsOwn[j], pp = me && me.plots && me.plots[j];
+      ctx.fillStyle = 'rgba(232,196,106,.08)'; ctx.fillRect(rr.x, rr.y, rr.w, rr.h);
+      ctx.strokeStyle = pp ? 'rgba(232,196,106,.5)' : 'rgba(232,196,106,.25)';
+      ctx.setLineDash(pp ? [] : [4, 3]); ctx.strokeRect(rr.x + .5, rr.y + .5, rr.w - 1, rr.h - 1); ctx.setLineDash([]);
+      if (pp) {
+        ctx.fillStyle = 'rgba(176,138,90,.5)'; ctx.fillRect(rr.x + 5, rr.y + 5, rr.w - 10, rr.h - 10);
+        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT;
+        ctx.fillText(S.BUILDS[pp.kind].cn, rr.x + 8, rr.y + 22);
+        ctx.fillStyle = '#e8c46a'; ctx.font = '600 11px ' + FONT;
+        ctx.fillText('Lv' + pp.lv, rr.x + 8, rr.y + 38);
+        if (pp.lv < 3) { ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT; ctx.fillText('可升级', rr.x + 8, rr.y + 54); }
+      } else {
+        ctx.fillStyle = '#6b6252'; ctx.font = '11px ' + FONT; ctx.fillText('+ 建造', rr.x + 8, rr.y + 22);
+      }
+    }
+    /* 联盟城心/城墙 HP 镜像（战斗层只读投影，§5.4） */
+    var tm = teamsView();
+    drawHpMirror(W / 2 - 34, TOP_H + 96, tm[myTeam], '城心', 1200);
+    drawHpMirror(W / 2 - 34, TOP_H + 150, { hp: tm[myTeam].wall, kind: 'wall' }, '城墙', 800);
+    /* 队列进度 */
+    var q = me && me.queues && me.queues[0];
+    if (q) {
+      ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fillRect(120, TOP_H + 230, 135, 46);
+      ctx.fillStyle = '#d8ccb8'; ctx.font = '9px ' + FONT;
+      ctx.fillText(S.BUILDS[q.kind].cn + ' · ' + UNIT_CN[q.unit] + ' ×' + q.n, 126, TOP_H + 244);
+      var prog = mode === 'offline' ? q.prog / S.consts.TRAIN_TICKS[(q.tier || 1) - 1] : 0.5;
+      ctx.fillStyle = 'rgba(232,196,106,.25)'; ctx.fillRect(126, TOP_H + 252, 123, 6);
+      ctx.fillStyle = '#e8c46a'; ctx.fillRect(126, TOP_H + 252, 123 * Math.min(1, prog), 6);
+    }
+  }
+  function drawHpMirror(x, y, o, label, max) {
+    var hp = o.kind === 'wall' ? o.hp : o.keep;
+    ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fillRect(x, y, 68, 40);
+    ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText(label, x + 6, y + 14);
+    ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT; ctx.fillText(String(hp), x + 6, y + 32);
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(x + 6, y + 34, 56, 3);
+    ctx.fillStyle = TEAM_COLOR[myTeam]; ctx.fillRect(x + 6, y + 34, 56 * Math.max(0, hp) / max, 3);
+  }
+
+  /* ---------- 战场表盘（slg 车道制同款骨架，§2.1） ---------- */
+  function fieldY(rowM) { return TOP_H + rowM / 1000 / ROW_PX * ROW_PX; }
+  function laneX(lane, off) { return 12 + lane * 117 + (off || 0); }
+  function drawWar(now) {
+    ctx.fillStyle = BG_WAR; ctx.fillRect(0, TOP_H, W, MID_H);
+    ctx.strokeStyle = 'rgba(255,255,255,.06)';
+    for (var l = 0; l <= 3; l++) { ctx.beginPath(); ctx.moveTo(12 + l * 117, TOP_H); ctx.lineTo(12 + l * 117, TOP_H + 505); ctx.stroke(); }
+    for (var rgy = 0; rgy <= 20; rgy++) { ctx.beginPath(); ctx.moveTo(12, TOP_H + rgy * 25.25); ctx.lineTo(363, TOP_H + rgy * 25.25); ctx.stroke(); }
+    HUDF.war = { hp: 13, lane: 9, unitTier: 9, cd: 13, poolWar: 13 };
+    var tm = teamsView();
+    /* B 墙/心（上） */
+    drawSideBars(TOP_H + 4, 'B', tm.B, true);
+    /* A 墙/心（下） */
+    drawSideBars(TOP_H + 468, 'A', tm.A, false);
+    if (!battle) return;
+    /* 墙体（裂纹三档）+ 城心 */
+    for (var i = 0; i < battle.bld.length; i++) {
+      var b = battle.bld[i];
+      var y = TOP_H + (b.y / 25000 + 0.5) * 25.25;
+      if (b.kind === 'wall') {
+        ctx.fillStyle = b.team === 'A' ? 'rgba(232,163,61,.35)' : 'rgba(61,200,232,.35)';
+        ctx.fillRect(12, y - 3, 351, 6);
+        var crack = b.hp > b.max * 0.75 ? 0 : b.hp > b.max * 0.5 ? 1 : b.hp > b.max * 0.25 ? 2 : 3;
+        if (crack) { ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); for (var s2 = 0; s2 < crack * 3; s2++) { var cx2 = 20 + s2 * 40; ctx.moveTo(cx2, y - 3); ctx.lineTo(cx2 + 6, y + 3); } ctx.stroke(); }
+      } else {
+        ctx.fillStyle = b.team === 'A' ? 'rgba(232,163,61,.6)' : 'rgba(61,200,232,.6)';
+        ctx.fillRect(W / 2 - 28, y - 8, 56, 16);
+        ctx.fillStyle = '#0b0e14'; ctx.font = '600 9px ' + FONT; ctx.textAlign = 'center';
+        ctx.fillText('城心', W / 2, y + 3); ctx.textAlign = 'left';
+      }
+    }
+    /* 单位（A 椭圆底盘/B 方形；己方白圈） */
+    var us = battle.units;
+    for (var u = 0; u < us.length; u++) {
+      var un = us[u];
+      var x = laneX(un.lane, ((un.id * 37) % 40) - 14), y = TOP_H + (un.y / 25000 + 0.5) * 25.25;
+      var col = TEAM_COLOR[un.team];
+      ctx.fillStyle = un.code === 'medic' ? '#d8e8d0' : col;
+      if (un.team === 'A') { ctx.beginPath(); ctx.ellipse(x, y, 7, 5, 0, 0, Math.PI * 2); ctx.fill(); }
+      else ctx.fillRect(x - 6, y - 5, 12, 10);
+      if (un.seat === mySeat) { ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 9px ' + FONT; ctx.fillText('T' + un.tier, x + 6, y - 5);
+      /* 血条：A 实心 / B 分段 */
+      var w = 14 * un.hp / un.maxHp;
+      if (un.team === 'A') { ctx.fillStyle = col; ctx.fillRect(x - 7, y - 9, w, 2); }
+      else { ctx.fillStyle = col; for (var sg = 0; sg < 4; sg++) { if (w > sg * 3.5) ctx.fillRect(x - 7 + sg * 4, y - 9, 2.5, 2); } }
+    }
+    /* 集结旗（阵营色形状双编码：A 三角旗/B 燕尾旗） */
+    var myRally = battle.rally[mySeat] || [-1, -1, -1];
+    for (var ln = 0; ln < 3; ln++) {
+      var rrow = myRally[ln];
+      if (rrow < 0) continue;
+      var rx = laneX(ln, 40), ry = TOP_H + (rrow + 0.5) * 25.25;
+      ctx.strokeStyle = TEAM_COLOR[myTeam]; ctx.beginPath(); ctx.moveTo(rx, ry - 10); ctx.lineTo(rx, ry + 8); ctx.stroke();
+      ctx.fillStyle = TEAM_COLOR[myTeam];
+      if (myTeam === 'A') { ctx.beginPath(); ctx.moveTo(rx, ry - 10); ctx.lineTo(rx + 9, ry - 6); ctx.lineTo(rx, ry - 2); ctx.fill(); }
+      else { ctx.beginPath(); ctx.moveTo(rx, ry - 10); ctx.lineTo(rx + 8, ry - 7); ctx.lineTo(rx + 5, ry - 5); ctx.lineTo(rx + 8, ry - 3); ctx.lineTo(rx, ry); ctx.fill(); }
+    }
+    /* 出征 CD 环 */
+    var me = seatView(mySeat);
+    if (me && me.marchCd > 0) {
+      ctx.strokeStyle = 'rgba(232,196,106,.7)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(W - 26, TOP_H + 462, 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - me.marchCd / MARCH_CD)); ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#e8c46a'; ctx.font = '600 13px ' + FONT; ctx.fillText(String(Math.ceil(me.marchCd / 10)), W - 32, TOP_H + 467);
+    }
+  }
+  function drawSideBars(y, team, o, top) {
+    ctx.fillStyle = 'rgba(255,255,255,.04)'; ctx.fillRect(12, y, 351, 30);
+    ctx.fillStyle = TEAM_COLOR[team]; ctx.font = '600 13px ' + FONT;
+    ctx.fillText(team + ' 心 ' + o.keep, 20, y + 20);
+    ctx.fillText('墙 ' + o.wall, 130, y + 20);
+    ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(190, y + 8, 160, 5);
+    ctx.fillStyle = TEAM_COLOR[team]; ctx.fillRect(190, y + 8, 160 * Math.max(0, o.wall) / 800, 5);
+    ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(190, y + 18, 160, 5);
+    ctx.fillStyle = TEAM_COLOR[team]; ctx.fillRect(190, y + 18, 160 * Math.max(0, o.keep) / 1200, 5);
+  }
+
+  /* ---------- 底栏（§2.1：兵池徽标/队列/〔城〕⟷〔军〕） ---------- */
+  function drawBottom() {
+    ctx.fillStyle = '#171009'; ctx.fillRect(0, H - BOT_H, W, BOT_H);
+    ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, H - BOT_H, W, 1);
+    HUDF.bottom = { pool: 16, q: 9, tog: 13, quick: 11 };
+    var me = seatView(mySeat);
+    var pn = poolN(me);
+    /* 兵池徽标（tap → 出征面板） */
+    ctx.fillStyle = pn > 0 ? 'rgba(232,163,61,.25)' : 'rgba(255,255,255,.05)';
+    ctx.fillRect(12, H - 78, 72, 34);
+    ctx.strokeStyle = 'rgba(232,163,61,.6)'; ctx.strokeRect(12.5, H - 77.5, 71, 33);
+    ctx.fillStyle = '#e8dcc8'; ctx.font = '600 16px ' + FONT;
+    ctx.fillText(String(pn), 22, H - 55);
+    ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText('/12 兵池', 44, H - 55);
+    /* 队列摘要 */
+    var q = me && me.queues && me.queues[0];
+    ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+    ctx.fillText(q ? '练兵中 ' + UNIT_CN[q.unit] + '×' + q.n : '队列空闲', 96, H - 58);
+    /* 快出条（战场表盘：一键复用上次编队） */
+    if (dial === 'war') {
+      ctx.fillStyle = lastAtk ? 'rgba(232,196,106,.3)' : 'rgba(255,255,255,.05)';
+      ctx.fillRect(GEO.quickBar.x, GEO.quickBar.y, GEO.quickBar.w, GEO.quickBar.h);
+      ctx.fillStyle = lastAtk ? '#e8c46a' : '#6b6252'; ctx.font = '600 11px ' + FONT;
+      ctx.fillText('快出 · 上次编队', GEO.quickBar.x + 10, GEO.quickBar.y + 21);
+    }
+    /* 切换钮（当前盘高亮） */
+    drawTog(GEO.togCity, '〔城〕', dial === 'city');
+    drawTog(GEO.togWar, '〔军〕', dial === 'war', tickView() >= ERUPT_AT);
+  }
+  function drawTog(r, txt, on, warn) {
+    ctx.fillStyle = on ? 'rgba(232,196,106,.35)' : 'rgba(255,255,255,.05)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = on ? '#e8c46a' : 'rgba(255,255,255,.15)'; ctx.strokeRect(r.x + .5, r.y + .5, r.w - 1, r.h - 1);
+    ctx.fillStyle = on ? '#f0e8d8' : '#8b93a7'; ctx.font = '600 13px ' + FONT; ctx.textAlign = 'center';
+    ctx.fillText(txt, r.x + r.w / 2, r.y + 24);
+    if (warn && !on) { ctx.fillStyle = '#e8a33d'; ctx.beginPath(); ctx.arc(r.x + r.w - 8, r.y + 8, 3, 0, Math.PI * 2); ctx.fill(); }
+    ctx.textAlign = 'left';
+  }
+
+  /* ---------- 面板（建造 6 卡/升级/练兵/出征，P1 ≥11px） ---------- */
+  function drawPanel() {
+    ctx.fillStyle = 'rgba(10,7,4,.82)'; ctx.fillRect(0, TOP_H, W, MID_H);
+    HUDF.panel = { title: 13, name: 11, cost: 11, desc: 9, btn: 13, n: 13 };
+    ctx.textAlign = 'center';
+    if (panel.type === 'build' || panel.type === 'upgrade') {
+      var me = seatView(mySeat);
+      var cur = me.plots[panel.plot];
+      ctx.fillStyle = '#e8dcc8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillText(panel.type === 'build' ? '建造（同类至多 1 座）' : '升级 ' + S.BUILDS[cur.kind].cn + ' → Lv' + (cur.lv + 1), W / 2, TOP_H + 34);
+      var kinds = panel.type === 'build' ? ['farm', 'lumber', 'mine', 'camp', 'works', 'range'] : [cur.kind];
+      for (var i = 0; i < kinds.length; i++) {
+        var k = kinds[i], x = 18 + (i % 3) * 118, y = TOP_H + 56 + ((i / 3) | 0) * 128;
+        var lv = panel.type === 'build' ? 0 : cur.lv;
+        var cost = S.BUILDS[k].cost[Math.min(2, lv)];
+        var afford = true; for (var r in cost) if (me.res[r] < cost[r] / 1000) afford = false;
+        ctx.fillStyle = afford ? 'rgba(232,196,106,.12)' : 'rgba(255,255,255,.04)';
+        ctx.fillRect(x, y, 106, 112);
+        ctx.strokeStyle = afford ? 'rgba(232,196,106,.4)' : 'rgba(255,255,255,.1)'; ctx.strokeRect(x + .5, y + .5, 105, 111);
+        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT;
+        ctx.fillText(S.BUILDS[k].cn + (panel.type === 'build' ? '' : ' Lv' + (cur.lv + 1)), x + 53, y + 22);
+        ctx.fillStyle = afford ? '#e8c46a' : '#a05a4a'; ctx.font = '11px ' + FONT;
+        ctx.fillText(Object.keys(cost).map(function (r) { return RES_CN[r] + cost[r] / 1000; }).join(' '), x + 53, y + 44);
+        ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+        var desc = S.BUILDS[k].yield ? '产出 ' + Object.keys(S.BUILDS[k].yield[0]).map(function (r) { return RES_CN[r] + '+' + (S.BUILDS[k].yield[0][r] / 100); }).join(' ') + '/s' : '兵池 ' + S.BUILDS[k].pool.map(function (u) { return UNIT_CN[u]; }).join('/');
+        ctx.fillText(desc, x + 53, y + 64);
+        ctx.fillStyle = '#f0e8d8'; ctx.font = '600 11px ' + FONT;
+        ctx.fillText(afford ? '建造' : '资源不足', x + 53, y + 96);
+        GEO.panelCards[i] = { x: x, y: y, w: 106, h: 112, kind: k, afford: afford };
+      }
+    } else if (panel.type === 'train') {
+      var me2 = seatView(mySeat);
+      var camp = me2.plots[panel.plot];
+      ctx.fillStyle = '#e8dcc8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillText(S.BUILDS[panel.kind].cn + ' Lv' + camp.lv + '（T' + camp.lv + ' 档）', W / 2, TOP_H + 34);
+      var pool2 = S.BUILDS[panel.kind].pool;
+      for (var i2 = 0; i2 < pool2.length; i2++) {
+        var u2 = pool2[i2], x2 = 40 + i2 * 150, y2 = TOP_H + 60;
+        var c2 = S.UNITS[u2].cost[camp.lv - 1];
+        var afford2 = me2.res.g >= c2[0] && me2.res.i >= c2[1];
+        ctx.fillStyle = atkSel === u2 || (atkSel === null && i2 === 0) ? 'rgba(232,196,106,.18)' : 'rgba(255,255,255,.05)';
+        ctx.fillRect(x2, y2, 130, 120);
+        ctx.strokeStyle = 'rgba(232,196,106,.35)'; ctx.strokeRect(x2 + .5, y2 + .5, 129, 119);
+        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT; ctx.fillText(UNIT_CN[u2], x2 + 65, y2 + 24);
+        ctx.fillStyle = afford2 ? '#e8c46a' : '#a05a4a'; ctx.font = '11px ' + FONT;
+        ctx.fillText('粮' + c2[0] + (c2[1] ? ' 铁' + c2[1] : ''), x2 + 65, y2 + 46);
+        ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+        ctx.fillText('HP' + S.UNITS[u2].hp[camp.lv - 1] + ' 攻' + S.UNITS[u2].atk[camp.lv - 1], x2 + 65, y2 + 64);
+        ctx.fillText('T' + camp.lv + ' · ' + S.consts.TRAIN_TICKS[camp.lv - 1] / 10 + 's/个', x2 + 65, y2 + 80);
+        GEO.panelCards[i2] = { x: x2, y: y2, w: 130, h: 120, unit: u2, afford: afford2 };
+      }
+      /* 步进 1-5 */
+      ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillText('×' + trainN, W / 2, TOP_H + 230);
+      GEO.panelMinus = { x: W / 2 - 60, y: TOP_H + 208, w: 40, h: 34 };
+      GEO.panelPlus = { x: W / 2 + 20, y: TOP_H + 208, w: 40, h: 34 };
+      ctx.strokeStyle = 'rgba(232,196,106,.5)';
+      ctx.strokeRect(GEO.panelMinus.x, GEO.panelMinus.y, 40, 34); ctx.fillText('−', GEO.panelMinus.x + 20, TOP_H + 231);
+      ctx.strokeRect(GEO.panelPlus.x, GEO.panelPlus.y, 40, 34); ctx.fillText('+', GEO.panelPlus.x + 20, TOP_H + 231);
+    } else if (panel.type === 'attack') {
+      var me3 = seatView(mySeat);
+      ctx.fillStyle = '#e8dcc8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillText('出征编队（整池 ≤12 · CD ' + MARCH_CD / 10 + 's）', W / 2, TOP_H + 34);
+      var codes = UNIT_CODES.filter(function (c) { return me3.pool[c] > 0; });
+      if (!codes.length) { ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText('兵池为空——先练兵', W / 2, TOP_H + 80); }
+      for (var i3 = 0; i3 < codes.length; i3++) {
+        var u3 = codes[i3], x3 = 18 + (i3 % 3) * 118, y3 = TOP_H + 56 + ((i3 / 3) | 0) * 74;
+        var have = me3.pool[u3], want = panel.sel[u3] || 0;
+        ctx.fillStyle = 'rgba(232,196,106,' + (want ? 0.25 : 0.08) + ')';
+        ctx.fillRect(x3, y3, 106, 62);
+        ctx.strokeStyle = want ? '#e8c46a' : 'rgba(255,255,255,.15)'; ctx.strokeRect(x3 + .5, y3 + .5, 105, 61);
+        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT; ctx.fillText(UNIT_CN[u3] + ' ' + want + '/' + have, x3 + 53, y3 + 26);
+        ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT; ctx.fillText('tap +1 / 长按清零', x3 + 53, y3 + 46);
+        GEO.panelCards[i3] = { x: x3, y: y3, w: 106, h: 62, atkUnit: u3 };
+      }
+      /* 车道三分选 */
+      ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText('选择车道', W / 2, TOP_H + 216);
+      for (var l3 = 0; l3 < 3; l3++) {
+        var xl = 68 + l3 * 90;
+        ctx.fillStyle = panel.lane === l3 ? 'rgba(232,163,61,.35)' : 'rgba(255,255,255,.06)';
+        ctx.fillRect(xl, TOP_H + 226, 78, 40);
+        ctx.strokeStyle = panel.lane === l3 ? '#e8a33d' : 'rgba(255,255,255,.15)'; ctx.strokeRect(xl + .5, TOP_H + 226.5, 77, 39);
+        ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT; ctx.fillText('车道 ' + l3, xl + 39, TOP_H + 251);
+        GEO.panelLanes[l3] = { x: xl, y: TOP_H + 226, w: 78, h: 40, lane: l3 };
+      }
+    }
+    /* 确认/关闭 */
+    if (panel.type !== 'upgrade') {
+      GEO.panelOk = { x: W / 2 - 50, y: TOP_H + 282, w: 100, h: 42 };
+      ctx.fillStyle = 'rgba(232,196,106,.35)'; ctx.fillRect(GEO.panelOk.x, GEO.panelOk.y, 100, 42);
+      ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillText(panel.type === 'build' ? '建 造' : panel.type === 'train' ? '入 队' : '出 征', W / 2, GEO.panelOk.y + 27);
+    }
+    GEO.panelClose = { x: W - 46, y: TOP_H + 10, w: 36, h: 30 };
+    ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(GEO.panelClose.x, GEO.panelClose.y, 36, 30);
+    ctx.fillStyle = '#8b93a7'; ctx.font = '600 13px ' + FONT; ctx.fillText('×', W - 28, TOP_H + 31);
+    ctx.textAlign = 'left';
+  }
+
+  /* ---------- 特效/横幅 ---------- */
+  function drawFx(now) {
+    for (var i = fx.length - 1; i >= 0; i--) {
+      var f = fx[i];
+      var p = (now - f.t0) / f.dur;
+      if (p >= 1) { fx.splice(i, 1); continue; }
+      ctx.globalAlpha = 1 - p;
+      if (f.k === 'ring') { ctx.strokeStyle = f.col; ctx.beginPath(); ctx.arc(f.x, f.y, 6 + p * 22, 0, Math.PI * 2); ctx.stroke(); }
+      else if (f.k === 'txt') { ctx.fillStyle = f.col; ctx.font = '600 13px ' + FONT; ctx.fillText(f.txt, f.x, f.y - p * 24); }
+      ctx.globalAlpha = 1;
+    }
+  }
+  function drawBanner(now) {
+    if (bannerTtl <= 0) return;
+    bannerTtl -= 16;
+    var a = Math.min(1, bannerTtl / 300);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(20,12,4,.85)'; ctx.fillRect(0, TOP_H + 170, W, 64);
+    ctx.fillStyle = '#e8a33d'; ctx.font = '700 20px ' + FONT; ctx.textAlign = 'center';
+    ctx.fillText(bannerTxt, W / 2, TOP_H + 210);
+    ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+  }
+
+  /* ================= 事件应用（战斗帧/快照 events → 表现） ================= */
+  function applyBattleEvents(evs) {
+    for (var i = 0; i < evs.length; i++) {
+      var e = evs[i];
+      if (e.k === 'erupt') {
+        eruptSeen = true; dial = 'war';
+        bannerTxt = '⚔ 军团战爆发！'; bannerTtl = 2000; shake = 5;
+      } else if (e.k === 'spawn' && e.seat === mySeat) {
+        fx.push({ k: 'ring', x: laneX(e.lane, 20), y: TOP_H + (e.row + 0.5) * 25.25, col: TEAM_COLOR[myTeam], t0: performance.now(), dur: 500 });
+      } else if (e.k === 'walldown') { shake = 5; bannerTxt = (e.team === myTeam ? '我方城墙被破！' : '敌方城墙被破！'); bannerTtl = 1400; }
+      else if (e.k === 'keepdown') { shake = 6; }
+    }
+  }
+  function applyBuildEvents(evs) {
+    for (var i = 0; i < evs.length; i++) {
+      var e = evs[i];
+      if (e.seat !== mySeat) continue;
+      if (e.k === 'built') { banner(e.kind ? S.BUILDS[e.kind].cn + (e.lv > 1 ? ' 升级 Lv' + e.lv : ' 建成') : ''); fx.push({ k: 'txt', txt: '建成', x: 250, y: TOP_H + 200, col: '#e8c46a', t0: performance.now(), dur: 800 }); }
+      else if (e.k === 'march') { banner('军团出征 · 车道' + e.lane); }
+      else if (e.k === 'reject') { banner('✕ ' + ({ resw: '木材不足', resi: '铁不足', resg: '粮食不足', 'queue-full': '队列已满', 'pool-full': '兵池已满', cd: '出征冷却中', peace: '和平期不可出征', 'no-camp': '先建兵营', 'dup-kind': '同类已建', 'max-lv': '已满级', 'kind-mismatch': '类型不符', 'not-in-pool': '该营不可练此兵', pool: '兵池不足', 'bad-units': '编队无效' }[e.why] || e.why)); }
+      else if (e.k === 'train-q') { fx.push({ k: 'txt', txt: '入队 ×' + e.n, x: 160, y: TOP_H + 250, col: '#e8c46a', t0: performance.now(), dur: 700 }); }
+    }
+  }
+  function banner(txt) { if (txt) { bannerTxt = txt; bannerTtl = 1300; } }
+
+  /* ================= 输入 ================= */
+  function inR(r, x, y) { return r && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
+  function sendO(op) {
+    lastInputAt = performance.now(); inputMaxMs = 0;
+    if (mode === 'online') session.sendInput({ o: op });
+    else qCmd.push({ o: op });
+  }
+  function sendC(cmd) {
+    lastInputAt = performance.now(); inputMaxMs = 0;
+    if (mode === 'online') session.sendInput({ c: cmd });
+    else qCmd.push({ c: cmd });
+  }
+
+  cv.addEventListener('pointerdown', function (ev) {
+    var pt = ev.touches ? ev.touches[0] : ev;
+    var x = pt.pageX - cv.offsetLeft, y = pt.pageY - cv.offsetTop;
+    press = { x: x, y: y, t: performance.now(), moved: false };
+    longfired = false;
+  });
+  cv.addEventListener('pointermove', function (ev) {
+    if (!press) return;
+    var pt = ev.touches ? ev.touches[0] : ev;
+    var x = pt.pageX - cv.offsetLeft, y = pt.pageY - cv.offsetTop;
+    if (Math.abs(x - press.x) > 12 || Math.abs(y - press.y) > 12) press.moved = true;
+  });
+  cv.addEventListener('pointerup', function (ev) {
+    if (!press || press.moved || longfired) { press = null; return; }
+    var x = press.x, y = press.y;
+    press = null;
+    if (matchOver || !started) return;
+    onTap(x, y);
+  });
+  cv.addEventListener('pointerleave', function () { press = null; });
+  setInterval(function () {   /* 长按检测（战场表盘 rally，≥400ms） */
+    if (press && !press.moved && !longfired && performance.now() - press.t >= LONGPRESS_MS) {
+      if (dial === 'war' && yInField(press.y) && started && !matchOver) {
+        longfired = true;
+        var lane = Math.max(0, Math.min(2, ((press.x - 12) / 117) | 0));
+        var row = Math.max(0, Math.min(19, ((press.y - TOP_H) / 25.25) | 0));
+        sendC({ k: 'rally', lane: lane, row: row });
+        fx.push({ k: 'ring', x: press.x, y: press.y, col: TEAM_COLOR[myTeam], t0: performance.now(), dur: 600 });
+      }
+    }
+  }, 60);
+  function yInField(y) { return y > TOP_H + 34 && y < TOP_H + 465; }
+
+  function onTap(x, y) {
+    /* 面板打开时独占 */
+    if (panel) { panelTap(x, y); return; }
+    if (inR(GEO.togCity, x, y)) { dial = 'city'; return; }
+    if (inR(GEO.togWar, x, y)) { dial = 'war'; return; }
+    if (dial === 'city') {
+      var meV = seatView(mySeat);
+      if (!meV) return;                                    // 旁观席无领地操作
+      for (var i = 0; i < 4; i++) {
+        if (!inR(GEO.plotsOwn[i], x, y)) continue;
+        var me = meV, p = me.plots[i];
+        if (p && p.kind === 'lumber' || p && (p.kind === 'farm' || p.kind === 'mine') || p) {
+          if (['camp', 'works', 'range'].indexOf(p.kind) >= 0) { panel = { type: 'train', plot: i, kind: p.kind }; atkSel = null; trainN = 1; }
+          else panel = { type: 'upgrade', plot: i };
+        } else panel = { type: 'build', plot: i };
+        return;
+      }
+      /* 兵池徽标 → 出征面板 */
+      if (x >= 12 && x < 84 && y >= H - 78 && y < H - 44) {
+        var me2 = meV, sel = {};
+        for (var c in me2.pool) if (me2.pool[c] > 0) sel[c] = me2.pool[c];
+        panel = { type: 'attack', sel: sel, lane: 1 };
+        return;
+      }
+    } else {
+      /* 快出条：复用上次编队（不足按比例裁） */
+      if (inR(GEO.quickBar, x, y) && lastAtk) {
+        var me3 = seatView(mySeat), units = {};
+        for (var u in lastAtk) units[u] = Math.min(lastAtk[u], me3.pool[u] || 0);
+        var tot = 0; for (var u2 in units) tot += units[u2];
+        if (tot > 0) sendO({ k: 'attack', lane: lastAtk.lane != null ? lastAtk.lane : 1, units: units });
+        return;
+      }
+    }
+  }
+  function panelTap(x, y) {
+    if (inR(GEO.panelClose, x, y)) { panel = null; return; }
+    var me = seatView(mySeat);
+    if (panel.type === 'build') {
+      for (var i = 0; i < GEO.panelCards.length; i++) {
+        var cd = GEO.panelCards[i];
+        if (cd && inR(cd, x, y) && cd.afford) { sendO({ k: 'build', plot: panel.plot, kind: cd.kind }); panel = null; return; }
+      }
+      if (inR(GEO.panelOk, x, y) && GEO.panelCards.length === 1) { sendO({ k: 'build', plot: panel.plot, kind: GEO.panelCards[0].kind }); panel = null; }
+    } else if (panel.type === 'upgrade') {
+      for (var j = 0; j < GEO.panelCards.length; j++) {
+        var cd2 = GEO.panelCards[j];
+        if (cd2 && inR(cd2, x, y) && cd2.afford) { sendO({ k: 'build', plot: panel.plot, kind: cd2.kind }); panel = null; return; }
+      }
+    } else if (panel.type === 'train') {
+      for (var k = 0; k < GEO.panelCards.length; k++) {
+        var cd3 = GEO.panelCards[k];
+        if (cd3 && inR(cd3, x, y)) { atkSel = cd3.unit; return; }
+      }
+      if (inR(GEO.panelMinus, x, y)) { trainN = Math.max(1, trainN - 1); return; }
+      if (inR(GEO.panelPlus, x, y)) { trainN = Math.min(5, trainN + 1); return; }
+      if (inR(GEO.panelOk, x, y) && atkSel) { sendO({ k: 'train', kind: panel.kind, unit: atkSel, n: trainN }); panel = null; }
+    } else if (panel.type === 'attack') {
+      for (var m = 0; m < GEO.panelCards.length; m++) {
+        var cd4 = GEO.panelCards[m];
+        if (cd4 && inR(cd4, x, y)) {
+          var key = cd4.atkUnit, have = me.pool[key] || 0, cur = panel.sel[key] || 0;
+          panel.sel[key] = cur >= have ? 0 : cur + 1;
+          return;
+        }
+      }
+      for (var l = 0; l < 3; l++) if (inR(GEO.panelLanes[l], x, y)) { panel.lane = GEO.panelLanes[l].lane; return; }
+      if (inR(GEO.panelOk, x, y)) {
+        var units = {}, tot = 0;
+        for (var c2 in panel.sel) if (panel.sel[c2] > 0 && (me.pool[c2] || 0) >= panel.sel[c2]) { units[c2] = panel.sel[c2]; tot += panel.sel[c2]; }
+        if (tot > 0) { lastAtk = { lane: panel.lane }; for (var c3 in units) lastAtk[c3] = units[c3]; sendO({ k: 'attack', lane: panel.lane, units: units }); }
+        panel = null;
+      }
+    }
+  }
+
+  /* ================= 离线练习（?debug=1 / 网关不可达降级；同 sim 同 brain） ================= */
+  function startOffline(opts) {
+    opts = opts || {};
+    mode = 'offline';
+    var seed = S.fnv1a32('offline-' + (opts.seedSalt || '0'));
+    var levels = opts.bots || ['balanced', 'casual', 'balanced'];
+    simState = S.create(seed, { maxTicks: opts.maxTicks });
+    mySeat = 0; myTeam = 'A';
+    rosterMap = { 0: { kind: 'human', name: '你' } };
+    bots = {};
+    for (var j = 1; j < 4; j++) bots[j] = { rng: S.mulberry32((seed ^ (j * 0x9e3779b9)) >>> 0), level: levels[j - 1] };
+    battle = JSON.parse(JSON.stringify(simState.battle));
+    warTick = ERUPT_AT - 1;
+    beginMatch();
+    if (offlineTimer) clearInterval(offlineTimer);
+    offlineTimer = setInterval(function () {
+      if (matchOver) { clearInterval(offlineTimer); return; }
+      var inputs = {};
+      var q = qCmd.shift();
+      if (q) inputs[0] = q;
+      var env = { kinds: ['human', 'bot', 'bot', 'bot'] };
+      for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng, env);
+      var r = S.step(simState, inputs);
+      applyBuildEvents(r.events);
+      if (r.battleEvents) applyBattleEvents(r.battleEvents);
+      syncBattleAfterStep(r);
+      if (r.over) finish(r.result);
+    }, S.META.tickMs);
+  }
+  /* 离线 battle 镜像=直接取权威 state（本地就是权威）；在线独立镜像由 onFrame 推进 */
+  function syncBattleAfterStep() { battle = simState.battle; warTick = simState.tick; }
+
+  function stepLocal(inputs) {
+    var r = S.step(simState, inputs);
+    applyBuildEvents(r.events);
+    if (r.battleEvents) applyBattleEvents(r.battleEvents);
+    syncBattleAfterStep();
+    if (r.over) finish(r.result);
+  }
+
+  /* ================= 在线（S3：快照渲染 + 帧镜像） ================= */
+  function startOnline(roomId) {
+    mode = 'online';
+    document.getElementById('joining').style.display = 'flex';
+    session = G.connect({
+      roomId: roomId || undefined,
+      quick: !roomId,
+      gameId: 'empire-sprout',
+      maxTicks: new URLSearchParams(location.search).get('maxTicks') ? Number(new URLSearchParams(location.search).get('maxTicks')) : undefined,
+      onWelcome: function (m) {
+        mySeat = m.seat; myTeam = m.seat >= 0 ? (m.seat % 2 === 0 ? 'A' : 'B') : 'A';
+        simState = m.state;
+        seedBattle(m.state, m.frame);
+        mergeSnap({ full: 1, ents: snapEntsFromState(m.state), tick: m.state.tick });
+        for (var i = 0; i < m.room.seats.length; i++) rosterMap[m.room.seats[i].seat] = m.room.seats[i];
+        if (m.room.state === 'live') beginMatch();
+        else document.getElementById('joining').textContent = '开赛中 ' + Math.ceil(m.room.countdownMs / 1000) + 's';
+      },
+      onStarted: function (m) {
+        simState = m.state;
+        seedBattle(m.state, 0);
+        mergeSnap({ full: 1, ents: snapEntsFromState(m.state), tick: 0 });
+        beginMatch();
+      },
+      onSnapshot: function (m) {
+        mergeSnap(m);
+        if (m.events && m.events.length) applyBuildEvents(m.events);
+        if (!started && m.frame > 0) beginMatch();
+      },
+      onFrame: function (m) {
+        if (!battle) return;
+        if (m.frame !== warTick + 1) {
+          if (m.frame <= warTick) return;            // 重复帧忽略
+          session.sync();                             // 缺帧：全量重同步（协议 §4.1）
+          return;
+        }
+        var evs = S.battleStep(simMirrorState(), m.inputs);   // 与服务端同函数同输入 → 同状态
+        warTick = m.frame;
+        applyBattleEvents(evs);
+        applyBattleEvents(m.events);                  // 权威事件（erupt 等服务端合成）
+        if (!matchOver) session.sendInput({ c: qCmd.length && qCmd[0].c ? qCmd.shift().c : { k: 'noop' } });  // input delay=1
+        if (m.over && !matchOver) finishFromServer();
+      },
+      onState: function (m) { simState = m.state; seedBattle(m.state, m.frame); mergeSnap({ full: 1, ents: snapEntsFromState(m.state), tick: m.state.tick }); },
+      onSeat: function (m) { for (var i = 0; i < m.seats.length; i++) rosterMap[m.seats[i].seat] = m.seats[i]; },
+      onEnd: function (m) { finish(m.result); },
+      onClosed: function () { if (!matchOver) showResult({ winner: 'draw', reason: 'abandon' }, true); },
+      onError: function (m) {
+        if (m.code === 'room-gone') fallbackOffline('对局已结束');
+        else if (m.code === 'reconnect-timeout') showRejoin();
+      },
+      onStatus: function (st) {
+        var el = document.getElementById('joining');
+        if (st === 'reconnecting') { el.style.display = 'flex'; el.textContent = '重连中…'; }
+      },
+    });
+    setTimeout(function () {
+      if (!started && session && session.status !== 'live') fallbackOffline('网关不可达，已切换离线练习');
+    }, 4000);
+  }
+  /* 战斗镜像种子：welcome/state 双层合一（§5.5：重连一次性恢复双层） */
+  function seedBattle(st, frame) {
+    battle = JSON.parse(JSON.stringify(st.battle));
+    warTick = Math.min(frame, st.tick);
+    if (st.tick < ERUPT_AT) warTick = st.tick;    // 静默期：镜像冻结在当前 tick（首帧 1800 对齐）
+  }
+  function simMirrorState() { return { tick: warTick, battle: battle }; }
+  function snapEntsFromState(st) {
+    var ents = st.build.seats.map(function (s, i) {
+      var pool = {}; for (var c in s.pools) pool[c] = s.pools[c].length;
+      return { id: 's' + i, seat: i, res: { g: (s.res.g / 1000) | 0, w: (s.res.w / 1000) | 0, i: (s.res.i / 1000) | 0 }, plots: s.plots, queues: s.queues, pool: pool, marchCd: s.marchCd };
+    });
+    ents.push({ id: 'tA', team: 'A', wall: st.teams.A.wall, keep: st.teams.A.keep, merit: st.teams.A.merit });
+    ents.push({ id: 'tB', team: 'B', wall: st.teams.B.wall, keep: st.teams.B.keep, merit: st.teams.B.merit });
+    return ents;
+  }
+  function mergeSnap(m) {
+    if (!snap || m.full) snap = { seats: {}, teams: {}, tick: m.frame };
+    snap.tick = m.frame;
+    for (var i = 0; i < (m.ents || []).length; i++) {
+      var e = m.ents[i];
+      if (e.id[0] === 's') snap.seats[e.seat] = e;
+      else snap.teams[e.team] = e;
+    }
+  }
+
+  var fellBack = false;
+  function fallbackOffline(reason) {
+    if (started && !matchOver) return;
+    if (fellBack) return;
+    fellBack = true;
+    if (session) { try { session.close(); } catch (e) { /* 已断 */ } }
+    session = null;
+    var el = document.getElementById('banner');
+    el.textContent = reason; el.style.display = 'block';
+    startOffline();
+  }
+  function showRejoin() {
+    if (matchOver || fellBack) return;
+    var roomId = session ? session.roomId : null;
+    var el = document.getElementById('joining');
+    el.textContent = '连接已断，可重新进入对战';
+    if (roomId) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'rejoin'; btn.textContent = '重新进入对战';
+      btn.onclick = function () {
+        var q = new URLSearchParams(location.search);
+        q.set('room', roomId);
+        location.href = location.pathname + '?' + q.toString();
+      };
+      el.appendChild(btn);
+    }
+    el.style.display = 'flex';
+  }
+
+  function beginMatch() {
+    started = true; matchOver = false;
+    document.getElementById('joining').style.display = 'none';
+    report('start', { mode: mode, room: session ? session.roomId : 'offline' });
+  }
+
+  /* ================= 终局 ================= */
+  function finishFromServer() {
+    /* 战斗层本地推完 over 帧：权威 result 由 end 消息/快照 result 给出；先静默等待 end */
+  }
+  function finish(result) { showResult(result, false); }
+  function showResult(result, silent) {
+    if (matchOver) return;
+    matchOver = true;
+    if (offlineTimer) clearInterval(offlineTimer);
+    var tm = teamsView();
+    var win = result.winner === myTeam;
+    var el = document.getElementById('result');
+    var merit = result.scores || { A: tm.A.merit, B: tm.B.merit };
+    el.innerHTML = '<div class="rbox">'
+      + '<div class="rtitle" style="color:' + (result.winner === 'draw' ? '#8b93a7' : TEAM_COLOR[result.winner]) + '">' + (result.winner === 'draw' ? '平局' : win ? '凯旋' : '覆灭') + '</div>'
+      + '<div class="rsub">' + ({ eliminated: '城心易主', timeout: '超时裁定（比城心 HP%）', abandon: '对局中止' }[result.reason] || result.reason) + '</div>'
+      + '<div class="rtable">'
+      + '<div class="rrow"><span>战功 A : B</span><b>' + merit.A + ' : ' + merit.B + '</b></div>'
+      + '<div class="rrow"><span>城墙残量 A : B</span><b>' + tm.A.wall + ' : ' + tm.B.wall + '</b></div>'
+      + '<div class="rrow"><span>城心残量 A : B</span><b>' + tm.A.keep + ' : ' + tm.B.keep + '</b></div>'
+      + '</div>'
+      + '<button id="again">再来一局</button><button class="ghost" id="lobby">回大厅</button></div>';
+    el.style.display = 'flex';
+    document.getElementById('again').onclick = function () { location.href = location.pathname; };
+    document.getElementById('lobby').onclick = function () { location.href = '/multiplayer.html'; };
+    report('levelEnd', { result: result });
+    report('end', { result: result });
+  }
+
+  /* ================= 调试钩子（GAMES-30 契约：perf-smoke/play-check 零改动可跑） ================= */
+  window.__GAMES_DEBUG__ = {
+    events: [],
+    start: function (level, opts) { startOffline(Object.assign({ seedSalt: String(level || 1) }, opts || {})); },
+    state: function () { return JSON.parse(JSON.stringify(simState)); },
+    seat: function () { return mySeat; },
+    roomId: function () { return session ? session.roomId : null; },
+    mode: function () { return mode; },
+    fps: function () { return fpsV; },
+    perf: function () { return { inputMaxMs: Math.round(inputMaxMs), fps: fpsV }; },
+    cmd: function (cmd) { qCmd.push(cmd); },
+    hudFonts: function () { return JSON.parse(JSON.stringify(HUDF)); },
+    dial: function () { return dial; },
+  };
+
+  /* ================= 启动 ================= */
+  fit();
+  report('boot', { slug: 'empire-sprout', version: '1.0.0', mode: 'net' });
+  var q = new URLSearchParams(location.search);
+  requestAnimationFrame(render);
+  if (q.get('debug') === '1') startOffline({ seedSalt: q.get('again') ? String(Date.now() % 97) : '1', maxTicks: q.get('maxTicks') ? Number(q.get('maxTicks')) : undefined });
+  else if (q.get('room')) startOnline(q.get('room'));
+  else startOnline(null); // 快速匹配
+})();
+
+</script>
+</body>
+</html>

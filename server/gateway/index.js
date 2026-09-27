@@ -22,6 +22,7 @@ import { BotHost } from './bothost.js'
 import { netTankSim } from './sims/net-tank.js'
 import { slgBattlefieldSim } from './sims/slg-battlefield.js'
 import { mmoTownshipSim } from './sims/mmo-township.js'
+import { empireSproutSim } from './sims/empire-sprout.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -47,11 +48,13 @@ const rooms = new RoomManager({ log })
 rooms.register(netTankSim)
 rooms.register(slgBattlefieldSim)
 rooms.register(mmoTownshipSim)
+rooms.register(empireSproutSim) // S3 混合同步首证（GAMES-68）
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
 bothost.register({ gameId: 'slg-battlefield', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 上线节奏同 net-tank（设计 §8）
 bothost.register({ gameId: 'mmo-township', minLive: 1, levels: ['balanced', 'casual'], maxRooms: 1, residents: true }) // 常驻镇 1 个：居民动态调节（GAMES-52 §8）
+bothost.register({ gameId: 'empire-sprout', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })

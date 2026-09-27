@@ -159,6 +159,59 @@ const POLICIES = {
       ? toward(best.x, best.y)
       : { mx: 0, my: 0, cmd: { k: 'gather', entId: best.id, phase: 'start' } }
   },
+  /**
+   * 帝国速攻（empire-sprout A2 能赢，设计书 §6 剧本策略全貌）：
+   * 查表 build order（t≈150 lumber → ≈350 farm → ≈550 camp，资源就绪门控）
+   * → 循环 train camp inf n=5（队列空位即补）→ tick≥1800 且 CD 好：attack lane1 全池
+   * → rally lane1 row10 起动态前导（集结线随战线前压 2 行）→ 池回 ≥8 再征。
+   * S3 语义：建设 op 走 o 壳、战斗 cmd 走 c 壳（每次轮询至多一条）。
+   */
+  'empire-rush': (() => {
+    const mem = { rally: -9 }   // 策略记忆（跨轮询持久；剧本单房单席无污染）
+    return (state, seat) => {
+      const NOOP = {}
+      const s = state.build && state.build.seats[seat]
+      if (!s) return NOOP
+      const t = state.tick
+      const res = { g: Math.floor(s.res.g / 1000), w: Math.floor(s.res.w / 1000), i: Math.floor(s.res.i / 1000) }
+      const qn = s.queues.reduce((a, q) => a + q.n, 0)
+      const pool = Object.values(s.pools).reduce((a, x) => a + x.length, 0)
+      const plotOf = (kind) => s.plots.findIndex((p) => p && p.kind === kind)
+      const freePlot = () => s.plots.findIndex((p) => !p)
+      if (t >= 1800) {          // rally 动态前导（c 优先——爆发期集结线先于攒兵）
+        let front = -1
+        for (const u of state.battle.units) {
+          if (u.seat !== seat || u.hp <= 0 || u.lane !== 1) continue
+          const rr = (u.y / 25000) | 0
+          if (front < 0 || rr < front) front = rr
+        }
+        const target = front < 0 ? 10 : Math.max(0, front - 2)
+        if (Math.abs(target - mem.rally) >= 2) { mem.rally = target; return { c: { k: 'rally', lane: 1, row: target } } }
+      }
+      const COST = { lumber: { w: 30 }, farm: { w: 40 }, camp: { w: 60, i: 40 }, works: { w: 80, i: 60 } }
+      for (const kind of ['lumber', 'farm', 'camp', 'works']) {   // 4 槽 6 选 4：军备线（§2.5a works→razor）
+        if (plotOf(kind) >= 0) continue
+        if (Object.entries(COST[kind]).every(([r, n]) => res[r] >= n) && freePlot() >= 0) {
+          return { o: { k: 'build', plot: freePlot(), kind } }
+        }
+        break   // 严格顺序：当前目标建不起就攒资源等（防后位抢跑占槽）
+      }
+      if (t >= 1800 && s.marchCd <= 0 && pool >= 8) {
+        const units = {}
+        for (const c in s.pools) if (s.pools[c].length) units[c] = s.pools[c].length
+        if (Object.keys(units).length) return { o: { k: 'attack', lane: 1, units } }
+      }
+      if (plotOf('camp') >= 0 && qn + pool < 12 && res.g >= 100) {
+        // 军备线（§2.5a）：razor ×1.5 克制步海——inf:razor 2:1 混编（works 建成且铁够时）
+        const nInf = s.pools.inf.length, nRaz = s.pools.razor.length
+        if (plotOf('works') >= 0 && nRaz * 2 < nInf + qn && res.g >= 225 && res.i >= 90) {
+          return { o: { k: 'train', kind: 'works', unit: 'razor', n: Math.min(5, 12 - pool - qn) } }
+        }
+        return { o: { k: 'train', kind: 'camp', unit: 'inf', n: Math.min(5, 12 - pool - qn) } }
+      }
+      return NOOP
+    }
+  })(),
 }
 
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
@@ -235,7 +288,7 @@ console.log('[L1] 测试面仅本机可用')
 
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
-const isS2 = meta.net.tech === 'S2'
+const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3'   // S3（GAMES-68）：注入带 seq、A4 走快照 ack 口径
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
@@ -261,7 +314,7 @@ try {
     }
     smokeEnd.startedSeen = (s.events || []).some((e) => e.msg.t === 'started')
     ok('A1', 'boot→live 状态迁移（开赛）', s.phase === 'live' && smokeEnd.startedSeen, `phase=${s.phase} started=${smokeEnd.startedSeen}`)
-    if (isS2) {
+    if (meta.net.tech === 'S2') {
       /* S2 状态同步：welcome.state 全量世界（实体/碰撞表）+ 首张全量快照（设计 §6 A1） */
       const entN = smoke.state && smoke.state.ents ? Object.keys(smoke.state.ents).length : 0
       ok('A1', 'S2 welcome.state 含实体/碰撞表', entN > 0 && Array.isArray(smoke.state.collide) && smoke.state.collide.length > 0,
@@ -280,6 +333,28 @@ try {
         })()
       ok('A1', 'S2 首张全量快照（full=1）', !!firstFull,
         firstFull ? `snapSeq=${firstFull.msg.snapSeq} ents=${firstFull.msg.ents.length} aoi.r=${firstFull.msg.ext && firstFull.msg.ext.aoi && firstFull.msg.ext.aoi.r}` : '未见快照')
+    } else if (meta.net.tech === 'S3') {
+      /* S3 混合同步（GAMES-68）：welcome.state 双层（build 资源/建筑位 + battle 空态墙/心）
+         + 首张建设快照（ext.layer='build'，设计 §6 A1）——静默期无战斗帧是正常态（附决策 1） */
+      const bs = smoke.state && smoke.state.build, bt = smoke.state && smoke.state.battle
+      ok('A1', 'S3 welcome.state 双层（build+battle）',
+        !!(bs && Array.isArray(bs.seats) && bs.seats.length && bs.seats[0].res && bs.seats[0].plots
+          && bt && Array.isArray(bt.bld) && bt.bld.length === 4 && bt.bld[0].hp > 0),
+        `build.seats=${bs && bs.seats.length} battle.bld=${bt && bt.bld.length} 墙HP=${bt && bt.bld[0] && bt.bld[0].hp}`)
+      const firstBuild = (s.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1 && e.msg.ext && e.msg.ext.layer === 'build')
+        || await (async () => { // 25ms 窗竞态先例：live 检测响应可能落在 started 与首张快照之间——短轮询补看
+          let r = s, c = cursor, hit = null
+          const tt = Date.now()
+          while (!hit && Date.now() - tt < 2000) {
+            await sleep(40)
+            const q = await gwState(smoke.roomId, c)
+            r = q.json; c = q.json.cursor
+            hit = (r.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1 && e.msg.ext && e.msg.ext.layer === 'build')
+          }
+          return hit
+        })()
+      ok('A1', 'S3 首张建设快照（layer=build, full=1）', !!firstBuild,
+        firstBuild ? `snapSeq=${firstBuild.msg.snapSeq} frame=${firstBuild.msg.frame} ents=${firstBuild.msg.ents.length}` : '未见建设快照')
     }
     /* A4 注入 → 帧反映（服务端同钟：receivedAt → 帧广播 ts）。
        S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。 */
