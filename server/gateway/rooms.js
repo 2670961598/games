@@ -23,8 +23,15 @@ const sanitizeKeys = (k) => {
   const n = (v) => (Number.isFinite(v) ? Math.max(-100, Math.min(100, Math.trunc(v))) : 0)
   // 离散指令游戏（sim.META.cmdInput，协议 §8.3 游戏级键集）的 cmd 原样透传：
   // 形状校验在 sim（execCmd 白名单，畸形=静默 noop）——网关保持游戏规则无关。
-  const cmd = k && k.cmd && typeof k.cmd === 'object' && !Array.isArray(k.cmd) ? k.cmd : null
-  return cmd ? { mx: n(k.mx), my: n(k.my), fire: k.fire ? 1 : 0, cmd } : { mx: n(k && k.mx), my: n(k && k.my), fire: k && k.fire ? 1 : 0 }
+  // S3 双键壳（GAMES-68 empire-sprout 先例，设计 §5.3）：o=建设 op（服务器权威、
+  // 下一建设 tick 应用）、c=战斗 cmd（入 F+1 帧输入日志）——同 cmd 透传口径。
+  const shell = (x) => (k && k[x] && typeof k[x] === 'object' && !Array.isArray(k[x]) ? k[x] : null)
+  const cmd = shell('cmd'), o = shell('o'), c = shell('c')
+  const out = { mx: n(k && k.mx), my: n(k && k.my), fire: k && k.fire ? 1 : 0 }
+  if (cmd) out.cmd = cmd
+  if (o) out.o = o
+  if (c) out.c = c
+  return out
 }
 
 export class RoomManager {
@@ -45,7 +52,9 @@ export class RoomManager {
   create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp, seed, test = false, timeScale = 1 }) {
     const sim = this.sims.get(gameId)
     if (!sim) throw new Error(`game-unknown: ${gameId}`)
-    const roomId = genId(gameId.split('-')[0])
+    // 房间 ID 前缀：缺省 gameId 首段；sim 可经 META.roomPrefix 指定（empire-sprout→emp：
+    // 设计 §7 前缀纪律——feed 字典序 mmo-<net-<slg- 之后，存量房序断言不受扰）
+    const roomId = genId(sim.META.roomPrefix || gameId.split('-')[0])
     const seedVal = Number.isInteger(seed) ? (seed >>> 0) : sim.fnv1a32(roomId + ':' + randomBytes(2).toString('hex'))
     // opts.test 透传 sim（S2 常驻世界游戏据此隔离存档/终局投影，GAMES-52；S1 sim 忽略）
     const state = sim.create(seedVal, { maxTicks, hp, test })
@@ -199,7 +208,8 @@ export class RoomManager {
       // 经宽限通道提前执行＋预约帧二次执行（QA二号 echo-sem 实测 spawned×2）。真客户端
       // input delay=1 恒带 frame，此后 cmd 的唯一执行通道就是 pending。
       // 连续键（mx/my/fire）仍写 lastInput：宽限"沿用最近输入"语义不变（net-tank 零感知）。
-      if (!keys.cmd) s.lastInput = keys
+      // S3 o/c 双键壳同口径（GAMES-68）：离散建设 op/战斗 cmd 均一次性语义。
+      if (!keys.cmd && !keys.o && !keys.c) s.lastInput = keys
     } else {
       s.lastInput = keys
     }
@@ -299,7 +309,8 @@ export class RoomManager {
         // 离散指令一次性语义（slg 设计 §5.1：缺输入沿用=静默）：宽限沿用的 cmd
         // 只在本帧执行一次，之后回落 noop——防同一条 spawn 被逐帧重放。
         // 移动分量保留（S2 连续移动量不受 cmd 一次性语义影响，GAMES-52；S1 离散游戏 mx/my 恒 0 等价）
-        if (!pend && s.lastInput.cmd) s.lastInput = { mx: s.lastInput.mx, my: s.lastInput.my, fire: 0 }
+        // S3 o/c 双键壳同口径（GAMES-68）：无预约帧的注入经 lastInput 只执行一次。
+        if (!pend && (s.lastInput.cmd || s.lastInput.o || s.lastInput.c)) s.lastInput = { mx: s.lastInput.mx, my: s.lastInput.my, fire: 0 }
       }
       s.pending.delete(room.frame)
       if (s.pending.size > 0) for (const k of [...s.pending.keys()]) if (k <= room.frame) s.pending.delete(k)
