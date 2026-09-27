@@ -6,84 +6,84 @@
  },
  "games": {
   "block-drop:block-drop-cascade-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-drop:block-drop-cascade-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-drop:block-drop-cascade-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-drop:block-drop-cascade-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-drop:block-drop-cascade-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-fit:block-fit-mosaic-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-fit:block-fit-mosaic-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-fit:block-fit-mosaic-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-fit:block-fit-mosaic-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "block-fit:block-fit-mosaic-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
    "iterations": 0,
-   "notes": ""
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
   "breakout:breakout-brick-01": {
    "stage": "backlog",
