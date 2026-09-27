@@ -145,7 +145,7 @@ try {
   ok(feed0.ok === true && Array.isArray(feed0.matches) && feed0.matches.length >= 1, `feed 有真实 bot 房（${feed0.matches.length} 间）`)
   const need = ['roomId', 'gameId', 'name', 'mode', 'humans', 'bots', 'spectators', 'elapsedMs', 'joinable', 'url']
   ok(feed0.matches.every((m) => need.every((k) => m[k] !== undefined)), 'feed 字段完整（协议 §3）')
-  ok(feed0.matches.every((m) => m.gameId === 'net-tank' && m.bots >= 1 && m.humans === 0), 'net-tank 纯 bot 房在列')
+  ok(feed0.matches.some((m) => m.gameId === 'net-tank' && m.bots >= 1 && m.humans === 0), 'net-tank 纯 bot 房在列（多游戏注册后按存在性断言，GAMES-52 修正 every 过期假设）')
 
   const cRes = await fetch(`http://127.0.0.1:${GW_PORT}/api/matches`)
   ok(cRes.headers.get('access-control-allow-origin') === '*', 'feed CORS *')

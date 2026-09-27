@@ -21,6 +21,7 @@ import { RoomManager } from './rooms.js'
 import { BotHost } from './bothost.js'
 import { netTankSim } from './sims/net-tank.js'
 import { slgBattlefieldSim } from './sims/slg-battlefield.js'
+import { mmoTownshipSim } from './sims/mmo-township.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -45,10 +46,12 @@ function log(obj) {
 const rooms = new RoomManager({ log })
 rooms.register(netTankSim)
 rooms.register(slgBattlefieldSim)
+rooms.register(mmoTownshipSim)
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
 bothost.register({ gameId: 'slg-battlefield', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 上线节奏同 net-tank（设计 §8）
+bothost.register({ gameId: 'mmo-township', minLive: 1, levels: ['balanced', 'casual'], maxRooms: 1, residents: true }) // 常驻镇 1 个：居民动态调节（GAMES-52 §8）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })
@@ -133,8 +136,11 @@ attachWs(server, (conn, req) => {
         rooms.input(ctx, msg)
         break
       case 'sync': {
-        // 客户端缺帧自救：全量 state 重同步（协议 §4.1）
-        if (ctx.room) conn.send(JSON.stringify({ t: 'state', frame: ctx.room.frame, state: ctx.room.state }))
+        // 客户端缺帧自救：全量重同步（协议 §4.1）。
+        // S2 状态同步游戏（GAMES-52）：sim.onSync 立即回一张全量快照（快照流续接）；
+        // S1 帧同步游戏沿用全量 state 消息（重连重演基准）。
+        if (ctx.room && ctx.room.sim.onSync) ctx.room.sim.onSync(ctx.room, ctx)
+        else if (ctx.room) conn.send(JSON.stringify({ t: 'state', frame: ctx.room.frame, state: ctx.room.state }))
         break
       }
       case 'leave':

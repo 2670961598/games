@@ -45,8 +45,10 @@
    * connect(opts) → session
    *   opts: { url?, roomId?|quick:true, gameId, mode?, level?, maxTicks?, resume?,
    *           onWelcome, onStarted, onFrame, onState, onSeat, onEnd, onClosed,
-   *           onError, onStatus(status) }
+   *           onError, onStatus(status), seqInput?（S2：input.frame=本地输入序号） }
    *   status: connecting → open → live → reconnecting → lost / closed
+   *   S2 状态同步（协议 §6 预留位，GAMES-52 实启）：onSnapshot(m) 收二式快照；
+   *   seqInput:true 时 sendInput 自动标单调 seq（0 起）——预测和解 ack 锚点。
    */
   function connect(opts) {
     var url = (opts.url || gwOrigin()).replace(/^http/, 'ws') + '/ws';
@@ -61,6 +63,7 @@
     var ws = null;
     var userClose = false;
     var lastFrame = 0;             // 最近收到的帧号（输入自动标 lastFrame+1）
+    var inputSeq = 0;              // S2 seqInput 模式：客户端输入序号（0 起单调，GAMES-52）
     var rtts = [], offsets = [];
     var pingTimer = 0, backoffIdx = 0, retryTimer = 0;
     var lostAt = 0;                // 断线时刻（10s 重连窗）
@@ -126,6 +129,10 @@
             lastFrame = msg.frame;
             emit('onState', msg);
             break;
+          case 'snapshot':          // S2 状态同步（GAMES-52）：二式快照（全量/增量+ext.aoi/ack）
+            session.frame = msg.frame;
+            emit('onSnapshot', msg);
+            break;
           case 'seat':
             emit('onSeat', msg);
             break;
@@ -172,7 +179,7 @@
 
     function sendInput(keys) {
       if (session.role !== 'player') return false;
-      return send({ t: 'input', frame: lastFrame + 1, keys: keys });
+      return send({ t: 'input', frame: opts.seqInput ? inputSeq++ : lastFrame + 1, keys: keys });
     }
 
     open();

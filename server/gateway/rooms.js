@@ -47,7 +47,8 @@ export class RoomManager {
     if (!sim) throw new Error(`game-unknown: ${gameId}`)
     const roomId = genId(gameId.split('-')[0])
     const seedVal = Number.isInteger(seed) ? (seed >>> 0) : sim.fnv1a32(roomId + ':' + randomBytes(2).toString('hex'))
-    const state = sim.create(seedVal, { maxTicks, hp })
+    // opts.test 透传 sim（S2 常驻世界游戏据此隔离存档/终局投影，GAMES-52；S1 sim 忽略）
+    const state = sim.create(seedVal, { maxTicks, hp, test })
     const seats = []
     for (let i = 0; i < sim.META.seats; i++) {
       const botCfg = bots[i] || null // {level} | null → 空位等人
@@ -186,6 +187,9 @@ export class RoomManager {
     const keys = sanitizeKeys(msg.keys)
     s.lastInput = keys
     const f = Number(msg.frame)
+    // S2 语义：input.frame=客户端输入序号 seq（预测和解 ack 锚点，GAMES-52）；
+    // S1 语义不变（目标帧预约）。lastSeq 对 S1 游戏无用、零开销。
+    if (Number.isInteger(f)) s.lastSeq = f
     if (Number.isInteger(f) && f > room.frame && f <= room.frame + 8) {
       s.pending.set(f, keys)
       if (s.pending.size > 16) { // 上限防漏删（正常路径 doFrame 每帧清理）
@@ -222,24 +226,37 @@ export class RoomManager {
     if (room.phase === 'live') {
       // abandon：曾有真人、现在无人（无玩家连接也无旁观）
       const anyConn = room.seats.some((s) => s.conn) || room.spectators.size > 0
+      if (room.sim.META.persistent) {
+        // 常驻世界（GAMES-52 §1.1）：真人 0 也 alive（bot 居民撑镇，feed 恒 live），
+        // 不走 abandon 终局；真人离镇空置 120s 回收（镇存档续镇，BotHost 即时重建）。
+        if (anyConn) room.lastHumanAt = now
+        else if (room.hadHuman && now - room.lastHumanAt > WAITING_EMPTY_MS) {
+          if (room.sim.persist) { try { room.sim.persist(room) } catch { /* 存档失败不阻断回收 */ } }
+          this.dispose(room, 'idle-recycle')
+        }
+        return this.tickLive(room, now)
+      }
       if (room.hadHuman && !anyConn && now - room.lastHumanAt > ABANDON_MS) {
         this.finish(room, { winner: 'draw', scores: { ...room.state.kills }, reason: 'abandon' })
         return
       }
-      // 帧距/追帧上限随 timeScale 缩放（测试房假时钟倍速；timeScale=1 与原语义逐字节一致）
-      const dueMs = room.sim.META.tickMs / (room.timeScale || 1)
-      const stepCap = Math.max(2, Math.ceil(2 * (room.timeScale || 1)))
-      let steps = 0
-      while (now - room.lastFrameAt >= dueMs && steps < stepCap) {
-        room.lastFrameAt += dueMs
-        steps++
-        const over = this.doFrame(room, now)
-        if (over) break
-      }
-      if (steps === stepCap) room.lastFrameAt = now // 欠帧过多（调试器暂停等）：跳齐，不追账
-      return
+      return this.tickLive(room, now)
     }
     if (room.phase === 'ended' && now >= room.disposeAt) this.dispose(room, 'ended')
+  }
+
+  /** live 帧推进（S1/S2 共用；帧距/追帧上限随 timeScale 缩放，timeScale=1 与原语义逐字节一致） */
+  tickLive(room, now) {
+    const dueMs = room.sim.META.tickMs / (room.timeScale || 1)
+    const stepCap = Math.max(2, Math.ceil(2 * (room.timeScale || 1)))
+    let steps = 0
+    while (now - room.lastFrameAt >= dueMs && steps < stepCap) {
+      room.lastFrameAt += dueMs
+      steps++
+      const over = this.doFrame(room, now)
+      if (over) break
+    }
+    if (steps === stepCap) room.lastFrameAt = now // 欠帧过多（调试器暂停等）：跳齐，不追账
   }
 
   doFrame(room, now) {
@@ -268,16 +285,22 @@ export class RoomManager {
         inputs[s.seat] = pend || s.lastInput
         // 离散指令一次性语义（slg 设计 §5.1：缺输入沿用=静默）：宽限沿用的 cmd
         // 只在本帧执行一次，之后回落 noop——防同一条 spawn 被逐帧重放。
-        if (!pend && s.lastInput.cmd) s.lastInput = { mx: 0, my: 0, fire: 0 }
+        // 移动分量保留（S2 连续移动量不受 cmd 一次性语义影响，GAMES-52；S1 离散游戏 mx/my 恒 0 等价）
+        if (!pend && s.lastInput.cmd) s.lastInput = { mx: s.lastInput.mx, my: s.lastInput.my, fire: 0 }
       }
       s.pending.delete(room.frame)
       if (s.pending.size > 0) for (const k of [...s.pending.keys()]) if (k <= room.frame) s.pending.delete(k)
     }
-    const r = room.sim.step(room.state, inputs)
+    const r = room.sim.step(room.state, inputs, room)
     room.frame++
-    const msg = { t: 'frame', frame: room.frame, inputs, events: r.events }
-    if (r.over) msg.over = true
-    this.broadcast(room, msg)
+    if (room.sim.emit) {
+      // S2 状态同步（GAMES-52）：sim 自组二式快照按连接下发（AOI 过滤），无全房 frame 广播
+      room.sim.emit(room, r)
+    } else {
+      const msg = { t: 'frame', frame: room.frame, inputs, events: r.events }
+      if (r.over) msg.over = true
+      this.broadcast(room, msg)
+    }
     if (r.over) { this.finish(room, r.result); return true }
     return false
   }
@@ -293,6 +316,7 @@ export class RoomManager {
   }
 
   dispose(room, reason) {
+    if (room.sim.persist) { try { room.sim.persist(room) } catch { /* 存档失败不阻断回收 */ } }
     this.broadcast(room, { t: 'closed', reason })
     for (const s of room.seats) if (s.conn) { s.conn.room = null; s.conn.role = null; s.conn.seat = -1 }
     for (const c of room.spectators) { c.room = null; c.role = null }
