@@ -1203,6 +1203,226 @@
   var HUDF = {};                     // GAMES-57 字号自证登记表（每帧覆写；识图复检断言源）
   var qCmd = [];                     // 离线/QA 指令队列（cmd 注入通道）
 
+  /* ================= 手感层（GAMES-72：纯呈现，sim/brain 零改动） =================
+   * 三链：输入反馈（本地起播 ≤80ms，不等权威回执）/ 双层 juice（build|war|screen
+   * 三渲染层分组）/ 节奏氛围（atmoF 0→1 双轨：静默建设暖晕 ↔ 爆发后红晕呼吸）。
+   * 战斗 juice 用 hp/y 快照 diff（离线在线同路径，事件无坐标→表现层自建映射）。 */
+  var POOL_N = 200, pool = new Array(POOL_N), poolCursor = 0, poolSpawned = 0;
+  for (var _pi = 0; _pi < POOL_N; _pi++) pool[_pi] = { live: false };
+  var fxLog = [];                    // spawn 流水（QA 证据：__GAMES_DEBUG__.fxLog()；种类+坐标+毫秒戳）
+  function spawnP(o) {
+    var p = null, t;
+    for (t = 0; t < POOL_N; t++) { var q = pool[poolCursor]; poolCursor = (poolCursor + 1) % POOL_N; if (!q.live) { p = q; break } }
+    if (!p) { p = pool[poolCursor]; poolCursor = (poolCursor + 1) % POOL_N }   // 满池覆盖游标位（池即上限）
+    for (var k in o) p[k] = o[k];
+    p.live = true; p.ttl0 = p.ttl; poolSpawned++;
+    fxLog.push({ k: p.k, at: Math.round(performance.now()), x: Math.round(p.x || 0), y: Math.round(p.y || 0) });
+    if (fxLog.length > 80) fxLog.shift();
+    return p;
+  }
+  var lastPoolT = 0;
+  function drawPool(now, dt, layer) {
+    var f = dt / 1000;
+    for (var i = 0; i < POOL_N; i++) {
+      var p = pool[i];
+      if (!p.live || p.layer !== layer) continue;
+      p.ttl -= dt;
+      if (p.ttl <= 0) { p.live = false; continue; }
+      var lt = p.ttl / p.ttl0;
+      if (p.k === 'dust') {                    // 建筑落成尘土（建设层）
+        p.x += p.vx * f; p.y += p.vy * f; p.vy += 60 * f;
+        ctx.globalAlpha = lt * 0.5; ctx.fillStyle = 'rgb(190,168,138)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r0 * (1 + 1.6 * (1 - lt)), 0, 7); ctx.fill();
+      } else if (p.k === 'found') {            // 奠基地基起动画（建设层：金色虚影自地面拔起）
+        var gr2 = Math.min(1, (1 - lt) * 2.5);
+        ctx.globalAlpha = lt * 0.6; ctx.strokeStyle = '#e8c46a'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(p.x - p.r0 * gr2, p.y - 12 * gr2, p.r0 * 2 * gr2, 12 * gr2);
+        ctx.globalAlpha = lt * 0.22; ctx.fillStyle = '#e8c46a';
+        ctx.fillRect(p.x - p.r0 * gr2, p.y - 12 * gr2, p.r0 * 2 * gr2, 12 * gr2);
+      } else if (p.k === 'pillar') {           // 升级光柱（建设层）
+        var ph = 74 * Math.min(1, (1 - lt) * 2.2);
+        ctx.globalAlpha = lt * 0.5; ctx.fillStyle = '#ffe2a0'; ctx.fillRect(p.x - 9, p.y - ph, 18, ph);
+        ctx.globalAlpha = lt * 0.85; ctx.fillRect(p.x - 2, p.y - ph, 4, ph);
+      } else if (p.k === 'mote') {             // 资源收取粒子（建设层：产出建筑冒对应色屑）
+        p.x += p.vx * f + Math.sin(now / 300 + p.x) * 0.2; p.y += p.vy * f;
+        ctx.globalAlpha = Math.min(1, lt * 2.5) * 0.85; ctx.fillStyle = p.col;
+        ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+      } else if (p.k === 'smoke') {            // 行军尘烟/受击扬尘（战斗层）
+        p.x += p.vx * f; p.y += p.vy * f;
+        ctx.globalAlpha = lt * 0.35; ctx.fillStyle = p.col || 'rgb(150,150,150)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r0 * (1 + 1.4 * (1 - lt)), 0, 7); ctx.fill();
+      } else if (p.k === 'spark') {            // 接战火花（战斗层）
+        p.x += p.vx * f; p.y += p.vy * f; p.vy += p.g * f;
+        ctx.globalAlpha = lt; ctx.fillStyle = p.col;
+        ctx.fillRect(p.x - 1.2, p.y - 1.2, 2.4, 2.4);
+      } else if (p.k === 'debris') {           // 破墙碎块（战斗层）
+        p.x += p.vx * f; p.y += p.vy * f; p.vy += 320 * f;
+        ctx.globalAlpha = Math.min(1, lt * 2); ctx.fillStyle = p.col;
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      } else if (p.k === 'flag') {             // 集结旗帜动效（屏幕层：双盘可见；摆幅正弦拍频）
+        var wv = Math.sin(now / 90 + p.x) * 2.5;
+        ctx.globalAlpha = Math.min(1, lt * 3);
+        ctx.strokeStyle = '#d8ccb8'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x, p.y - 26); ctx.stroke();
+        ctx.fillStyle = p.col || TEAM_COLOR[myTeam];
+        ctx.beginPath(); ctx.moveTo(p.x, p.y - 26); ctx.lineTo(p.x + 14, p.y - 21 + wv); ctx.lineTo(p.x, p.y - 16); ctx.closePath(); ctx.fill();
+      } else if (p.k === 'flip') {             // 墙带易帜闪（战斗层：本作无占点，破墙近义映射）
+        ctx.globalAlpha = lt * 0.4 * (0.5 + 0.5 * Math.sin(now / 60));
+        ctx.fillStyle = '#ffd9a0'; ctx.fillRect(12, p.y - 4, 351, 8);
+      } else if (p.k === 'ftxt') {             // 资源扣减/入账飘字（屏幕层）
+        p.y += p.vy * f;
+        ctx.globalAlpha = Math.min(1, lt * 2); ctx.fillStyle = p.col;
+        ctx.font = '600 11px ' + FONT; ctx.textAlign = 'center';
+        ctx.fillText(p.txt, p.x, p.y); ctx.textAlign = 'left';
+      } else if (p.k === 'flash') {            // 爆发/破城全屏闪（屏幕层）
+        ctx.globalAlpha = lt * 0.45; ctx.fillStyle = p.col || 'rgb(255,210,150)';
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function spawnSparks(x, y, col) {
+    for (var s = 0; s < 6; s++) spawnP({ k: 'spark', layer: 'war', x: x, y: y, vx: (Math.random() - .5) * 130, vy: -40 - Math.random() * 80, g: 260, ttl: 300 + Math.random() * 160, col: col });
+  }
+  /* ---------- 节奏氛围（双轨）：静默期暖角晕 ↔ 爆发后红晕呼吸 + 爆发前 10s 脉动预警 ---------- */
+  var atmoF = 0, lastTickSec = -1;
+  var vgCache = {};
+  function vg(rgb) {
+    if (!vgCache[rgb]) {
+      var g = ctx.createRadialGradient(W / 2, H / 2, 150, W / 2, H / 2, 520);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, rgb);
+      vgCache[rgb] = g;
+    }
+    return vgCache[rgb];
+  }
+  function drawAtmo(now) {
+    var t = tickView();
+    if (started && !matchOver && t >= ERUPT_AT - 100 && t < ERUPT_AT) {   // §1 爆发前 10s 全屏脉动
+      var beat = 1 - (t % 10) / 10;
+      ctx.globalAlpha = 0.10 + 0.16 * beat; ctx.fillStyle = vg('rgb(200,50,30)'); ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    if (atmoF > 0.02) {
+      ctx.globalAlpha = (0.05 + 0.045 * Math.sin(now / 620)) * atmoF; ctx.fillStyle = vg('rgb(150,30,20)'); ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    if (atmoF < 0.98) {
+      ctx.globalAlpha = 0.08 * (1 - atmoF); ctx.fillStyle = vg('rgb(210,150,70)'); ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  }
+  /* ---------- 音效位预留（§4）：建设/战斗/爆发 三组静音占位（平台 makeSound 协议：
+     WebAudio 程序合成 + 总闸门）。默认静音只记账（零 AudioContext 成本）；
+     amb-build/amb-war=BGM 双轨位（切换记账 + sndState() 暴露交叉增益） ---------- */
+  var Snd = (function () {
+    var on = false, ac = null, fired = {};
+    var slots = {
+      'bd-tap':   { g: 'build', type: 'triangle', f0: 420, f1: 380, dur: 0.05, vol: 0.03 },   // 点选起手
+      'bd-found': { g: 'build', type: 'triangle', f0: 260, f1: 180, dur: 0.14, vol: 0.05 },   // 奠基
+      'bd-built': { g: 'build', type: 'triangle', f0: 330, f1: 230, dur: 0.16, vol: 0.05 },   // 建筑落成
+      'bd-up':    { g: 'build', type: 'sine', f0: 523, f1: 1046, dur: 0.35, vol: 0.05 },      // 升级光柱
+      'bd-q':     { g: 'build', type: 'sine', f0: 600, f1: 760, dur: 0.1, vol: 0.04 },        // 练兵入队
+      'bd-train': { g: 'build', type: 'sine', f0: 700, f1: 940, dur: 0.12, vol: 0.04 },       // 练兵完成入池
+      'bd-march': { g: 'build', type: 'sawtooth', f0: 196, f1: 262, dur: 0.5, vol: 0.045 },   // 出征号角
+      'amb-build':{ g: 'build', type: 'sine', f0: 174, f1: 174, vol: 0.012 },                 // BGM 位·建设轨（持续）
+      'bt-spawn': { g: 'battle', type: 'square', f0: 220, f1: 330, dur: 0.18, vol: 0.03 },    // 军团入场
+      'bt-hit':   { g: 'battle', type: 'square', f0: 520, f1: 300, dur: 0.05, vol: 0.022 },   // 接战
+      'bt-die':   { g: 'battle', type: 'sawtooth', f0: 220, f1: 80, dur: 0.16, vol: 0.03 },   // 阵亡
+      'bt-wall':  { g: 'battle', type: 'triangle', f0: 140, f1: 90, dur: 0.12, vol: 0.04 },   // 墙体受击
+      'bt-down':  { g: 'battle', type: 'sawtooth', f0: 110, f1: 45, dur: 0.6, vol: 0.05 },    // 破墙
+      'bt-rally': { g: 'battle', type: 'triangle', f0: 392, f1: 523, dur: 0.12, vol: 0.04 },  // 集结线落旗
+      'amb-war':  { g: 'battle', type: 'sine', f0: 87, f1: 87, vol: 0.014 },                  // BGM 位·战斗轨（持续）
+      'ev-tick':  { g: 'erupt', type: 'square', f0: 980, f1: 980, dur: 0.05, vol: 0.03 },     // 倒计时滴答
+      'ev-erupt': { g: 'erupt', type: 'sawtooth', f0: 70, f1: 180, dur: 1.0, vol: 0.06 },     // 爆发轰鸣
+    };
+    function ctxA() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)() } catch (e) { ac = null } } return ac }
+    function tone(s) {
+      var a = ctxA(); if (!a) return;
+      var o = a.createOscillator(), gn = a.createGain(), t = a.currentTime;
+      o.type = s.type;
+      o.frequency.setValueAtTime(s.f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, s.f1), t + s.dur);
+      gn.gain.setValueAtTime(s.vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + s.dur);
+      o.connect(gn).connect(a.destination); o.start(t); o.stop(t + s.dur + 0.02);
+    }
+    function fire(name) {
+      fired[name] = (fired[name] || 0) + 1;
+      if (!on) return;                        // 静音占位：只记账不出声
+      var s = slots[name]; if (s && s.dur) tone(s);
+    }
+    return {
+      fire: fire,
+      state: function () { return { on: on, fired: fired, amb: { build: +(1 - atmoF).toFixed(2), war: +atmoF.toFixed(2) } } },
+      enable: function (v) {
+        on = v !== false;
+        if (on) { var a = ctxA(); if (a && a.state === 'suspended') a.resume() }
+        return on;
+      },
+    };
+  })();
+  function snd(n) { Snd.fire(n) }
+  snd('amb-build');                    // BGM 位·建设轨起播记账（双轨初始态）
+  /* ---------- 战斗层 juice：hp/y 快照 diff（不依赖事件坐标；离线=step 后、在线=帧镜像后同点调用） ---------- */
+  var prevU = {}, prevB = {}, smokeAt = {}, fastFwd = false;
+  var lastSndHit = 0, lastSndWall = 0, lastSndDie = 0;
+  function battleJuiceDiff() {
+    if (!battle) { prevU = {}; prevB = {}; return; }
+    var nb = {}, now = performance.now();
+    for (var b = 0; b < battle.bld.length; b++) { nb[battle.bld[b].id] = { hp: battle.bld[b].hp, y: battle.bld[b].y }; }
+    if (fastFwd) { prevU = {}; prevB = nb; return; }   // 快进取证不刷屏（juice 只在实时相位起播）
+    var us = battle.units, nu = {}, sparkN = 0, dieN = 0;
+    for (var i = 0; i < us.length; i++) {
+      var u = us[i], pr = prevU[u.id];
+      var x = laneX(u.lane, ((u.id * 37) % 40) - 14), y = TOP_H + (u.y / 25000 + 0.5) * 25.25;
+      if (pr) {
+        if (u.hp < pr.hp - 0.5) {                                  // 接战火花：掉血即起（攻方色）
+          if (sparkN < 4) { spawnSparks(x, y, TEAM_COLOR[u.team === 'A' ? 'B' : 'A']); sparkN++; }
+          if (now - lastSndHit > 140) { lastSndHit = now; snd('bt-hit'); }
+        }
+        if (Math.abs(u.y - pr.y) > 60 && (!smokeAt[u.id] || now - smokeAt[u.id] > 240)) {   // 行军尘烟
+          smokeAt[u.id] = now;
+          spawnP({ k: 'smoke', layer: 'war', x: x + (Math.random() - .5) * 6, y: y + (u.dir || 1) * 4, vx: 0, vy: -6, ttl: 650, r0: 2.5 + Math.random() * 2 });
+        }
+      }
+      nu[u.id] = { hp: u.hp, x: x, y: y };
+    }
+    for (var id in prevU) if (!nu[id]) {                           // 阵亡尘爆
+      var d = prevU[id];
+      if (dieN < 3) {
+        spawnP({ k: 'smoke', layer: 'war', x: d.x, y: d.y, vx: 0, vy: -10, ttl: 500, r0: 3, col: 'rgb(120,110,100)' });
+        spawnSparks(d.x, d.y, 'rgb(200,200,200)');
+        dieN++;
+      }
+      if (now - lastSndDie > 150) { lastSndDie = now; snd('bt-die'); }
+    }
+    for (var bid in prevB) if (!nb[bid]) {                         // 破墙：碎块雨 + 墙带易帜闪
+      var by2 = TOP_H + (prevB[bid].y / 25000 + 0.5) * 25.25;
+      for (var dd = 0; dd < 14; dd++) spawnP({ k: 'debris', layer: 'war', x: 20 + Math.random() * 335, y: by2, vx: (Math.random() - .5) * 90, vy: -60 - Math.random() * 90, ttl: 900, col: '#5a4a38' });
+      spawnP({ k: 'flip', layer: 'war', y: by2, ttl: 600 });
+      snd('bt-down');
+    }
+    for (var b2 = 0; b2 < battle.bld.length; b2++) {               // 墙/心受击扬尘
+      var bd2 = battle.bld[b2], pb2 = prevB[bd2.id];
+      if (pb2 && bd2.hp < pb2.hp - 0.5) {
+        var by3 = TOP_H + (bd2.y / 25000 + 0.5) * 25.25;
+        if (Math.random() < 0.5) spawnP({ k: 'smoke', layer: 'war', x: 20 + Math.random() * 340, y: by3, vx: 0, vy: -8, ttl: 500, r0: 2 });
+        if (now - lastSndWall > 200) { lastSndWall = now; snd('bt-wall'); }
+      }
+    }
+    prevU = nu; prevB = nb;
+  }
+  /* ---------- 建设层环境粒子：产出建筑冒资源色屑（纯表现节流 ≈1 粒/1.6s/座） ---------- */
+  var ECO_KINDS = { farm: 'g', lumber: 'w', mine: 'i' };
+  function cityAmbient(dt) {
+    if (!started || matchOver || panel) return;
+    var me = seatView(mySeat); if (!me || !me.plots) return;
+    for (var i = 0; i < me.plots.length; i++) {
+      var p = me.plots[i]; if (!p || !ECO_KINDS[p.kind]) continue;
+      if (Math.random() > dt / 1600) continue;
+      var r = GEO.plotsOwn[i];
+      spawnP({ k: 'mote', layer: 'build', x: r.x + 10 + Math.random() * (r.w - 20), y: r.y + r.h - 8, vx: (Math.random() - .5) * 6, vy: -14 - Math.random() * 10, ttl: 1100, col: RES_COLOR[ECO_KINDS[p.kind]] });
+    }
+  }
+
   /* ---------- 上报（宿主钩子优先，本地兜底） ---------- */
   function report(event, payload) {
     try { if (window.__GAMES_HOOK__ && window.__GAMES_HOOK__.report) window.__GAMES_HOOK__.report(event, payload); } catch (e) { /* 永不抛 */ }
@@ -1256,13 +1476,23 @@
     if (!simState && !snap) return;
     var t0 = performance.now();
     if (lastInputAt && !inputMaxMs) inputMaxMs = Math.max(0, t0 - lastInputAt);
+    var pdt = lastPoolT ? Math.min(50, now - lastPoolT) : 16; lastPoolT = now;
+    atmoF += ((eruptSeen ? 1 : 0) - atmoF) * 0.03;   // 节奏双轨交叉（≈0.5s 过渡）
+    var tv = tickView();
+    if (started && !matchOver && tv >= ERUPT_AT - 100 && tv < ERUPT_AT) {   // 爆发前 10s 每秒滴答
+      var sec = Math.ceil((ERUPT_AT - tv) / 10);
+      if (lastTickSec !== sec) { lastTickSec = sec; snd('ev-tick'); }
+    }
     ctx.save();
     if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.88; if (shake < 0.4) shake = 0; }
     drawTop(now);
-    if (dial === 'city') drawCity(); else drawWar(now);
+    if (dial === 'city') { drawCity(); cityAmbient(pdt); drawPool(now, pdt, 'build'); }
+    else { drawWar(now); drawPool(now, pdt, 'war'); }
+    drawAtmo(now);
     drawBottom();
     if (panel) drawPanel();
     drawFx(now);
+    drawPool(now, pdt, 'screen');
     drawBanner(now);
     ctx.restore();
     var dt = performance.now() - t0;
@@ -1276,6 +1506,7 @@
     ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, TOP_H - 1, W, 1);
     var t = tickView();
     HUDF.top = { res: 13, rate: 11, clock: 13, merit: 13 };
+    HUDF.fx = { float: 11 };          // GAMES-72 手感层飘字（P1 档；爆发倒计时脉动基字号 13 见 top.clock）
     if (me) {
       var xs = [12, 128, 244];
       ['g', 'w', 'i'].forEach(function (r, idx) {
@@ -1288,7 +1519,9 @@
     }
     if (t < ERUPT_AT) {
       var left = Math.ceil((ERUPT_AT - t) / 10);
-      ctx.fillStyle = '#e8c46a'; ctx.font = '600 13px ' + FONT; ctx.textAlign = 'center';
+      var warn10 = started && t >= ERUPT_AT - 100;                    // §1 末 10s 倒计时红脉动
+      ctx.fillStyle = warn10 && (t % 20) < 10 ? '#ff7a52' : '#e8c46a';
+      ctx.font = '600 ' + (warn10 ? 14 : 13) + 'px ' + FONT; ctx.textAlign = 'center';
       ctx.fillText('军团战爆发 ' + String(Math.floor(left / 60)) + ':' + String(left % 60).padStart(2, '0'), W / 2, 43);
     } else {
       var tm = teamsView();
@@ -1612,20 +1845,31 @@
       if (e.k === 'erupt') {
         eruptSeen = true; dial = 'war';
         bannerTxt = '⚔ 军团战爆发！'; bannerTtl = 2000; shake = 5;
+        spawnP({ k: 'flash', layer: 'screen', ttl: 420, col: 'rgb(255,120,70)' });
+        snd('ev-erupt'); snd('amb-war');          // BGM 位·战斗轨切换记账（双轨）
       } else if (e.k === 'spawn' && e.seat === mySeat) {
         fx.push({ k: 'ring', x: laneX(e.lane, 20), y: TOP_H + (e.row + 0.5) * 25.25, col: TEAM_COLOR[myTeam], t0: performance.now(), dur: 500 });
-      } else if (e.k === 'walldown') { shake = 5; bannerTxt = (e.team === myTeam ? '我方城墙被破！' : '敌方城墙被破！'); bannerTtl = 1400; }
-      else if (e.k === 'keepdown') { shake = 6; }
+        spawnP({ k: 'smoke', layer: 'war', x: laneX(e.lane, 20), y: TOP_H + (e.row + 0.5) * 25.25, vx: 0, vy: -8, ttl: 600, r0: 3 });
+        snd('bt-spawn');
+      } else if (e.k === 'walldown') { shake = 5; bannerTxt = (e.team === myTeam ? '我方城墙被破！' : '敌方城墙被破！'); bannerTtl = 1400; spawnP({ k: 'flash', layer: 'screen', ttl: 320, col: 'rgb(255,220,160)' }); }
+      else if (e.k === 'keepdown') { shake = 6; spawnP({ k: 'flash', layer: 'screen', ttl: 500, col: 'rgb(255,150,90)' }); }
     }
   }
   function applyBuildEvents(evs) {
     for (var i = 0; i < evs.length; i++) {
       var e = evs[i];
       if (e.seat !== mySeat) continue;
-      if (e.k === 'built') { banner(e.kind ? S.BUILDS[e.kind].cn + (e.lv > 1 ? ' 升级 Lv' + e.lv : ' 建成') : ''); fx.push({ k: 'txt', txt: '建成', x: 250, y: TOP_H + 200, col: '#e8c46a', t0: performance.now(), dur: 800 }); }
-      else if (e.k === 'march') { banner('军团出征 · 车道' + e.lane); }
+      if (e.k === 'built') {
+        banner(e.kind ? S.BUILDS[e.kind].cn + (e.lv > 1 ? ' 升级 Lv' + e.lv : ' 建成') : '');
+        var rr = GEO.plotsOwn[e.plot != null ? e.plot : 0];
+        for (var d = 0; d < 10; d++) spawnP({ k: 'dust', layer: 'build', x: rr.x + 6 + Math.random() * (rr.w - 12), y: rr.y + rr.h - 6, vx: (Math.random() - .5) * 50, vy: -20 - Math.random() * 30, ttl: 800 + Math.random() * 300, r0: 1.6 + Math.random() * 1.6 });
+        if (e.lv > 1) spawnP({ k: 'pillar', layer: 'build', x: rr.x + rr.w / 2, y: rr.y + rr.h - 10, ttl: 900 });
+        snd(e.lv > 1 ? 'bd-up' : 'bd-built');
+      }
+      else if (e.k === 'march') { banner('军团出征 · 车道' + e.lane); fx.push({ k: 'ring', x: laneX(e.lane, 20), y: TOP_H + 460, col: TEAM_COLOR[myTeam], t0: performance.now(), dur: 500 }); }
       else if (e.k === 'reject') { banner('✕ ' + ({ resw: '木材不足', resi: '铁不足', resg: '粮食不足', 'queue-full': '队列已满', 'pool-full': '兵池已满', cd: '出征冷却中', peace: '和平期不可出征', 'no-camp': '先建兵营', 'dup-kind': '同类已建', 'max-lv': '已满级', 'kind-mismatch': '类型不符', 'not-in-pool': '该营不可练此兵', pool: '兵池不足', 'bad-units': '编队无效' }[e.why] || e.why)); }
       else if (e.k === 'train-q') { fx.push({ k: 'txt', txt: '入队 ×' + e.n, x: 160, y: TOP_H + 250, col: '#e8c46a', t0: performance.now(), dur: 700 }); }
+      else if (e.k === 'train-done') { spawnP({ k: 'ftxt', layer: 'screen', txt: UNIT_CN[e.unit] + ' +1 入池', x: 48, y: H - 84, vy: -26, ttl: 900, col: '#e8c46a' }); snd('bd-train'); }
     }
   }
   function banner(txt) { if (txt) { bannerTxt = txt; bannerTtl = 1300; } }
@@ -1671,16 +1915,34 @@
         var row = Math.max(0, Math.min(19, ((press.y - TOP_H) / 25.25) | 0));
         sendC({ k: 'rally', lane: lane, row: row });
         fx.push({ k: 'ring', x: press.x, y: press.y, col: TEAM_COLOR[myTeam], t0: performance.now(), dur: 600 });
+        spawnP({ k: 'flag', layer: 'war', x: press.x, y: press.y + 10, ttl: 1000 });   // 集结旗落旗动效
+        snd('bt-rally');
       }
     }
   }, 60);
   function yInField(y) { return y > TOP_H + 34 && y < TOP_H + 465; }
 
+  /* ---------- 输入反馈链（GAMES-72 §1）：tap/确认当帧本地起播（≤80ms，不等权威回执） ---------- */
+  function costTxt(cost) { var out = []; for (var r in cost) out.push('-' + RES_CN[r] + (cost[r] / 1000)); return out.join(' '); }
+  function ackBuild(plot, kind, lvIdx) {           // 建造确认：地基起动画 + 扣减飘字
+    var rr = GEO.plotsOwn[plot];
+    spawnP({ k: 'found', layer: 'build', x: rr.x + rr.w / 2, y: rr.y + rr.h - 8, r0: 26, ttl: 700 });
+    for (var d = 0; d < 5; d++) spawnP({ k: 'dust', layer: 'build', x: rr.x + 6 + Math.random() * (rr.w - 12), y: rr.y + rr.h - 6, vx: (Math.random() - .5) * 40, vy: -14 - Math.random() * 20, ttl: 600, r0: 1.4 });
+    spawnP({ k: 'ftxt', layer: 'screen', txt: costTxt(S.BUILDS[kind].cost[Math.min(2, lvIdx)]), x: rr.x + rr.w / 2, y: rr.y + 6, vy: -22, ttl: 900, col: '#e88a6a' });
+    snd('bd-found');
+  }
+  function ackMarch(lane) {                        // 出征确认：集结旗帜动效（双盘可见）
+    var bx = laneX(lane, 20);
+    spawnP({ k: 'flag', layer: 'screen', x: bx, y: TOP_H + 470, ttl: 1300 });
+    for (var d = 0; d < 6; d++) spawnP({ k: 'dust', layer: 'war', x: bx + (Math.random() - .5) * 24, y: TOP_H + 466, vx: (Math.random() - .5) * 40, vy: -12 - Math.random() * 18, ttl: 700, r0: 1.6 });
+    snd('bd-march');
+  }
+
   function onTap(x, y) {
     /* 面板打开时独占 */
     if (panel) { panelTap(x, y); return; }
-    if (inR(GEO.togCity, x, y)) { dial = 'city'; return; }
-    if (inR(GEO.togWar, x, y)) { dial = 'war'; return; }
+    if (inR(GEO.togCity, x, y)) { dial = 'city'; snd('bd-tap'); return; }
+    if (inR(GEO.togWar, x, y)) { dial = 'war'; snd('bd-tap'); return; }
     if (dial === 'city') {
       var meV = seatView(mySeat);
       if (!meV) return;                                    // 旁观席无领地操作
@@ -1691,6 +1953,9 @@
           if (['camp', 'works', 'range'].indexOf(p.kind) >= 0) { panel = { type: 'train', plot: i, kind: p.kind }; atkSel = null; trainN = 1; }
           else panel = { type: 'upgrade', plot: i };
         } else panel = { type: 'build', plot: i };
+        var rr = GEO.plotsOwn[i];
+        fx.push({ k: 'ring', x: rr.x + rr.w / 2, y: rr.y + rr.h / 2, col: 'rgba(232,196,106,.9)', t0: performance.now(), dur: 360 });
+        snd('bd-tap');
         return;
       }
       /* 兵池徽标 → 出征面板 */
@@ -1698,6 +1963,7 @@
         var me2 = meV, sel = {};
         for (var c in me2.pool) if (me2.pool[c] > 0) sel[c] = me2.pool[c];
         panel = { type: 'attack', sel: sel, lane: 1 };
+        snd('bd-tap');
         return;
       }
     } else {
@@ -1706,7 +1972,7 @@
         var me3 = seatView(mySeat), units = {};
         for (var u in lastAtk) units[u] = Math.min(lastAtk[u], me3.pool[u] || 0);
         var tot = 0; for (var u2 in units) tot += units[u2];
-        if (tot > 0) sendO({ k: 'attack', lane: lastAtk.lane != null ? lastAtk.lane : 1, units: units });
+        if (tot > 0) { ackMarch(lastAtk.lane != null ? lastAtk.lane : 1); sendO({ k: 'attack', lane: lastAtk.lane != null ? lastAtk.lane : 1, units: units }); }
         return;
       }
     }
@@ -1717,22 +1983,27 @@
     if (panel.type === 'build') {
       for (var i = 0; i < GEO.panelCards.length; i++) {
         var cd = GEO.panelCards[i];
-        if (cd && inR(cd, x, y) && cd.afford) { sendO({ k: 'build', plot: panel.plot, kind: cd.kind }); panel = null; return; }
+        if (cd && inR(cd, x, y) && cd.afford) { ackBuild(panel.plot, cd.kind, 0); sendO({ k: 'build', plot: panel.plot, kind: cd.kind }); panel = null; return; }
       }
-      if (inR(GEO.panelOk, x, y) && GEO.panelCards.length === 1) { sendO({ k: 'build', plot: panel.plot, kind: GEO.panelCards[0].kind }); panel = null; }
+      if (inR(GEO.panelOk, x, y) && GEO.panelCards.length === 1) { ackBuild(panel.plot, GEO.panelCards[0].kind, 0); sendO({ k: 'build', plot: panel.plot, kind: GEO.panelCards[0].kind }); panel = null; }
     } else if (panel.type === 'upgrade') {
       for (var j = 0; j < GEO.panelCards.length; j++) {
         var cd2 = GEO.panelCards[j];
-        if (cd2 && inR(cd2, x, y) && cd2.afford) { sendO({ k: 'build', plot: panel.plot, kind: cd2.kind }); panel = null; return; }
+        if (cd2 && inR(cd2, x, y) && cd2.afford) { ackBuild(panel.plot, cd2.kind, seatView(mySeat).plots[panel.plot].lv); sendO({ k: 'build', plot: panel.plot, kind: cd2.kind }); panel = null; return; }
       }
     } else if (panel.type === 'train') {
       for (var k = 0; k < GEO.panelCards.length; k++) {
         var cd3 = GEO.panelCards[k];
-        if (cd3 && inR(cd3, x, y)) { atkSel = cd3.unit; return; }
+        if (cd3 && inR(cd3, x, y)) { atkSel = cd3.unit; snd('bd-tap'); return; }
       }
       if (inR(GEO.panelMinus, x, y)) { trainN = Math.max(1, trainN - 1); return; }
       if (inR(GEO.panelPlus, x, y)) { trainN = Math.min(5, trainN + 1); return; }
-      if (inR(GEO.panelOk, x, y) && atkSel) { sendO({ k: 'train', kind: panel.kind, unit: atkSel, n: trainN }); panel = null; }
+      if (inR(GEO.panelOk, x, y) && atkSel) {
+        var cc = S.UNITS[atkSel].cost[seatView(mySeat).plots[panel.plot].lv - 1];
+        spawnP({ k: 'ftxt', layer: 'screen', txt: '-粮' + (cc[0] * trainN) + (cc[1] ? ' -铁' + (cc[1] * trainN) : ''), x: W / 2, y: TOP_H + 300, vy: -22, ttl: 900, col: '#e88a6a' });
+        snd('bd-q');
+        sendO({ k: 'train', kind: panel.kind, unit: atkSel, n: trainN }); panel = null;
+      }
     } else if (panel.type === 'attack') {
       for (var m = 0; m < GEO.panelCards.length; m++) {
         var cd4 = GEO.panelCards[m];
@@ -1746,7 +2017,7 @@
       if (inR(GEO.panelOk, x, y)) {
         var units = {}, tot = 0;
         for (var c2 in panel.sel) if (panel.sel[c2] > 0 && (me.pool[c2] || 0) >= panel.sel[c2]) { units[c2] = panel.sel[c2]; tot += panel.sel[c2]; }
-        if (tot > 0) { lastAtk = { lane: panel.lane }; for (var c3 in units) lastAtk[c3] = units[c3]; sendO({ k: 'attack', lane: panel.lane, units: units }); }
+        if (tot > 0) { lastAtk = { lane: panel.lane }; for (var c3 in units) lastAtk[c3] = units[c3]; ackMarch(panel.lane); sendO({ k: 'attack', lane: panel.lane, units: units }); }
         panel = null;
       }
     }
@@ -1782,7 +2053,7 @@
     }, S.META.tickMs);
   }
   /* 离线 battle 镜像=直接取权威 state（本地就是权威）；在线独立镜像由 onFrame 推进 */
-  function syncBattleAfterStep() { battle = simState.battle; warTick = simState.tick; }
+  function syncBattleAfterStep() { battle = simState.battle; warTick = simState.tick; battleJuiceDiff(); }
 
   function stepLocal(inputs) {
     var r = S.step(simState, inputs);
@@ -1832,6 +2103,7 @@
         warTick = m.frame;
         applyBattleEvents(evs);
         applyBattleEvents(m.events);                  // 权威事件（erupt 等服务端合成）
+        battleJuiceDiff();                            // hp/y 快照 diff → 火花/尘烟/碎块（GAMES-72）
         if (!matchOver) session.sendInput({ c: qCmd.length && qCmd[0].c ? qCmd.shift().c : { k: 'noop' } });  // input delay=1
         if (m.over && !matchOver) finishFromServer();
       },
@@ -1857,6 +2129,7 @@
     battle = JSON.parse(JSON.stringify(st.battle));
     warTick = Math.min(frame, st.tick);
     if (st.tick < ERUPT_AT) warTick = st.tick;    // 静默期：镜像冻结在当前 tick（首帧 1800 对齐）
+    prevU = {}; prevB = {}; smokeAt = {};          // 全量重种不回放 juice（防重连爆屏）
   }
   function simMirrorState() { return { tick: warTick, battle: battle }; }
   function snapEntsFromState(st) {
@@ -1955,11 +2228,35 @@
     cmd: function (cmd) { qCmd.push(cmd); },
     hudFonts: function () { return JSON.parse(JSON.stringify(HUDF)); },
     dial: function () { return dial; },
+    /* ---- GAMES-72 手感层取证 ---- */
+    fxLog: function () { return fxLog.slice(); },                       // 粒子起播流水（种类+坐标+ms 戳）
+    poolStat: function () { var n = 0; for (var i = 0; i < POOL_N; i++) if (pool[i].live) n++; return { cap: POOL_N, live: n, spawned: poolSpawned }; },
+    sndState: function () { return Snd.state(); },                      // 音效位记账 + BGM 双轨交叉增益
+    sndEnable: function (v) { return Snd.enable(v); },
+    atmo: function () { return { f: +atmoF.toFixed(2), tick: tickView(), warn: started && tickView() >= ERUPT_AT - 100 && tickView() < ERUPT_AT }; },
+    ev: function (e) { (e.k === 'erupt' || e.k === 'spawn' || e.k === 'walldown' || e.k === 'keepdown') ? applyBattleEvents([e]) : applyBuildEvents([e]); },   // 事件动效走生产路径
+    fast: function (n) {                                               // 离线快进 n tick（QA：跳静默期取证战斗层/预警窗）
+      if (mode !== 'offline' || !simState) return -1;
+      fastFwd = true;
+      for (var i = 0; i < n && !matchOver; i++) {
+        var inputs = {}, q = qCmd.shift();
+        if (q) inputs[0] = q;
+        var env = { kinds: ['human', 'bot', 'bot', 'bot'] };
+        for (var s = 1; s < 4; s++) inputs[s] = S.brain(simState, s, bots[s].level, bots[s].rng, env);
+        var r = S.step(simState, inputs);
+        if (r.over) { fastFwd = false; finish(r.result); return simState.tick; }
+      }
+      fastFwd = false;
+      prevU = {}; smokeAt = {};               // 快进跨度不清旧快照会误判全灭（爆屏）
+      syncBattleAfterStep();
+      if (simState.tick >= ERUPT_AT && !eruptSeen) applyBattleEvents([{ k: 'erupt' }]);   // 跨爆发补演出
+      return simState.tick;
+    },
   };
 
   /* ================= 启动 ================= */
   fit();
-  report('boot', { slug: 'empire-sprout', version: '1.0.0', mode: 'net' });
+  report('boot', { slug: 'empire-sprout', version: '1.1.0', mode: 'net' });
   var q = new URLSearchParams(location.search);
   requestAnimationFrame(render);
   if (q.get('debug') === '1') startOffline({ seedSalt: q.get('again') ? String(Date.now() % 97) : '1', maxTicks: q.get('maxTicks') ? Number(q.get('maxTicks')) : undefined });
