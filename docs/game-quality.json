@@ -1045,17 +1045,17 @@
    "notes": "E6-W1-T2 轨 S2 状态同步首证（常驻世界/续镇存档/席位托管）。STRESS 三组 PASS（6 镇并行 8min tick 满频 ±0.46%、满编 12/12 spot、三游戏混编零错误；实测 18:53 守 Q-007 预算）；四单 ≈98min 长局零钉死；200ms 延迟无偏置；重连窗 10s+1 拍；feed ≤388ms；回收重建 2.3s 续镇。合并链 696babf→e2e84ac→5d74468→5d90e2f→fe7f376→05907f6→98bc0fd→539c816→c73b314"
   },
   "multiplayer:empire-sprout": {
-   "stage": "draft",
+   "stage": "accepted",
    "perf": "pass",
    "play": "pass",
    "visual": "pass",
-   "iterations": 2,
+   "iterations": 10,
    "net": {
     "tech": "S3",
-    "bot": "三档(慢发展/均衡/军备竞速·建设倾向×战斗时机双轴)",
-    "chain": "GAMES-66..68 单链 2/10+（D 设计书→DEV 核心实现）"
+    "bot": "三档人格(慢发展/均衡/军备竞速·建设倾向×战斗时机双轴+开局树 rng 定桩×2/档)+陪玩 carry 三态",
+    "chain": "GAMES-66..76 十单链完整"
    },
-   "notes": "E6-W1-T3 轨 S3 混合同步首证（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥/静默期 tick1800 爆发）。DEV 单 GAMES-68 核心实现交付"
+   "notes": "E6-W1-T3 轨 S3 混合同步首证收官（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥 T+1/静默期 tick1800 爆发）。STRESS 三组 PASS（6 test 房+BotHost 并行 8min tick 10Hz 漂移[0,1]、5min 满编 4/4 spot 9.97-10.00Hz、四游戏混编零错误；四件套全过附 RSS 高水位披露）；QA1/QA2 红线全过（200ms 延迟无偏置[房型分层判据]/重连 10s+1 拍/满员旁观/feed ≤404ms）；两轮事故复盘（影子网关缺省 PORT 静默死亡/接力器复活竞态误 SIGTERM）。合并链 f672fe0→1fd9966→66bad6f→3c2ad71→df7048a→3bd218c→1bae6ff→de4579c→41ef278→(GAMES-76)"
   }
  }
 }
