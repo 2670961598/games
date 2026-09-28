@@ -1410,6 +1410,27 @@
     }
     prevU = nu; prevB = nb;
   }
+  /* ---------- GAMES-74 O2：爆发边界战斗镜像 3 帧插值过渡（纯渲染，sim 零改动） ----------
+   * 静默期（tick<1800）join/重连的客户端战斗镜像冻结在 join 帧，首战斗帧（1800）触发
+   * sync 往返全量重种——单位满场瞬现/墙体血条硬跳（QA2 O2）。重种时快照旧镜像
+   * （单位 y/建筑 hp），此后 3 个已应用战斗帧内渲染层插值：老单位位置 lerp、
+   * 新单位 alpha 淡入、建筑 hp 显示值 lerp。只影响 drawWar 取数；
+   * 镜像推进与 juice diff 均走原始值（快进/QA 取证不受影响）。 */
+  var WAR_BLEND_N = 3, warBlend = null;   // {from:{u:{id:y}, b:{id:hp}}, i:已过过渡帧数}
+  function warBlendBegin(prevBt) {
+    var from = { u: {}, b: {} };
+    if (prevBt) {
+      for (var i = 0; i < prevBt.units.length; i++) from.u[prevBt.units[i].id] = prevBt.units[i].y;
+      for (var j = 0; j < prevBt.bld.length; j++) from.b[prevBt.bld[j].id] = prevBt.bld[j].hp;
+    }
+    warBlend = { from: from, i: 0 };
+  }
+  function warBlendK() { return warBlend ? Math.min(1, warBlend.i / WAR_BLEND_N) : 1 }
+  function warBlendY(un) { return warBlend && warBlend.from.u[un.id] != null ? warBlend.from.u[un.id] + (un.y - warBlend.from.u[un.id]) * warBlendK() : un.y }
+  function warBlendA(un) { return warBlend && warBlend.from.u[un.id] == null ? Math.max(0.15, warBlendK()) : 1 }
+  function warBlendHp(b) { return warBlend && warBlend.from.b[b.id] != null ? warBlend.from.b[b.id] + (b.hp - warBlend.from.b[b.id]) * warBlendK() : b.hp }
+  function warBlendTick() { if (warBlend && ++warBlend.i >= WAR_BLEND_N) warBlend = null }
+
   /* ---------- 建设层环境粒子：产出建筑冒资源色屑（纯表现节流 ≈1 粒/1.6s/座） ---------- */
   var ECO_KINDS = { farm: 'g', lumber: 'w', mine: 'i' };
   function cityAmbient(dt) {
@@ -1617,11 +1638,12 @@
     /* 墙体（裂纹三档）+ 城心 */
     for (var i = 0; i < battle.bld.length; i++) {
       var b = battle.bld[i];
+      var bhp = warBlendHp(b);                   // GAMES-74 O2：重种后 hp 显示值 3 帧过渡
       var y = TOP_H + (b.y / 25000 + 0.5) * 25.25;
       if (b.kind === 'wall') {
         ctx.fillStyle = b.team === 'A' ? 'rgba(232,163,61,.35)' : 'rgba(61,200,232,.35)';
         ctx.fillRect(12, y - 3, 351, 6);
-        var crack = b.hp > b.max * 0.75 ? 0 : b.hp > b.max * 0.5 ? 1 : b.hp > b.max * 0.25 ? 2 : 3;
+        var crack = bhp > b.max * 0.75 ? 0 : bhp > b.max * 0.5 ? 1 : bhp > b.max * 0.25 ? 2 : 3;
         if (crack) { ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); for (var s2 = 0; s2 < crack * 3; s2++) { var cx2 = 20 + s2 * 40; ctx.moveTo(cx2, y - 3); ctx.lineTo(cx2 + 6, y + 3); } ctx.stroke(); }
       } else {
         ctx.fillStyle = b.team === 'A' ? 'rgba(232,163,61,.6)' : 'rgba(61,200,232,.6)';
@@ -1630,12 +1652,13 @@
         ctx.fillText('城心', W / 2, y + 3); ctx.textAlign = 'left';
       }
     }
-    /* 单位（A 椭圆底盘/B 方形；己方白圈） */
+    /* 单位（A 椭圆底盘/B 方形；己方白圈；GAMES-74 O2：重种后 y 插值/新单位淡入） */
     var us = battle.units;
     for (var u = 0; u < us.length; u++) {
       var un = us[u];
-      var x = laneX(un.lane, ((un.id * 37) % 40) - 14), y = TOP_H + (un.y / 25000 + 0.5) * 25.25;
+      var x = laneX(un.lane, ((un.id * 37) % 40) - 14), y = TOP_H + (warBlendY(un) / 25000 + 0.5) * 25.25;
       var col = TEAM_COLOR[un.team];
+      ctx.globalAlpha = warBlendA(un);
       ctx.fillStyle = un.code === 'medic' ? '#d8e8d0' : col;
       if (un.team === 'A') { ctx.beginPath(); ctx.ellipse(x, y, 7, 5, 0, 0, Math.PI * 2); ctx.fill(); }
       else ctx.fillRect(x - 6, y - 5, 12, 10);
@@ -1645,6 +1668,7 @@
       var w = 14 * un.hp / un.maxHp;
       if (un.team === 'A') { ctx.fillStyle = col; ctx.fillRect(x - 7, y - 9, w, 2); }
       else { ctx.fillStyle = col; for (var sg = 0; sg < 4; sg++) { if (w > sg * 3.5) ctx.fillRect(x - 7 + sg * 4, y - 9, 2.5, 2); } }
+      ctx.globalAlpha = 1;
     }
     /* 集结旗（阵营色形状双编码：A 三角旗/B 燕尾旗） */
     var myRally = battle.rally[mySeat] || [-1, -1, -1];
@@ -2101,6 +2125,7 @@
         }
         var evs = S.battleStep(simMirrorState(), m.inputs);   // 与服务端同函数同输入 → 同状态
         warTick = m.frame;
+        warBlendTick();                            // GAMES-74 O2：重种过渡按已应用战斗帧推进（3 帧=tickMs×3）
         applyBattleEvents(evs);
         applyBattleEvents(m.events);                  // 权威事件（erupt 等服务端合成）
         battleJuiceDiff();                            // hp/y 快照 diff → 火花/尘烟/碎块（GAMES-72）
@@ -2126,8 +2151,13 @@
   }
   /* 战斗镜像种子：welcome/state 双层合一（§5.5：重连一次性恢复双层） */
   function seedBattle(st, frame) {
+    var next = Math.min(frame, st.tick);
+    warBlendBegin(battle);                                        // GAMES-74 O2：重种起 3 帧插值过渡（渲染层）
+    if (battle && warTick < ERUPT_AT && next >= ERUPT_AT && !eruptSeen)
+      applyBattleEvents([{ k: 'erupt' }]);                        // 跨爆发补演出：sync 往返吞掉首战斗帧 erupt 事件的渲染侧补偿（同 offline fast 口径）
+    else if (!battle && next >= ERUPT_AT) eruptSeen = true;       // 接管已开战房：只对齐氛围轨，不补迟到爆发横幅
     battle = JSON.parse(JSON.stringify(st.battle));
-    warTick = Math.min(frame, st.tick);
+    warTick = next;
     if (st.tick < ERUPT_AT) warTick = st.tick;    // 静默期：镜像冻结在当前 tick（首帧 1800 对齐）
     prevU = {}; prevB = {}; smokeAt = {};          // 全量重种不回放 juice（防重连爆屏）
   }
@@ -2234,6 +2264,7 @@
     sndState: function () { return Snd.state(); },                      // 音效位记账 + BGM 双轨交叉增益
     sndEnable: function (v) { return Snd.enable(v); },
     atmo: function () { return { f: +atmoF.toFixed(2), tick: tickView(), warn: started && tickView() >= ERUPT_AT - 100 && tickView() < ERUPT_AT }; },
+    warBlend: function () { return warBlend ? { n: WAR_BLEND_N, i: warBlend.i, k: +warBlendK().toFixed(3), units: Object.keys(warBlend.from.u).length } : null; },   // GAMES-74 O2 取证：重种过渡态（null=无过渡进行中）
     ev: function (e) { (e.k === 'erupt' || e.k === 'spawn' || e.k === 'walldown' || e.k === 'keepdown') ? applyBattleEvents([e]) : applyBuildEvents([e]); },   // 事件动效走生产路径
     fast: function (n) {                                               // 离线快进 n tick（QA：跳静默期取证战斗层/预警窗）
       if (mode !== 'offline' || !simState) return -1;
@@ -2256,14 +2287,13 @@
 
   /* ================= 启动 ================= */
   fit();
-  report('boot', { slug: 'empire-sprout', version: '1.1.0', mode: 'net' });
+  report('boot', { slug: 'empire-sprout', version: '1.2.0', mode: 'net' });
   var q = new URLSearchParams(location.search);
   requestAnimationFrame(render);
   if (q.get('debug') === '1') startOffline({ seedSalt: q.get('again') ? String(Date.now() % 97) : '1', maxTicks: q.get('maxTicks') ? Number(q.get('maxTicks')) : undefined });
   else if (q.get('room')) startOnline(q.get('room'));
   else startOnline(null); // 快速匹配
 })();
-
 </script>
 </body>
 </html>
