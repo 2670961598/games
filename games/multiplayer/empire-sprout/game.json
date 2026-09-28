@@ -55,6 +55,10 @@
           "lose": { "botLevels": [null, "competitive", "competitive", "competitive"], "expectWinner": "B", "policy": "idle" }
         }
       }
+    },
+    "botTuning": {
+      "carry": { "idleTicks": 150,
+        "desc": "陪玩补短板（GAMES-71）：同队真人（席 seat^2）快照静默超此 tick 数（100ms/tick）→ bot 接管恢复本档完整人格；真人活跃期 bot 读队友建设构成补短板（队友重军→bot 转农本、队友重农→bot 转军备，首证锁定）" }
     }
   }
 }

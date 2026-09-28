@@ -536,13 +536,46 @@
    * §4 三档（建设倾向 × 战斗时机双轴）：单 brain 双通道输出——建设 op 走 o 壳、
    * 战斗 cmd 走 c 壳，与真人逐字节同路径。绝对 tick 为"顺序与风格"非字面
    * （slg 接线先例：资源就绪门控 + 攒钱闸门实现）。
-   *   casual 慢发展：农本 build order（lumber→farm→farm Lv2→camp）、inf 连练池 6 止步、
-   *     爆发后池 ≥6 且 CD 好才征（首征常 2100+）、固定 lane1、无 rally、被破墙 30% 补征。
-   *   balanced 均衡：farm→mine→camp→works（经济先手）、camp Lv2@~1500、混编 inf:razor 2:1、
-   *     池 ≥8 即征、敌方最薄车道、前线 1/2 rally、被破墙即满池再征、营 Lv2 后回补经济。
-   *   competitive 军备竞速：farm→camp→mine→works（camp 抢先=军备）、camp Lv2@~1200+Lv3@~2400、
-   *     情报克制（读敌最近军团构成）无情报 inf:heavy 2:1、tick1800 CD 即满池 timing attack、
-   *     双线分压 lane0/2 交替+破墙后集火 lane1、动态 rally、被破墙即征+补 mine 转 heavy。
+   *
+   * ── 三档人格（GAMES-71，slg GAMES-46 人格范式移植；"像人"行为清单）─────
+   * casual 慢节奏种田流 · 人设：来串门的老农夫
+   *   □ 开局延后 10s 观察（FIRST=100）才落第一块田；决策 50 tick 一拍
+   *   □ 失误窗口：每拍 12% 概率走神 1.2-2s（不建不练不征）——明显失误给
+   *     对手留可乘之窗（休闲局该有喘息；陪玩期认真带人不走神）
+   *   □ 农本建序（军事最后）、inf 连练池 6 止步、固定 lane1、无 rally
+   *   □ 出征保守：首征 tick 2050+ rng·150 慢半拍；被破墙 30% 概率补征
+   *   □ 爆发期应对＝守成：tick1800 号角不抢首征，按 firstAt 慢半拍，仅
+   *     破墙/城墙受损危机反应（保守反击）——"先把门关好再说"
+   *   □ 开局树 ×2（rng 定桩）：C0 田园慢热 lumber→farm→farm↑→camp ｜
+   *     C1 粮仓深耕 farm→farm↑→lumber→camp（粮仓抢 Lv2、木垫后）
+   * balanced 标准运营 · 人设：打法正经的普通玩家
+   *   □ 经济先手（farm→mine 先落）、camp Lv2@~1500、营 Lv2 后回补经济 Lv2
+   *   □ 混编 inf:razor 2:1、池 ≥8 即征、敌方最薄车道、前线 1/2 rally
+   *   □ 爆发期应对＝主动开战：tick 1800 CD 好且池 ≥8 即征首波（不等人）
+   *   □ 开局树 ×2：B0 经济先手 farm→mine→camp→works ｜ B1 步矿并进
+   *     mine→farm→camp→works（铁先手，razor 早列装）
+   * competitive 军备竞速 · 人设：读你套路的排位对手
+   *   □ camp 抢先建、camp Lv2@~1200 + Lv3@~2400（前线打着后方升营）
+   *   □ 情报克制（读敌最近军团构成练克制兵）；无情报 inf:special 2:1，
+   *     special 随开局树分形：P0 heavy 重装碾压 ｜ P1 razor 装甲快攻
+   *   □ 双线分压 lane0/2 交替 + 破墙后集火 lane1 + 动态 rally 前导
+   *   □ 爆发期应对＝抢先 rush：爆发窗（tick<RUSH_WIN）出征 gate 10→8，
+   *     tick 1800 CD 好即满池压上（timing attack）
+   *   □ 开局树 ×2：P0 军备竞速 farm→camp→mine→works ｜ P1 装甲冲锋
+   *     farm→camp→works→mine（works 抢先，铁垫后——支付档降级护栏兜底）
+   *
+   * ── 陪玩补短板（GAMES-71，SLG 特有团队语义）────────────────────────
+   * 同队真人（env.kinds[seat^2]==='human'；队 A=[0,2]/B=[1,3]，队友席=seat^2）：
+   *   □ 真人活跃（carry=1，队友快照 plots/queues/兵力/marched 有变）→ 读队友
+   *     建设构成补短板：队友重军（营×2+兵力 ≥4）→ bot 转农本（经济三件套
+   *     优先 + 纯 inf 池 6 + 防守征）；队友重农（经济 ≥2 且无营）→ bot 转军备
+   *     （camp/works 优先 + 混编 + 正常出征节奏）。tilt 首证锁定：早局无证据
+   *     =按本档开局树正常打（不瞎补、不抖动）
+   *   □ 真人挂机（carry=2，快照静默 > carry.idleTicks）→ 接管：恢复本档完整
+   *     人格带节奏（开局树按 mem.bi 无缝续走）。连接在但 AFK 的席位网关
+   *     托管（§4 断线转 casual）够不着，此处补位
+   *   □ 陪玩期建设=目标驱动（carryBuild 按 tilt 偏好扫缺项，不动 mem.bi——
+   *     接管/解除时恢复本档建序零撕裂）；决策节奏/危机反应保留本档烈度
    *
    * ── 建造死锁三例警示（GAMES-70 跨游戏教训，改本段前必读）──────────────────
    * REFINE v1 共性根因 P1（docs/qa/refine-v1.md §3）：设计书与实现只定义 happy path
@@ -561,37 +594,151 @@
    *     mine 进线性 order；克制/混编兵支付不起时降级 inf（先 inf 后换装）不断档。
    * ===================================================================== */
   const DECIDE = { casual: 50, balanced: 20, competitive: 10 };
+  const FIRST = { casual: 100, balanced: 0, competitive: 0 };    // casual 开局延后观察（10s，slg 同款）
+  const RUSH_WIN = 2100;                                         // competitive 爆发 rush 窗（gate 降档至此）
+  const OPENERS = { casual: 2, balanced: 2, competitive: 2 };    // GAMES-71：开局树数/档（首决策 rng 定桩派发）
   /* order 项数必须 ≤ PLOTS=4（警示①：5 项时第 5 座 indexOf(null)=-1 永不建造+bi 卡死）。
    * F1/F2 修复口径：farm+mine+camp+works 四件套为必集（粮/铁/两营——缺 mine 则被动铁
    * 100/tick 撑不起 razor 90k/heavy 220k 的 T1 铁价，缺 farm 则粮 300/tick 练不满池），
    * 让出 lumber（被动木 200/tick 足够付四件 230k 造价 + 升级线）；balanced 经济先手
-   * （mine 先），competitive 军备竞速（camp 先）保档差。 */
-  const BUILD_ORDER = {
-    casual: [['lumber', 0], ['farm', 0], ['farm', 1], ['camp', 0]],                       // 农本（军事最后）
-    balanced: [['farm', 0], ['mine', 0], ['camp', 0], ['works', 0]],                      // 均衡：经济先手
-    competitive: [['farm', 0], ['camp', 0], ['mine', 0], ['works', 0]],                   // 军备：camp 抢先
+   * （mine 先），competitive 军备竞速（camp 先）保档差。
+   * GAMES-71 开局树 ×2/档（[level][opener]）：同档两树人格同轴、指纹不同——
+   * 建序差异即开局树指纹（验收对照表"建序"列）；competitive 的 P1 works 抢先
+   * 靠后置 mine 付铁（支付档降级护栏兜底，警示③）。casual 农本无铁系兵，
+   * mine/works 不入树（纯 inf 只耗粮）。 */
+  const BUILD_ORDERS = {
+    casual: [
+      [['lumber', 0], ['farm', 0], ['farm', 1], ['camp', 0]],    // C0 田园慢热：木→粮→粮升→营（原 §4 农本）
+      [['farm', 0], ['farm', 1], ['lumber', 0], ['camp', 0]],    // C1 粮仓深耕：粮抢先+抢 Lv2，木垫后
+    ],
+    balanced: [
+      [['farm', 0], ['mine', 0], ['camp', 0], ['works', 0]],     // B0 经济先手：粮→矿（原 §4 均衡）
+      [['mine', 0], ['farm', 0], ['camp', 0], ['works', 0]],     // B1 步矿并进：铁先手，razor 早列装
+    ],
+    competitive: [
+      [['farm', 0], ['camp', 0], ['mine', 0], ['works', 0]],     // P0 军备竞速：camp 抢先（原 §4 军备）
+      [['farm', 0], ['camp', 0], ['works', 0], ['mine', 0]],     // P1 装甲冲锋：works 抢先，铁垫后
+    ],
   };
+  /* ---------- Bot 调参（GAMES-71，slg GAMES-46 同款）：game.json net.botTuning
+   * 是可调事实源，此处内置同值默认（离线端无 game.json 读取链路时兜底）；
+   * 服务端适配器启动时以 game.json 覆盖。仅影响 Bot 决策（服务端侧），
+   * 判定路径与确定性红线不受影响。 ---------- */
+  const BOT_TUNING = {
+    carry: { idleTicks: 150 },   // 陪玩：同队真人快照静默超 150 tick（15s）→ bot 接管
+  };
+  function setBotTuning(t) {
+    if (!t || typeof t !== 'object') return;
+    if (t.carry && typeof t.carry === 'object' && Number.isInteger(t.carry.idleTicks)) {
+      BOT_TUNING.carry.idleTicks = t.carry.idleTicks;
+    }
+  }
   const botMem = new WeakMap();
   function memOf(st, seat) {
     let m = botMem.get(st);
     if (!m) { m = {}; botMem.set(st, m); }
     let s = m[seat];
     if (!s) {
-      s = { lastDecide: -1, bi: 0, lastRallyRow: [-9, -9, -9], laneFlip: 0, seenTick: -1, seen: new Set(), enemyLog: [], provoked: -1, firstAt: -1 };
+      s = { lastDecide: -1, bi: 0, lastRallyRow: [-9, -9, -9], laneFlip: 0, seenTick: -1, seen: new Set(), enemyLog: [], provoked: -1, firstAt: -1,
+            /* GAMES-71 人格层：开局树定桩 / 走神窗口 / 陪玩补短板 */
+            opener: -1, blurUntil: -1, mateSnap: null, mateActiveTick: -1, tilt: null, carryTookAt: -1 };
       m[seat] = s;
     }
     return s;
   }
   const poolN = (s) => poolTotal(s);
 
+  /* 陪玩期建设=目标驱动（GAMES-71）：按 tilt 偏好表扫缺项新建 → 同向升级；
+   * 首个缺项建不起就攒钱等（顺序感，不越位抢建——被动产出覆盖全部造价，
+   * 警示②可达性成立）；槽满静默跳过（升级不占槽，永有出路）。不动 mem.bi
+   * ——接管/陪玩解除时本档建序无缝续走（已建项 camp.lv>=wantLv 自动跳过）。 */
+  function carryBuild(s, tilt) {
+    const NEW = tilt === 'farm'
+      ? ['farm', 'lumber', 'mine', 'camp']        // 补农：经济三件套优先，camp 保底练兵
+      : ['camp', 'farm', 'mine', 'works'];        // 补军：camp 抢 inf 即战力→farm 保粮→mine 供铁→works 铁系列装
+    for (let i = 0; i < NEW.length; i++) {
+      const kind = NEW[i];
+      if (campOf(s, kind)) continue;
+      const cost = BUILDS[kind].cost[0];
+      let afford = true;
+      for (const r in cost) if (s.res[r] < cost[r]) afford = false;
+      if (!afford) return null;                   // 首缺项攒钱等（不越位）
+      const plot = s.plots.indexOf(null);
+      if (plot >= 0) return { o: { k: 'build', plot, kind } };
+      // 槽满：跳过看下一项（警示①——选址失败不卡死）
+    }
+    const UP = tilt === 'farm' ? ['farm', 'lumber', 'mine'] : ['camp', 'works'];
+    for (let i = 0; i < UP.length; i++) {
+      const b = campOf(s, UP[i]);
+      if (!b || b.lv >= 3) continue;
+      const cost = BUILDS[UP[i]].cost[b.lv];
+      let afford = true;
+      for (const r in cost) if (s.res[r] < cost[r]) afford = false;
+      if (afford) return { o: { k: 'build', plot: b.plot, kind: UP[i] } };
+    }
+    return null;
+  }
+
   function brain(st, seat, level, rng, env) {
     const s = st.build.seats[seat];
     if (!s) return {};
     const mem = memOf(st, seat);
     const my = teamOf(seat), foe = my === 'A' ? 'B' : 'A';
-    if (mem.lastDecide < 0) mem.lastDecide = st.tick;
-    else if (st.tick - mem.lastDecide < (DECIDE[level] || 20)) return {};
+    /* 开局延后观察（GAMES-71 casual 人格）：首个决策 tick 前先看 10s——
+       首拍即定 opener 与 lastDecide（与 slg FIRST 同构） */
+    if (mem.lastDecide < 0) {
+      if (st.tick < (FIRST[level] || 0)) return {};
+      mem.lastDecide = st.tick;
+    } else if (st.tick - mem.lastDecide < (DECIDE[level] || 20)) return {};
     mem.lastDecide = st.tick;
+
+    /* ---- 开局树定桩（GAMES-71）：首个决策 tick 一次性 rng 派发。服务端 botRng
+       由房间 seed 派生（rooms.js：mulberry32(seed ^ seat·φ)）→ 同 seed 同局必同树、
+       同 seed 双跑逐字节一致；分支选择由服务端 rng 承载，客户端只回放输入——
+       确定性红线不破（与 slg GAMES-46 同口径）。 */
+    if (mem.opener < 0) mem.opener = (rng() * (OPENERS[level] || 1)) | 0;
+
+    /* ---- 陪玩补短板（GAMES-71）：同队真人（env.kinds[seat^2]==='human'）→
+       carry=1 补短板（真人活跃）/ carry=2 接管（真人挂机，恢复本档完整人格）。
+       活跃检测纯 state 派生（队友 plots/queues/兵力/marched 快照变化即活跃，
+       资源被动产出不入快照——防"恒活跃"误判）；挂机接管补网关托管（只管断线）
+       够不着的"连着但不动"席位。 */
+    let carry = 0;                                   // 0=非陪玩 1=补短板（真人活跃） 2=接管（真人挂机）
+    if (env && env.kinds && env.kinds[seat ^ 2] === 'human') {
+      const m = st.build.seats[seat ^ 2];
+      if (m) {
+        const snap = JSON.stringify(m.plots) + '|' + JSON.stringify(m.queues) + '|' + poolTotal(m) + '|' + m.marched;
+        if (snap !== mem.mateSnap) { mem.mateSnap = snap; mem.mateActiveTick = st.tick; }
+        if (mem.mateActiveTick < 0) mem.mateActiveTick = st.tick;
+        /* 接管判罚从爆发期起算：静默期（tick<1800）憋池等爆发=正常运营不算挂机——
+           池练满/升满级后干等号角是 rush 定式，误判接管会把陪玩 bot 变抢戏 bot */
+        const idleFrom = Math.max(mem.mateActiveTick, ERUPT_AT);
+        carry = (st.tick - idleFrom > BOT_TUNING.carry.idleTicks) ? 2 : 1;
+        if (carry === 2 && mem.carryTookAt < 0) mem.carryTookAt = st.tick;
+      }
+    }
+    /* tilt 首证锁定（GAMES-71）：真人亮出建设倾向才定补位朝向——重军证据=营×2+兵力
+       （池+队列）≥4；重农证据=经济三件套全铺且无营（farm+lumber 两件是几乎所有
+       开局的序章，不足以定论——军备流也会先铺两块经济）。早局无证据=按本档开局
+       树正常打（不瞎补不抖动），锁定后不再改（队友换思路也按初判定——人格一致性
+       优先于最优解）。 */
+    if (carry === 1 && !mem.tilt) {
+      const m = st.build.seats[seat ^ 2];
+      const milN = ['camp', 'works', 'range'].filter((k) => campOf(m, k)).length;
+      const ecoN = ['farm', 'lumber', 'mine'].filter((k) => campOf(m, k)).length;
+      const armsW = milN * 2 + poolTotal(m) + queuedN(m);
+      if (armsW >= 4) mem.tilt = 'farm';              // 队友重军 → 我补农
+      else if (ecoN >= 3 && milN === 0) mem.tilt = 'arms';   // 队友重农 → 我补军
+    }
+    const tilt = carry === 1 ? mem.tilt : null;       // 接管期（carry=2）无补位——全力本档
+
+    /* ---- casual 走神窗口（GAMES-71 人格）：每拍 12% 概率发呆 1.2-2s（不建不练
+       不征）——明显失误给对手留可乘之窗。纯 bot 局照常人格化；陪玩期（carry≠0）
+       认真带人不走神（slg 同款口径）。 */
+    if (level === 'casual' && carry === 0) {
+      if (mem.blurUntil > st.tick) return {};
+      if (rng() < 0.12) { mem.blurUntil = st.tick + 120 + ((rng() * 80) | 0); return {}; }
+    }
 
     /* 情报（competitive 克制）：读敌方最近军团构成（服务器侧合法，§4） */
     if (mem.seenTick !== st.tick) {
@@ -613,9 +760,13 @@
     })();
     const COUNTER_PICK = { inf: 'razor', razor: 'arty', arty: 'inf', sniper: 'razor', heavy: 'arty', medic: 'razor' };
 
-    /* ---- 建设（build order 查表 + 资源就绪门控 + 升级线） ---- */
+    /* ---- 建设（build order 查表 + 资源就绪门控 + 升级线；陪玩期=tilt 目标驱动） ---- */
     const wallDown = st.teams[my].wall <= 0;                   // 危机态（被破墙）
-    const order = BUILD_ORDER[level] || BUILD_ORDER.balanced;
+    if (tilt) {
+      const b = carryBuild(s, tilt);
+      if (b) return b;
+    } else {
+    const order = (BUILD_ORDERS[level] || BUILD_ORDERS.balanced)[mem.opener] || BUILD_ORDERS.balanced[0];
     if (mem.bi < order.length) {
       const [kind, upLv] = order[mem.bi];
       const camp = campOf(s, kind);
@@ -671,21 +822,36 @@
         if (plot >= 0 && s.res.w >= cost.w && s.res.i >= cost.i) return { o: { k: 'build', plot, kind: 'mine' } };
       }
     }
+    }   // ← else（本档建序/升级线）结束；tilt 期跳过
 
-    /* ---- 出征（战斗时机差异化，§4 主轴；置于练兵前——CD 好即压上不被练兵饿死） ---- */
+    /* ---- 出征（战斗时机差异化，§4 主轴；置于练兵前——CD 好即压上不被练兵饿死）
+       爆发期三档应对分化（GAMES-71）：casual 守成（firstAt 慢半拍，仅危机反应）/
+       balanced 主动开战（池 ≥8 即征）/ competitive 抢先 rush（爆发窗 gate 10→8，
+       tick 1800 CD 好即满池压上）。陪玩补农（tilt='farm'）同守成口径；补军
+       （tilt='arms'）按 balanced 主动口径压上。 ---- */
     if (st.tick >= ERUPT_AT && s.marchCd <= 0) {
       const pool = poolN(s);
-      const gate = level === 'casual' ? 6 : level === 'balanced' ? 8 : 10;
-      if (mem.firstAt < 0) mem.firstAt = 2050 + ((rng() * 150) | 0);   // casual 首征慢半拍（§4：常 tick 2100+）
+      const gate = tilt === 'farm' ? 6
+        : level === 'casual' ? 6
+        : level === 'balanced' ? 8
+        : (st.tick < RUSH_WIN ? 8 : 10);                        // competitive 爆发 rush 窗降档（GAMES-71）
+      const hold = tilt === 'farm' || (level === 'casual' && !tilt);   // 保守出征档（守成；补军期转主动）
+      if (mem.firstAt < 0) mem.firstAt = 2050 + ((rng() * 150) | 0);   // 保守档首征慢半拍（§4：常 tick 2100+）
       /* 危机反应（§4）：破墙后 casual 30% 补征 / 其余档即征；城墙受损（未破）= 回防警报，
          全档即征——空城流不被首波白拆（§1.3 预期对局长的前提） */
       const wallHurt = st.teams[my].wall > 0 && st.teams[my].wall < WALL_HP;
       const crisis = (wallDown && (level === 'casual' ? rng() < 0.3 : true)) || wallHurt;
-      if (pool >= gate && (level !== 'casual' || st.tick >= mem.firstAt || crisis) || (crisis && pool >= 4)) {
+      if (pool >= gate && (!hold || st.tick >= mem.firstAt || crisis) || (crisis && pool >= 4)) {
         const units = {};
         for (let i = 0; i < UNIT_CODES.length; i++) { const c = UNIT_CODES[i]; if (s.pools[c].length) units[c] = s.pools[c].length; }
         let lane = 1;
-        if (level === 'balanced') {                            // 敌方最薄车道（slg F2 同款计数法）
+        if (tilt === 'arms') {                                  // 补军：敌方最薄车道（balanced 同款计数法）
+          const cnt = [0, 0, 0];
+          for (let i = 0; i < st.battle.units.length; i++) { const u = st.battle.units[i]; if (u.team === foe && u.hp > 0) cnt[u.lane]++; }
+          let min = cnt[0] + cnt[1] + cnt[2] + 1;
+          for (let l = 0; l < 3; l++) if (cnt[l] < min) min = cnt[l];
+          lane = cnt[1] === min ? 1 : cnt[0] === min ? 0 : 2;
+        } else if (level === 'balanced') {                      // 敌方最薄车道（slg F2 同款计数法）
           const cnt = [0, 0, 0];
           for (let i = 0; i < st.battle.units.length; i++) { const u = st.battle.units[i]; if (u.team === foe && u.hp > 0) cnt[u.lane]++; }
           let min = cnt[0] + cnt[1] + cnt[2] + 1;
@@ -708,19 +874,24 @@
     const camps = ['camp', 'works', 'range'].filter((k) => campOf(s, k));
     if (camps.length) {
       const pool = poolN(s);
-      const wantPool = level === 'casual' ? 6 : 12;
+      const wantPool = tilt === 'arms' ? 12 : tilt === 'farm' ? 6 : level === 'casual' ? 6 : 12;   // 补军=满池；补农/casual=轻装池（纯 inf 6）
       if (pool + queuedN(s) < wantPool) {
         let unit = 'inf', kind = 'camp';
         const campKindOf = (u) => (u === 'inf' || u === 'medic') ? 'camp' : (u === 'razor' || u === 'heavy') ? 'works' : 'range';
         const unitN = (c) => { let n = s.pools[c].length; for (let i = 0; i < s.queues.length; i++) if (s.queues[i].unit === c) n += s.queues[i].n; return n; };
-        const gate = level === 'casual' ? 6 : level === 'balanced' ? 8 : 10;                  // 与出征 gate 同值（铁系预留位=wantPool-gate）
-        const infCap = level === 'casual' ? wantPool : gate;                                  // casual 无混编不留位
-        const special = (2 * unitN(level === 'competitive' ? 'heavy' : 'razor') <= unitN('inf'));   // inf:special ≥2:1 断言
-        if (level === 'balanced') {
+        const gate = tilt === 'farm' ? 6 : level === 'casual' ? 6 : level === 'balanced' ? 8 : 10;   // 与出征 gate 同值（铁系预留位=wantPool-gate）
+        const infCap = (tilt === 'farm' || (level === 'casual' && !tilt)) ? wantPool : gate;  // casual/补农无混编不留位；补军留铁系位
+        /* 无情报混编 special 随档+开局树分形（GAMES-71）：balanced/补军=razor（性价比）；
+           competitive P0 军备竞速=heavy（重装碾压）、P1 装甲冲锋=razor（快攻列装早） */
+        const specialUnit = (level === 'competitive' && mem.opener !== 1) ? 'heavy' : 'razor';
+        const special = (2 * unitN(tilt === 'arms' ? 'razor' : specialUnit) <= unitN('inf'));  // inf:special ≥2:1 断言
+        if (tilt === 'arms') {
+          if (camps.indexOf('works') >= 0 && special) { unit = 'razor'; kind = 'works'; }      // 补军：混编拉真军团
+        } else if (level === 'balanced') {
           if (camps.indexOf('works') >= 0 && special) { unit = 'razor'; kind = 'works'; }
         } else if (level === 'competitive') {
           if (enemyMode) { unit = COUNTER_PICK[enemyMode]; kind = campKindOf(unit); }          // 情报克制
-          else if (campOf(s, 'works') && special) { unit = 'heavy'; kind = 'works'; }          // 无情报 inf:heavy 2:1
+          else if (campOf(s, 'works') && special) { unit = specialUnit; kind = 'works'; }      // 无情报 inf:special 2:1（开局树分形）
         }
         if (!campOf(s, kind)) kind = camps[0];
         if (BUILDS[kind] && BUILDS[kind].pool.indexOf(unit) < 0) unit = BUILDS[kind].pool[0];
@@ -749,8 +920,9 @@
 
     /* ---- rally（战斗层 c 壳；动态随战团——slg competitive 同款前导式：集结线=己方
        最前单位行再前导 2 行，战线推进则集结线随之前压（静态线会把军团钉死在中场
-       永不能攻城）；balanced 初值=前线 1/2 深度（§4）；competitive 破墙后压敌城心行 ---- */
-    if (st.tick >= ERUPT_AT && level !== 'casual') {
+       永不能攻城）；balanced 初值=前线 1/2 深度（§4）；competitive 破墙后压敌城心行；
+       陪玩补军（tilt='arms'）同用前导式（GAMES-71）；casual/补农不 rally（守成流） ---- */
+    if (st.tick >= ERUPT_AT && (level !== 'casual' || tilt === 'arms')) {
       for (let l = 0; l < 3; l++) {
         let front = -1;
         for (let i = 0; i < st.battle.units.length; i++) {
@@ -771,7 +943,7 @@
 
   const LEVELS = ['casual', 'balanced', 'competitive'];
 
-  return { META, UNITS, BUILDS, LEVELS, FORMA_ORDER, create, step, battleStep, execOp, serialize, deserialize, brain, fnv1a32, mulberry32,
+  return { META, UNITS, BUILDS, LEVELS, FORMA_ORDER, create, step, battleStep, execOp, serialize, deserialize, brain, setBotTuning, fnv1a32, mulberry32,
            consts: { ERUPT_AT, MARCH_CD, POOL_MAX, QUEUE_MAX, TRAIN_TICKS, WALL_HP, KEEP_HP, ROW_M, LANE_M, FIELD_H_M, PASSIVE } };
 });
 
