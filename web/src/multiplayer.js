@@ -34,6 +34,9 @@ const CATALOG = [
   { name: '迷宫突击', track: 'T7 预测', tech: 'S7' },
 ]
 
+/* gameId → 目录槽位（GAMES-75：feed 卡片口径与 21 槽目录同源——track/tech 措辞一致） */
+const SLOT_BY_ID = Object.fromEntries(CATALOG.map((g) => [g.url ? g.url.match(/multiplayer\/([^/]+)\//)[1] : '', g]))
+
 const GW = gwHttp()
 const $feed = document.getElementById('mp-feed')
 const $net = document.getElementById('mp-net')
@@ -57,9 +60,11 @@ function renderFeed(matches) {
     const href = m.joinable
       ? `${m.url}?room=${encodeURIComponent(m.roomId)}&gw=${encodeURIComponent(GW)}`
       : `${m.url}?room=${encodeURIComponent(m.roomId)}&gw=${encodeURIComponent(GW)}&mode=spectate`
+    const slot = SLOT_BY_ID[m.gameId]
+    const tag = slot ? `${slot.track} · ${slot.tech}` : m.mode   // 目录同源措辞（21 槽一致口径）
     return `<a class="mp-card" href="${href}">
       <div class="mp-card__name">${esc(m.name)}</div>
-      <div class="mp-card__meta"><span>${esc(m.mode)}</span><span>真人 ${m.humans}</span><span>Bot ${m.bots}</span>${m.spectators > 0 ? `<span>观战 ${m.spectators}</span>` : ''}</div>
+      <div class="mp-card__meta"><span>${esc(tag)}</span><span>真人 ${m.humans}</span><span>Bot ${m.bots}</span>${m.spectators > 0 ? `<span>观战 ${m.spectators}</span>` : ''}</div>
       <div class="mp-card__foot"><span class="mp-card__time">已进行 ${mmss(m.elapsedMs)}</span><span class="${cls}">${joinLabel}</span></div>
     </a>`
   }).join('')

@@ -42,7 +42,14 @@
   var bannerTxt = '', bannerTtl = 0, eruptSeen = false;
   var fx = [], shake = 0, marchPend = null;
   var fpsV = 60, inputMaxMs = 0, lastInputAt = 0;
-  var HUDF = {};                     // GAMES-57 字号自证登记表（每帧覆写；识图复检断言源）
+  var HUDF = {};                     // GAMES-75 字号登记表（HF 落笔即登记=运行时自证；识图复检断言源）
+  /* 唯一字号入口（hud-font-standard §1：P0 ≥13/600 · P1 ≥11 · P2 ≥9）——设 ctx.font
+   * 同时登记，hudFonts() 即读回真实绘制字号；条件态键（面板/CD 环）静态正则兜底审计 */
+  function HF(grp, key, px, w) {
+    ctx.font = (w || 400) + ' ' + px + 'px ' + FONT;
+    (HUDF[grp] || (HUDF[grp] = {}))[key] = px;
+    return ctx.font;
+  }
   var qCmd = [];                     // 离线/QA 指令队列（cmd 注入通道）
 
   /* ================= 手感层（GAMES-72：纯呈现，sim/brain 零改动） =================
@@ -114,7 +121,7 @@
       } else if (p.k === 'ftxt') {             // 资源扣减/入账飘字（屏幕层）
         p.y += p.vy * f;
         ctx.globalAlpha = Math.min(1, lt * 2); ctx.fillStyle = p.col;
-        ctx.font = '600 11px ' + FONT; ctx.textAlign = 'center';
+        HF('fx', 'float', 11, 600); ctx.textAlign = 'center';
         ctx.fillText(p.txt, p.x, p.y); ctx.textAlign = 'left';
       } else if (p.k === 'flash') {            // 爆发/破城全屏闪（屏幕层）
         ctx.globalAlpha = lt * 0.45; ctx.fillStyle = p.col || 'rgb(255,210,150)';
@@ -363,37 +370,63 @@
     if (now - fpsAt > 500) { fpsV = Math.round(1000 / Math.max(0.1, fpsAcc / Math.max(1, fpsN))); fpsAt = now; fpsAcc = 0; fpsN = 0; }
   }
 
+  /* 资源形状徽（色盲双编码第二通道，hud-font-standard §3 口径）：粮●/木■/铁▲——
+   * 色相外冗余，红绿色盲下 粮(金)/木(褐) 同化时靠形状可辨 */
+  function resGlyph(r, x, y) {
+    ctx.beginPath();
+    if (r === 'g') { ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill(); }
+    else if (r === 'w') { ctx.fillRect(x - 1.8, y - 1.8, 3.6, 3.6); }
+    else { ctx.moveTo(x, y - 2.4); ctx.lineTo(x + 2.2, y + 1.8); ctx.lineTo(x - 2.2, y + 1.8); ctx.closePath(); ctx.fill(); }
+  }
+  /* 爆发时间轴条（GAMES-75 信息层级）：0──筑城(琥珀)──◆1800──鏖战(青灰)──maxTicks，
+   * 白色游标=当前刻；与双层 HUD 的行分界线一体（建设排 ↔ 战况排） */
+  function drawTimeline(t) {
+    var mt = (mode === 'offline' && simState && simState.maxTicks) || S.META.maxTicks;
+    var x0 = 12, w = 351, y = 52, ew = w * ERUPT_AT / mt;
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(x0, y, w, 3);            // 轨
+    ctx.fillStyle = 'rgba(232,196,106,.32)'; ctx.fillRect(x0, y, ew, 3);           // 筑城段
+    ctx.fillStyle = 'rgba(120,150,170,.28)'; ctx.fillRect(x0 + ew, y, w - ew, 3);  // 鏖战段
+    var warn10 = t >= ERUPT_AT - 100 && t < ERUPT_AT;
+    ctx.fillStyle = t >= ERUPT_AT ? '#3dc8e8' : '#ff7a52';                         // 爆发点菱形
+    ctx.beginPath(); ctx.moveTo(x0 + ew, y - 2); ctx.lineTo(x0 + ew + 2.4, y + 1.5); ctx.lineTo(x0 + ew, y + 5); ctx.lineTo(x0 + ew - 2.4, y + 1.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = warn10 && (t % 20) < 10 ? '#ff7a52' : '#f0e8d8';               // 当前刻游标
+    ctx.fillRect(x0 + Math.max(0, Math.min(w, w * t / mt)) - 1, y - 1.5, 2, 6);
+  }
   function drawTop(now) {
     var me = seatView(mySeat) || seatView(0);
-    ctx.fillStyle = '#1a130c'; ctx.fillRect(0, 0, W, TOP_H);
-    ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, TOP_H - 1, W, 1);
     var t = tickView();
-    HUDF.top = { res: 13, rate: 11, clock: 13, merit: 13 };
-    HUDF.fx = { float: 11 };          // GAMES-72 手感层飘字（P1 档；爆发倒计时脉动基字号 13 见 top.clock）
+    /* 双层 HUD 分区（GAMES-75）：上排=建设层（资源/产出·暖底），下排=战斗层
+     * （倒计时/战功·随阶段转冷），行间嵌爆发时间轴条 */
+    ctx.fillStyle = '#1a130c'; ctx.fillRect(0, 0, W, TOP_H);
+    ctx.fillStyle = 'rgba(232,196,106,.05)'; ctx.fillRect(0, 0, W, 27);
+    ctx.fillStyle = t >= ERUPT_AT ? 'rgba(61,200,232,.05)' : 'rgba(232,163,61,.05)'; ctx.fillRect(0, 27, W, 24);
+    drawTimeline(t);
+    ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, TOP_H - 1, W, 1);
     if (me) {
       var xs = [12, 128, 244];
       ['g', 'w', 'i'].forEach(function (r, idx) {
-        ctx.fillStyle = RES_COLOR[r]; ctx.font = '600 11px ' + FONT;
-        ctx.fillText(RES_CN[r], xs[idx], 20);
-        ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT;
+        ctx.fillStyle = RES_COLOR[r]; resGlyph(r, xs[idx], 16);
+        HF('top', 'resLab', 11, 600);
+        ctx.fillText(RES_CN[r], xs[idx] + 6, 20);
+        ctx.fillStyle = '#f0e8d8'; HF('top', 'res', 13, 600);
         var rate = { g: 3, w: 2, i: 1 }[r] + ecoYield(me, r);
-        ctx.fillText(String(me.res[r]) + '  +' + rate + '/s', xs[idx] + 14, 21);
+        ctx.fillText(String(me.res[r]) + '  +' + rate + '/s', xs[idx] + 20, 21);
       });
     }
     if (t < ERUPT_AT) {
       var left = Math.ceil((ERUPT_AT - t) / 10);
       var warn10 = started && t >= ERUPT_AT - 100;                    // §1 末 10s 倒计时红脉动
       ctx.fillStyle = warn10 && (t % 20) < 10 ? '#ff7a52' : '#e8c46a';
-      ctx.font = '600 ' + (warn10 ? 14 : 13) + 'px ' + FONT; ctx.textAlign = 'center';
-      ctx.fillText('军团战爆发 ' + String(Math.floor(left / 60)) + ':' + String(left % 60).padStart(2, '0'), W / 2, 43);
+      HF('top', 'clock', warn10 ? 14 : 13, 600); ctx.textAlign = 'center';
+      ctx.fillText('军团战爆发 ' + String(Math.floor(left / 60)) + ':' + String(left % 60).padStart(2, '0'), W / 2, 44);
     } else {
       var tm = teamsView();
-      ctx.font = '600 13px ' + FONT; ctx.textAlign = 'center';
-      ctx.fillStyle = TEAM_COLOR.A; ctx.fillText('战功 ' + tm.A.merit, W / 2 - 55, 43);
-      ctx.fillStyle = '#8b93a7'; ctx.fillText(':', W / 2, 43);
-      ctx.fillStyle = TEAM_COLOR.B; ctx.fillText(String(tm.B.merit), W / 2 + 32, 43);
-      ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT;
-      ctx.fillText(Math.floor(t / 600) + ':' + String(Math.floor(t / 10) % 60).padStart(2, '0'), W - 30, 21);
+      HF('top', 'merit', 13, 600); ctx.textAlign = 'center';
+      ctx.fillStyle = TEAM_COLOR.A; ctx.fillText('战功 ' + tm.A.merit, W / 2 - 55, 44);
+      ctx.fillStyle = '#8b93a7'; ctx.fillText(':', W / 2, 44);
+      ctx.fillStyle = TEAM_COLOR.B; ctx.fillText(String(tm.B.merit), W / 2 + 32, 44);
+      ctx.fillStyle = '#8b93a7'; HF('top', 'elap', 13, 400);          // P0 数字归位 11→13（hud-font-standard §1 裁量补录）
+      ctx.fillText(Math.floor(t / 600) + ':' + String(Math.floor(t / 10) % 60).padStart(2, '0'), W - 34, 21);
     }
     ctx.textAlign = 'left';
   }
@@ -409,18 +442,17 @@
     ctx.strokeStyle = 'rgba(232,196,106,.05)'; ctx.lineWidth = 1;
     for (var gx = 0; gx < W; gx += 25) { ctx.beginPath(); ctx.moveTo(gx, TOP_H); ctx.lineTo(gx, TOP_H + MID_H); ctx.stroke(); }
     for (var gy = TOP_H; gy < TOP_H + MID_H; gy += 25) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
-    HUDF.city = { bname: 11, blv: 11, hplabel: 11, hp: 13, ally: 9 };
     var allySeat = mySeat ^ 2;
     var av = seatView(allySeat);
-    ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+    ctx.fillStyle = '#8b93a7'; HF('city', 'ally', 9, 400);
     ctx.fillText('盟友领地（' + ((rosterMap[allySeat] && rosterMap[allySeat].name) || 'Bot') + '）', 12, TOP_H + 14);
     for (var i = 0; i < 4; i++) {
       var r = GEO.plotsAlly[i], p = av && av.plots && av.plots[i];
       ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.fillRect(r.x, r.y, r.w, r.h);
-      if (p) { ctx.fillStyle = 'rgba(176,138,90,.35)'; ctx.fillRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8); ctx.fillStyle = '#a89a80'; ctx.font = '9px ' + FONT; ctx.fillText(S.BUILDS[p.kind].cn + ' Lv' + p.lv, r.x + 6, r.y + 16); }
+      if (p) { ctx.fillStyle = 'rgba(176,138,90,.35)'; ctx.fillRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8); ctx.fillStyle = '#a89a80'; HF('city', 'allyPlot', 9, 400); ctx.fillText(S.BUILDS[p.kind].cn + ' Lv' + p.lv, r.x + 6, r.y + 16); }
     }
     var me = seatView(mySeat);
-    ctx.fillStyle = '#e8c46a'; ctx.font = '11px ' + FONT;
+    ctx.fillStyle = '#e8c46a'; HF('city', 'ownLab', 11, 400);
     ctx.fillText('己方建筑位（6 选 4）', 214, TOP_H + 14);
     for (var j = 0; j < 4; j++) {
       var rr = GEO.plotsOwn[j], pp = me && me.plots && me.plots[j];
@@ -429,13 +461,13 @@
       ctx.setLineDash(pp ? [] : [4, 3]); ctx.strokeRect(rr.x + .5, rr.y + .5, rr.w - 1, rr.h - 1); ctx.setLineDash([]);
       if (pp) {
         ctx.fillStyle = 'rgba(176,138,90,.5)'; ctx.fillRect(rr.x + 5, rr.y + 5, rr.w - 10, rr.h - 10);
-        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT;
+        ctx.fillStyle = '#e8dcc8'; HF('city', 'bname', 11, 600);
         ctx.fillText(S.BUILDS[pp.kind].cn, rr.x + 8, rr.y + 22);
-        ctx.fillStyle = '#e8c46a'; ctx.font = '600 11px ' + FONT;
+        ctx.fillStyle = '#e8c46a'; HF('city', 'blv', 11, 600);
         ctx.fillText('Lv' + pp.lv, rr.x + 8, rr.y + 38);
-        if (pp.lv < 3) { ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT; ctx.fillText('可升级', rr.x + 8, rr.y + 54); }
+        if (pp.lv < 3) { ctx.fillStyle = '#8b93a7'; HF('city', 'up', 9, 400); ctx.fillText('可升级', rr.x + 8, rr.y + 54); }
       } else {
-        ctx.fillStyle = '#6b6252'; ctx.font = '11px ' + FONT; ctx.fillText('+ 建造', rr.x + 8, rr.y + 22);
+        ctx.fillStyle = '#6b6252'; HF('city', 'add', 11, 400); ctx.fillText('+ 建造', rr.x + 8, rr.y + 22);
       }
     }
     /* 联盟城心/城墙 HP 镜像（战斗层只读投影，§5.4） */
@@ -446,7 +478,7 @@
     var q = me && me.queues && me.queues[0];
     if (q) {
       ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fillRect(120, TOP_H + 230, 135, 46);
-      ctx.fillStyle = '#d8ccb8'; ctx.font = '9px ' + FONT;
+      ctx.fillStyle = '#d8ccb8'; HF('city', 'qp', 9, 400);
       ctx.fillText(S.BUILDS[q.kind].cn + ' · ' + UNIT_CN[q.unit] + ' ×' + q.n, 126, TOP_H + 244);
       var prog = mode === 'offline' ? q.prog / S.consts.TRAIN_TICKS[(q.tier || 1) - 1] : 0.5;
       ctx.fillStyle = 'rgba(232,196,106,.25)'; ctx.fillRect(126, TOP_H + 252, 123, 6);
@@ -456,13 +488,26 @@
   function drawHpMirror(x, y, o, label, max) {
     var hp = o.kind === 'wall' ? o.hp : o.keep;
     ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fillRect(x, y, 68, 40);
-    ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText(label, x + 6, y + 14);
-    ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT; ctx.fillText(String(hp), x + 6, y + 32);
+    ctx.fillStyle = '#8b93a7'; HF('city', 'hplabel', 11, 400); ctx.fillText(label, x + 6, y + 14);
+    ctx.fillStyle = '#f0e8d8'; HF('city', 'hp', 13, 600); ctx.fillText(String(hp), x + 6, y + 32);
     ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(x + 6, y + 34, 56, 3);
     ctx.fillStyle = TEAM_COLOR[myTeam]; ctx.fillRect(x + 6, y + 34, 56 * Math.max(0, hp) / max, 3);
   }
 
   /* ---------- 战场表盘（slg 车道制同款骨架，§2.1） ---------- */
+  var frontRows = [-1, -1, -1];      // 战线行（QA 钩子 __GAMES_DEBUG__.front() 断言源）
+  /* 兵种形状徽（色盲双编码第二通道）：步●/装▬/炮▲/狙✚/医✚绿/重▢——同 T 档不同兵种
+   * 靠形状可辨（底盘形状是阵营通道，勿混） */
+  function unitGlyph(code, x, y) {
+    ctx.strokeStyle = 'rgba(240,232,216,.85)'; ctx.fillStyle = 'rgba(240,232,216,.85)'; ctx.lineWidth = 1;
+    var gy = y + 9;
+    if (code === 'inf') { ctx.beginPath(); ctx.arc(x, gy, 1.4, 0, Math.PI * 2); ctx.fill(); }
+    else if (code === 'razor') { ctx.fillRect(x - 2.2, gy - 1, 4.4, 2); }
+    else if (code === 'arty') { ctx.beginPath(); ctx.moveTo(x, gy - 1.8); ctx.lineTo(x + 1.8, gy + 1.4); ctx.lineTo(x - 1.8, gy + 1.4); ctx.closePath(); ctx.fill(); }
+    else if (code === 'sniper') { ctx.beginPath(); ctx.moveTo(x - 2, gy); ctx.lineTo(x + 2, gy); ctx.moveTo(x, gy - 2); ctx.lineTo(x, gy + 2); ctx.stroke(); }
+    else if (code === 'medic') { ctx.strokeStyle = '#9fce8f'; ctx.beginPath(); ctx.moveTo(x - 2, gy); ctx.lineTo(x + 2, gy); ctx.moveTo(x, gy - 2); ctx.lineTo(x, gy + 2); ctx.stroke(); }
+    else { ctx.strokeRect(x - 2, gy - 2, 4, 4); }   // heavy 空心方
+  }
   function fieldY(rowM) { return TOP_H + rowM / 1000 / ROW_PX * ROW_PX; }
   function laneX(lane, off) { return 12 + lane * 117 + (off || 0); }
   function drawWar(now) {
@@ -470,7 +515,6 @@
     ctx.strokeStyle = 'rgba(255,255,255,.06)';
     for (var l = 0; l <= 3; l++) { ctx.beginPath(); ctx.moveTo(12 + l * 117, TOP_H); ctx.lineTo(12 + l * 117, TOP_H + 505); ctx.stroke(); }
     for (var rgy = 0; rgy <= 20; rgy++) { ctx.beginPath(); ctx.moveTo(12, TOP_H + rgy * 25.25); ctx.lineTo(363, TOP_H + rgy * 25.25); ctx.stroke(); }
-    HUDF.war = { hp: 13, lane: 9, unitTier: 9, cd: 13, poolWar: 13 };
     var tm = teamsView();
     /* B 墙/心（上） */
     drawSideBars(TOP_H + 4, 'B', tm.B, true);
@@ -490,27 +534,49 @@
       } else {
         ctx.fillStyle = b.team === 'A' ? 'rgba(232,163,61,.6)' : 'rgba(61,200,232,.6)';
         ctx.fillRect(W / 2 - 28, y - 8, 56, 16);
-        ctx.fillStyle = '#0b0e14'; ctx.font = '600 9px ' + FONT; ctx.textAlign = 'center';
+        ctx.fillStyle = '#0b0e14'; HF('war', 'keep', 9, 600); ctx.textAlign = 'center';
         ctx.fillText('城心', W / 2, y + 3); ctx.textAlign = 'left';
       }
     }
-    /* 单位（A 椭圆底盘/B 方形；己方白圈；GAMES-74 O2：重种后 y 插值/新单位淡入） */
+    /* 单位（A 椭圆底盘/B 方形；己方白圈；GAMES-74 O2：重种后 y 插值/新单位淡入）+ 兵种形状徽（色盲第二通道，§3） */
     var us = battle.units;
+    var aMin = [99, 99, 99], bMax = [-1, -1, -1];   // 战线采样：A 最北行 / B 最南行
     for (var u = 0; u < us.length; u++) {
       var un = us[u];
-      var x = laneX(un.lane, ((un.id * 37) % 40) - 14), y = TOP_H + (warBlendY(un) / 25000 + 0.5) * 25.25;
+      var by = warBlendY(un);   // GAMES-74 O2：过渡窗内取插值 y（窗外=un.y），战线同源防撕裂
+      var x = laneX(un.lane, ((un.id * 37) % 40) - 14), y = TOP_H + (by / 25000 + 0.5) * 25.25;
+      var row = by / 25000 + 0.5;   // 行域 [0,20]（25.25px/行）
+      if (un.team === 'A') { if (row < aMin[un.lane]) aMin[un.lane] = row; }
+      else if (row > bMax[un.lane]) bMax[un.lane] = row;
       var col = TEAM_COLOR[un.team];
       ctx.globalAlpha = warBlendA(un);
       ctx.fillStyle = un.code === 'medic' ? '#d8e8d0' : col;
       if (un.team === 'A') { ctx.beginPath(); ctx.ellipse(x, y, 7, 5, 0, 0, Math.PI * 2); ctx.fill(); }
       else ctx.fillRect(x - 6, y - 5, 12, 10);
       if (un.seat === mySeat) { ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke(); }
-      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 9px ' + FONT; ctx.fillText('T' + un.tier, x + 6, y - 5);
+      unitGlyph(un.code, x, y);
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; HF('war', 'unitTier', 9, 600); ctx.fillText('T' + un.tier, x + 6, y - 5);
       /* 血条：A 实心 / B 分段 */
       var w = 14 * un.hp / un.maxHp;
       if (un.team === 'A') { ctx.fillStyle = col; ctx.fillRect(x - 7, y - 9, w, 2); }
       else { ctx.fillStyle = col; for (var sg = 0; sg < 4; sg++) { if (w > sg * 3.5) ctx.fillRect(x - 7 + sg * 4, y - 9, 2.5, 2); } }
       ctx.globalAlpha = 1;
+    }
+    /* 双方战线可视化（GAMES-75 信息层级）：车道内 A/B 前锋中线（虚线带+两端菱形）——
+     * 双方同车道在场即成立（交锋前=无人区中线，交锋后=接触带），单边缺席=无战线 */
+    for (var fl = 0; fl < 3; fl++) {
+      if (bMax[fl] < 0 || aMin[fl] > 90) { frontRows[fl] = -1; continue; }
+      var frow = (aMin[fl] + bMax[fl]) / 2;
+      frontRows[fl] = Math.round(frow * 10) / 10;
+      var fy = TOP_H + (frow + 0.5) * 25.25;
+      ctx.strokeStyle = 'rgba(240,232,216,.5)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(laneX(fl, 8), fy); ctx.lineTo(laneX(fl, 102), fy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(240,232,216,.65)';
+      for (var fe = 0; fe < 2; fe++) {
+        var fx = laneX(fl, fe ? 104 : 4);
+        ctx.beginPath(); ctx.moveTo(fx, fy - 3); ctx.lineTo(fx + 2.4, fy); ctx.lineTo(fx, fy + 3); ctx.lineTo(fx - 2.4, fy); ctx.closePath(); ctx.fill();
+      }
     }
     /* 集结旗（阵营色形状双编码：A 三角旗/B 燕尾旗） */
     var myRally = battle.rally[mySeat] || [-1, -1, -1];
@@ -529,12 +595,12 @@
       ctx.strokeStyle = 'rgba(232,196,106,.7)'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(W - 26, TOP_H + 462, 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - me.marchCd / MARCH_CD)); ctx.stroke();
       ctx.lineWidth = 1;
-      ctx.fillStyle = '#e8c46a'; ctx.font = '600 13px ' + FONT; ctx.fillText(String(Math.ceil(me.marchCd / 10)), W - 32, TOP_H + 467);
+      ctx.fillStyle = '#e8c46a'; HF('war', 'cd', 13, 600); ctx.fillText(String(Math.ceil(me.marchCd / 10)), W - 32, TOP_H + 467);
     }
   }
   function drawSideBars(y, team, o, top) {
     ctx.fillStyle = 'rgba(255,255,255,.04)'; ctx.fillRect(12, y, 351, 30);
-    ctx.fillStyle = TEAM_COLOR[team]; ctx.font = '600 13px ' + FONT;
+    ctx.fillStyle = TEAM_COLOR[team]; HF('war', 'hp', 13, 600);
     ctx.fillText(team + ' 心 ' + o.keep, 20, y + 20);
     ctx.fillText('墙 ' + o.wall, 130, y + 20);
     ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(190, y + 8, 160, 5);
@@ -547,25 +613,27 @@
   function drawBottom() {
     ctx.fillStyle = '#171009'; ctx.fillRect(0, H - BOT_H, W, BOT_H);
     ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, H - BOT_H, W, 1);
-    HUDF.bottom = { pool: 16, q: 9, tog: 13, quick: 11 };
+    /* 双层 HUD 分区（底栏半边）：左=建设层（兵池/队列）｜右=战斗层（快出/切换），发丝分界 */
+    ctx.fillStyle = 'rgba(232,196,106,.04)'; ctx.fillRect(0, H - 78, 228, 38);
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(228, H - 84, 1, 44);
     var me = seatView(mySeat);
     var pn = poolN(me);
     /* 兵池徽标（tap → 出征面板） */
     ctx.fillStyle = pn > 0 ? 'rgba(232,163,61,.25)' : 'rgba(255,255,255,.05)';
     ctx.fillRect(12, H - 78, 72, 34);
     ctx.strokeStyle = 'rgba(232,163,61,.6)'; ctx.strokeRect(12.5, H - 77.5, 71, 33);
-    ctx.fillStyle = '#e8dcc8'; ctx.font = '600 16px ' + FONT;
+    ctx.fillStyle = '#e8dcc8'; HF('bottom', 'pool', 16, 600);
     ctx.fillText(String(pn), 22, H - 55);
-    ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText('/12 兵池', 44, H - 55);
+    ctx.fillStyle = '#8b93a7'; HF('bottom', 'poolLab', 11, 400); ctx.fillText('/12 兵池', 44, H - 55);
     /* 队列摘要 */
     var q = me && me.queues && me.queues[0];
-    ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+    ctx.fillStyle = '#8b93a7'; HF('bottom', 'q', 9, 400);
     ctx.fillText(q ? '练兵中 ' + UNIT_CN[q.unit] + '×' + q.n : '队列空闲', 96, H - 58);
     /* 快出条（战场表盘：一键复用上次编队） */
     if (dial === 'war') {
       ctx.fillStyle = lastAtk ? 'rgba(232,196,106,.3)' : 'rgba(255,255,255,.05)';
       ctx.fillRect(GEO.quickBar.x, GEO.quickBar.y, GEO.quickBar.w, GEO.quickBar.h);
-      ctx.fillStyle = lastAtk ? '#e8c46a' : '#6b6252'; ctx.font = '600 11px ' + FONT;
+      ctx.fillStyle = lastAtk ? '#e8c46a' : '#6b6252'; HF('bottom', 'quick', 11, 600);
       ctx.fillText('快出 · 上次编队', GEO.quickBar.x + 10, GEO.quickBar.y + 21);
     }
     /* 切换钮（当前盘高亮） */
@@ -576,7 +644,7 @@
     ctx.fillStyle = on ? 'rgba(232,196,106,.35)' : 'rgba(255,255,255,.05)';
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.strokeStyle = on ? '#e8c46a' : 'rgba(255,255,255,.15)'; ctx.strokeRect(r.x + .5, r.y + .5, r.w - 1, r.h - 1);
-    ctx.fillStyle = on ? '#f0e8d8' : '#8b93a7'; ctx.font = '600 13px ' + FONT; ctx.textAlign = 'center';
+    ctx.fillStyle = on ? '#f0e8d8' : '#8b93a7'; HF('bottom', 'tog', 13, 600); ctx.textAlign = 'center';
     ctx.fillText(txt, r.x + r.w / 2, r.y + 24);
     if (warn && !on) { ctx.fillStyle = '#e8a33d'; ctx.beginPath(); ctx.arc(r.x + r.w - 8, r.y + 8, 3, 0, Math.PI * 2); ctx.fill(); }
     ctx.textAlign = 'left';
@@ -590,7 +658,7 @@
     if (panel.type === 'build' || panel.type === 'upgrade') {
       var me = seatView(mySeat);
       var cur = me.plots[panel.plot];
-      ctx.fillStyle = '#e8dcc8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillStyle = '#e8dcc8'; HF('panel', 'title', 13, 600);
       ctx.fillText(panel.type === 'build' ? '建造（同类至多 1 座）' : '升级 ' + S.BUILDS[cur.kind].cn + ' → Lv' + (cur.lv + 1), W / 2, TOP_H + 34);
       var kinds = panel.type === 'build' ? ['farm', 'lumber', 'mine', 'camp', 'works', 'range'] : [cur.kind];
       for (var i = 0; i < kinds.length; i++) {
@@ -601,21 +669,21 @@
         ctx.fillStyle = afford ? 'rgba(232,196,106,.12)' : 'rgba(255,255,255,.04)';
         ctx.fillRect(x, y, 106, 112);
         ctx.strokeStyle = afford ? 'rgba(232,196,106,.4)' : 'rgba(255,255,255,.1)'; ctx.strokeRect(x + .5, y + .5, 105, 111);
-        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT;
+        ctx.fillStyle = '#e8dcc8'; HF('panel', 'name', 11, 600);
         ctx.fillText(S.BUILDS[k].cn + (panel.type === 'build' ? '' : ' Lv' + (cur.lv + 1)), x + 53, y + 22);
-        ctx.fillStyle = afford ? '#e8c46a' : '#a05a4a'; ctx.font = '11px ' + FONT;
+        ctx.fillStyle = afford ? '#e8c46a' : '#a05a4a'; HF('panel', 'cost', 11, 400);
         ctx.fillText(Object.keys(cost).map(function (r) { return RES_CN[r] + cost[r] / 1000; }).join(' '), x + 53, y + 44);
-        ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+        ctx.fillStyle = '#8b93a7'; HF('panel', 'desc', 9, 400);
         var desc = S.BUILDS[k].yield ? '产出 ' + Object.keys(S.BUILDS[k].yield[0]).map(function (r) { return RES_CN[r] + '+' + (S.BUILDS[k].yield[0][r] / 100); }).join(' ') + '/s' : '兵池 ' + S.BUILDS[k].pool.map(function (u) { return UNIT_CN[u]; }).join('/');
         ctx.fillText(desc, x + 53, y + 64);
-        ctx.fillStyle = '#f0e8d8'; ctx.font = '600 11px ' + FONT;
+        ctx.fillStyle = '#f0e8d8'; HF('panel', 'cardBtn', 11, 600);
         ctx.fillText(afford ? '建造' : '资源不足', x + 53, y + 96);
         GEO.panelCards[i] = { x: x, y: y, w: 106, h: 112, kind: k, afford: afford };
       }
     } else if (panel.type === 'train') {
       var me2 = seatView(mySeat);
       var camp = me2.plots[panel.plot];
-      ctx.fillStyle = '#e8dcc8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillStyle = '#e8dcc8'; HF('panel', 'title', 13, 600);
       ctx.fillText(S.BUILDS[panel.kind].cn + ' Lv' + camp.lv + '（T' + camp.lv + ' 档）', W / 2, TOP_H + 34);
       var pool2 = S.BUILDS[panel.kind].pool;
       for (var i2 = 0; i2 < pool2.length; i2++) {
@@ -625,16 +693,16 @@
         ctx.fillStyle = atkSel === u2 || (atkSel === null && i2 === 0) ? 'rgba(232,196,106,.18)' : 'rgba(255,255,255,.05)';
         ctx.fillRect(x2, y2, 130, 120);
         ctx.strokeStyle = 'rgba(232,196,106,.35)'; ctx.strokeRect(x2 + .5, y2 + .5, 129, 119);
-        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT; ctx.fillText(UNIT_CN[u2], x2 + 65, y2 + 24);
-        ctx.fillStyle = afford2 ? '#e8c46a' : '#a05a4a'; ctx.font = '11px ' + FONT;
+        ctx.fillStyle = '#e8dcc8'; HF('panel', 'name', 11, 600); ctx.fillText(UNIT_CN[u2], x2 + 65, y2 + 24);
+        ctx.fillStyle = afford2 ? '#e8c46a' : '#a05a4a'; HF('panel', 'cost', 11, 400);
         ctx.fillText('粮' + c2[0] + (c2[1] ? ' 铁' + c2[1] : ''), x2 + 65, y2 + 46);
-        ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT;
+        ctx.fillStyle = '#8b93a7'; HF('panel', 'desc', 9, 400);
         ctx.fillText('HP' + S.UNITS[u2].hp[camp.lv - 1] + ' 攻' + S.UNITS[u2].atk[camp.lv - 1], x2 + 65, y2 + 64);
         ctx.fillText('T' + camp.lv + ' · ' + S.consts.TRAIN_TICKS[camp.lv - 1] / 10 + 's/个', x2 + 65, y2 + 80);
         GEO.panelCards[i2] = { x: x2, y: y2, w: 130, h: 120, unit: u2, afford: afford2 };
       }
       /* 步进 1-5 */
-      ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillStyle = '#f0e8d8'; HF('panel', 'n', 13, 600);
       ctx.fillText('×' + trainN, W / 2, TOP_H + 230);
       GEO.panelMinus = { x: W / 2 - 60, y: TOP_H + 208, w: 40, h: 34 };
       GEO.panelPlus = { x: W / 2 + 20, y: TOP_H + 208, w: 40, h: 34 };
@@ -643,28 +711,28 @@
       ctx.strokeRect(GEO.panelPlus.x, GEO.panelPlus.y, 40, 34); ctx.fillText('+', GEO.panelPlus.x + 20, TOP_H + 231);
     } else if (panel.type === 'attack') {
       var me3 = seatView(mySeat);
-      ctx.fillStyle = '#e8dcc8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillStyle = '#e8dcc8'; HF('panel', 'title', 13, 600);
       ctx.fillText('出征编队（整池 ≤12 · CD ' + MARCH_CD / 10 + 's）', W / 2, TOP_H + 34);
       var codes = UNIT_CODES.filter(function (c) { return me3.pool[c] > 0; });
-      if (!codes.length) { ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText('兵池为空——先练兵', W / 2, TOP_H + 80); }
+      if (!codes.length) { ctx.fillStyle = '#8b93a7'; HF('panel', 'empty', 11, 400); ctx.fillText('兵池为空——先练兵', W / 2, TOP_H + 80); }
       for (var i3 = 0; i3 < codes.length; i3++) {
         var u3 = codes[i3], x3 = 18 + (i3 % 3) * 118, y3 = TOP_H + 56 + ((i3 / 3) | 0) * 74;
         var have = me3.pool[u3], want = panel.sel[u3] || 0;
         ctx.fillStyle = 'rgba(232,196,106,' + (want ? 0.25 : 0.08) + ')';
         ctx.fillRect(x3, y3, 106, 62);
         ctx.strokeStyle = want ? '#e8c46a' : 'rgba(255,255,255,.15)'; ctx.strokeRect(x3 + .5, y3 + .5, 105, 61);
-        ctx.fillStyle = '#e8dcc8'; ctx.font = '600 11px ' + FONT; ctx.fillText(UNIT_CN[u3] + ' ' + want + '/' + have, x3 + 53, y3 + 26);
-        ctx.fillStyle = '#8b93a7'; ctx.font = '9px ' + FONT; ctx.fillText('tap +1 / 长按清零', x3 + 53, y3 + 46);
+        ctx.fillStyle = '#e8dcc8'; HF('panel', 'name', 11, 600); ctx.fillText(UNIT_CN[u3] + ' ' + want + '/' + have, x3 + 53, y3 + 26);
+        ctx.fillStyle = '#8b93a7'; HF('panel', 'desc', 9, 400); ctx.fillText('tap +1 / 长按清零', x3 + 53, y3 + 46);
         GEO.panelCards[i3] = { x: x3, y: y3, w: 106, h: 62, atkUnit: u3 };
       }
       /* 车道三分选 */
-      ctx.fillStyle = '#8b93a7'; ctx.font = '11px ' + FONT; ctx.fillText('选择车道', W / 2, TOP_H + 216);
+      ctx.fillStyle = '#8b93a7'; HF('panel', 'laneLab', 11, 400); ctx.fillText('选择车道', W / 2, TOP_H + 216);
       for (var l3 = 0; l3 < 3; l3++) {
         var xl = 68 + l3 * 90;
         ctx.fillStyle = panel.lane === l3 ? 'rgba(232,163,61,.35)' : 'rgba(255,255,255,.06)';
         ctx.fillRect(xl, TOP_H + 226, 78, 40);
         ctx.strokeStyle = panel.lane === l3 ? '#e8a33d' : 'rgba(255,255,255,.15)'; ctx.strokeRect(xl + .5, TOP_H + 226.5, 77, 39);
-        ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT; ctx.fillText('车道 ' + l3, xl + 39, TOP_H + 251);
+        ctx.fillStyle = '#f0e8d8'; HF('panel', 'lane', 13, 600); ctx.fillText('车道 ' + l3, xl + 39, TOP_H + 251);
         GEO.panelLanes[l3] = { x: xl, y: TOP_H + 226, w: 78, h: 40, lane: l3 };
       }
     }
@@ -672,12 +740,12 @@
     if (panel.type !== 'upgrade') {
       GEO.panelOk = { x: W / 2 - 50, y: TOP_H + 282, w: 100, h: 42 };
       ctx.fillStyle = 'rgba(232,196,106,.35)'; ctx.fillRect(GEO.panelOk.x, GEO.panelOk.y, 100, 42);
-      ctx.fillStyle = '#f0e8d8'; ctx.font = '600 13px ' + FONT;
+      ctx.fillStyle = '#f0e8d8'; HF('panel', 'ok', 13, 600);
       ctx.fillText(panel.type === 'build' ? '建 造' : panel.type === 'train' ? '入 队' : '出 征', W / 2, GEO.panelOk.y + 27);
     }
     GEO.panelClose = { x: W - 46, y: TOP_H + 10, w: 36, h: 30 };
     ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(GEO.panelClose.x, GEO.panelClose.y, 36, 30);
-    ctx.fillStyle = '#8b93a7'; ctx.font = '600 13px ' + FONT; ctx.fillText('×', W - 28, TOP_H + 31);
+    ctx.fillStyle = '#8b93a7'; HF('panel', 'close', 13, 600); ctx.fillText('×', W - 28, TOP_H + 31);
     ctx.textAlign = 'left';
   }
 
@@ -689,7 +757,7 @@
       if (p >= 1) { fx.splice(i, 1); continue; }
       ctx.globalAlpha = 1 - p;
       if (f.k === 'ring') { ctx.strokeStyle = f.col; ctx.beginPath(); ctx.arc(f.x, f.y, 6 + p * 22, 0, Math.PI * 2); ctx.stroke(); }
-      else if (f.k === 'txt') { ctx.fillStyle = f.col; ctx.font = '600 13px ' + FONT; ctx.fillText(f.txt, f.x, f.y - p * 24); }
+      else if (f.k === 'txt') { ctx.fillStyle = f.col; HF('fx', 'txt', 13, 600); ctx.fillText(f.txt, f.x, f.y - p * 24); }
       ctx.globalAlpha = 1;
     }
   }
@@ -699,7 +767,7 @@
     var a = Math.min(1, bannerTtl / 300);
     ctx.globalAlpha = a;
     ctx.fillStyle = 'rgba(20,12,4,.85)'; ctx.fillRect(0, TOP_H + 170, W, 64);
-    ctx.fillStyle = '#e8a33d'; ctx.font = '700 20px ' + FONT; ctx.textAlign = 'center';
+    ctx.fillStyle = '#e8a33d'; HF('screen', 'banner', 20, 700); ctx.textAlign = 'center';
     ctx.fillText(bannerTxt, W / 2, TOP_H + 210);
     ctx.textAlign = 'left'; ctx.globalAlpha = 1;
   }
@@ -1100,6 +1168,7 @@
     cmd: function (cmd) { qCmd.push(cmd); },
     hudFonts: function () { return JSON.parse(JSON.stringify(HUDF)); },
     dial: function () { return dial; },
+    front: function () { return { rows: frontRows.slice(), tick: tickView(), dial: dial }; },   // GAMES-75 战线可视化取证
     /* ---- GAMES-72 手感层取证 ---- */
     fxLog: function () { return fxLog.slice(); },                       // 粒子起播流水（种类+坐标+ms 戳）
     poolStat: function () { var n = 0; for (var i = 0; i < POOL_N; i++) if (pool[i].live) n++; return { cap: POOL_N, live: n, spawned: poolSpawned }; },
