@@ -106,6 +106,11 @@
   /* ================= 球动期本地确定性重演（§5.4：同 sim 60fps 重跑） ================= */
   function beginReplay(shot) {
     var local = S.create(1);
+    // F2（GAMES-84）：重演杆号对齐——S.create 模板 shotN=0 会让重演 strike 生成 rec.no=1，
+    // settle 时 resolveShot 误走破球杆 respot 例外（8 号球抬回置球点）而非真实杆号的
+    // eight-ball/early-eight 终局，终判 ruling 到达前 8 号球终位瞬差（QA二号 F2）。
+    // 玩家自发杆 shot.no 缺省（applyOp 已 ++st.shotN），网络/bot 杆走广播 rec.no。
+    local.shotN = (shot.no || st.shotN) - 1;
     local.balls = st.balls.map(function (b) { return { x: b.x, y: b.y, vx: 0, vy: 0, pot: b.pot }; });
     local.openTable = st.openTable; local.groups = st.groups.slice();
     local.turn = shot.seat; local.phase = 'aim';

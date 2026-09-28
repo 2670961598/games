@@ -259,11 +259,14 @@ export class RoomManager {
     if (room.phase === 'live') {
       // abandon：曾有真人、现在无人（无玩家连接也无旁观）
       const anyConn = room.seats.some((s) => s.conn) || room.spectators.size > 0
+      // F1（GAMES-84）：lastHumanAt 锚=最后在场时刻——在场即刷新（含旁观）。
+      // 此前刷新只在 persistent 分支，非 persistent 房被 join/resume 时刻锚死：
+      // 在场>15s 独真人房掉线首个扫描拍即 abandon，10s 重连窗+托管双双短路（QA二号 F1）。
+      if (anyConn) room.lastHumanAt = now
       if (room.sim.META.persistent) {
         // 常驻世界（GAMES-52 §1.1）：真人 0 也 alive（bot 居民撑镇，feed 恒 live），
         // 不走 abandon 终局；真人离镇空置 120s 回收（镇存档续镇，BotHost 即时重建）。
-        if (anyConn) room.lastHumanAt = now
-        else if (room.hadHuman && now - room.lastHumanAt > WAITING_EMPTY_MS) {
+        if (room.hadHuman && !anyConn && now - room.lastHumanAt > WAITING_EMPTY_MS) {
           if (room.sim.persist) { try { room.sim.persist(room) } catch { /* 存档失败不阻断回收 */ } }
           this.dispose(room, 'idle-recycle')
         }
