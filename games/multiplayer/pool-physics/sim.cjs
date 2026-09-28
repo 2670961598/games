@@ -538,7 +538,26 @@
   }
 
   /* =====================================================================
-   * Bot 三档（§4：几何解析瞄准 + competitive 前瞻双轨；整数纪律同守）
+   * Bot 三档深化（GAMES-81 §4；整数纪律同守——rng 只进 brain，判定路径零随机）
+   * ---- 策略清单 -------------------------------------------------------
+   * casual「随手杆」：开局树2套（全力正冲/低力侧冲）；候选池随机挑一杆+±2000
+   *   brads 大噪声+力度粗放（300+rng×500）；随手率 15% 直接朝最近任意球开杆
+   *   （错组 F3/空杆 F2/白落 F1 的自然犯规源）；ball-in-hand 随手放格。
+   *   人设=不想太多，杆杆凭感觉 → 犯规率三档最高。
+   * balanced「几何瞄准」：开局树2套（全力正冲/九五微偏）；直球优先（cut² 主导
+   *   全序取头名）；直线候选 <2 时补一库反射解算（长边镜像袋 ghost，−6000 罚项
+   *   只在直线枯竭时补位）；安全球意识（无候选→己组最近球轻推、力度=路程比例
+   *   保触库防 F4）。人设=稳扎稳打的几何流 → 低犯规。
+   * competitive「走位规划」：开局树2套（跟杆正冲/拉杆刺冲）；静态 top-6 候选 ×
+   *   {启发,±10%} ×≤16 次前瞻（scratch 副本合法）：己方进球 +1000/白落 −800/
+   *   early-eight −600/下一杆质量（母球停点到下一目标距离罚项=走位分）/收尾
+   *   清台 +200（最后一颗色球进后 8 号线头名即 8）；打 8 杆长台直线低杆防跟进、
+   *   贴库球高杆；ball-in-hand top-3 格各跑一杆前瞻取优。人设=算三杆的清台
+   *   机器 → 近零犯规。
+   * ---- 陪玩放水（§4.4）----------------------------------------------
+   * env.foeLose[seat] ≥2（对席真人连败 2 局，网关 pulse 台账）→ 降一档出手：
+   * competitive→balanced→casual；casual 触底再放=噪声 ×1.35+随手率 15%→30%。
+   * 真人连胜（台账清零）自动恢复原档。
    * ===================================================================== */
   var botMems = new (typeof WeakMap !== 'undefined' ? WeakMap : Object)();
   function memOf(st, seat) {
@@ -550,12 +569,14 @@
   /* 单位向量（brads → cos/sin Q16.16） */
   function unitTo(ax, ay, bx, by) { return atan2Q(bx - ax, by - ay); }
 
-  /* 通路检查：线段每 7500 采样，任一他球距 <15000 → 堵死（§4.1） */
+  /* 通路检查：线段每 7500 采样（≥1——短段零采样=恒通的洞，GAMES-81 实测：
+   * ball-in-hand 贴堆摆位后 ghost 段 <7500，邻组球漏检 → 首触错组 F3），
+   * 任一他球距 <15000 → 堵死（§4.1） */
   function pathClear(st, x1, y1, x2, y2, ignore) {
     var dx = x2 - x1, dy = y2 - y1;
     var d = isqrt(dx * dx + dy * dy);
     if (d === 0) return true;
-    var steps = (d / 7500) | 0;
+    var steps = ((d / 7500) | 0) || 1;
     for (var s = 1; s <= steps; s++) {
       var px = x1 + (((dx * s) / steps) | 0), py = y1 + (((dy * s) / steps) | 0);
       for (var i = 0; i < 16; i++) {
@@ -566,8 +587,10 @@
     }
     return true;
   }
-  /* 候选生成（§4.1 ghost ball 反射几何）：己组活球 × 6 袋 */
-  function candidates(st, seat, groupBalls) {
+  /* 候选生成（§4.1 ghost ball 反射几何）：己组活球 × 6 袋；allowBank 且直线
+   * 候选 <2 时补一库反射解算（balanced/competitive——目标球打长边镜像袋，
+   * 反射角几何精确、库边恢复非镜面 → −6000 罚项，仅直线枯竭时补位） */
+  function candidates(st, seat, groupBalls, allowBank) {
     var cue = st.balls[0], out = [];
     for (var bi = 0; bi < groupBalls.length; bi++) {
       var id = groupBalls[bi], b = st.balls[id];
@@ -586,11 +609,56 @@
         var dcg2 = (b.x - cue.x) * (b.x - cue.x) + (b.y - cue.y) * (b.y - cue.y);
         var dbp2 = (px - b.x) * (px - b.x) + (py - b.y) * (py - b.y);
         var score = (((cut * cut) / 1048576) | 0) - (isqrt(dcg2) >> 20) - (isqrt(dbp2) >> 19);
-        out.push({ id: id, pocket: p, ang: ang, cut: cut, dcg: isqrt(dcg2), dbp: isqrt(dbp2), score: score });
+        out.push({ id: id, pocket: p, ang: ang, cut: cut, dcg: isqrt(dcg2), dbp: isqrt(dbp2), score: score, bank: 0, gx: gx, gy: gy });
+      }
+    }
+    if (allowBank && out.length < 2) {
+      /* 一库反射（GAMES-81 §4.1）：镜像袋跨上/下长边（y=R / y=H_M−R），目标球
+       * 先碰库再折向真袋；镜像线段在库外无实体球，整段 pathCheck 天然安全 */
+      for (var bj = 0; bj < groupBalls.length; bj++) {
+        var idB = groupBalls[bj], bb = st.balls[idB];
+        for (var pb = 0; pb < 6; pb++) {
+          var pxB = POCKETS[pb][0], pyB = POCKETS[pb][1];
+          for (var ri = 0; ri < 2; ri++) {
+            var railY = ri === 0 ? R : H_M - R;
+            var my = 2 * railY - pyB;                             // 镜像袋 y
+            var aBM = atan2Q(pxB - bb.x, my - bb.y);              // b→镜像袋方向
+            var gxB = bb.x - ((15000 * cosQ16(aBM)) >> 16);
+            var gyB = bb.y - ((15000 * sinQ16(aBM)) >> 16);
+            if (gxB < R || gxB > W_M - R || gyB < R || gyB > H_M - R) continue;
+            var angB = atan2Q(gxB - cue.x, gyB - cue.y);
+            var cutB = ((cosQ16(aBM) * cosQ16(angB) + sinQ16(aBM) * sinQ16(angB)) / 65536) | 0;
+            if (cutB < 16384) continue;
+            if (!pathClear(st, cue.x, cue.y, gxB, gyB, idB)) continue;
+            if (!pathClear(st, bb.x, bb.y, pxB, my, idB)) continue;   // 镜像段（库外半段无实体球）
+            var dcgB2 = (bb.x - cue.x) * (bb.x - cue.x) + (bb.y - cue.y) * (bb.y - cue.y);
+            var dbpB2 = (pxB - bb.x) * (pxB - bb.x) + (my - bb.y) * (my - bb.y);
+            var scoreB = (((cutB * cutB) / 1048576) | 0) - (isqrt(dcgB2) >> 20) - (isqrt(dbpB2) >> 19) - 6000;
+            out.push({ id: idB, pocket: pb, ang: angB, cut: cutB, dcg: isqrt(dcgB2), dbp: isqrt(dbpB2), score: scoreB, bank: 1, gx: gxB, gy: gyB });
+          }
+        }
       }
     }
     out.sort(function (a, b) { return b.score - a.score || a.id - b.id || a.pocket - b.pocket; });  // 全序
     return out;
+  }
+  /* 通路净空（GAMES-81 §4.3 防犯规）：cue→ghost 线对他球最小采样距离——
+   * 贴线 <20000 时噪声可翻转首触（F3 源），前瞻/选杆罚项用 */
+  function pathMargin(st, x1, y1, x2, y2, ignore) {
+    var dx = x2 - x1, dy = y2 - y1;
+    var d = isqrt(dx * dx + dy * dy);
+    if (d === 0) return 25000;
+    var steps = ((d / 7500) | 0) || 1, min = 25000;
+    for (var s = 1; s <= steps; s++) {
+      var px = x1 + (((dx * s) / steps) | 0), py = y1 + (((dy * s) / steps) | 0);
+      for (var i = 1; i < 16; i++) {
+        if (i === ignore || st.balls[i].pot) continue;
+        var qx = st.balls[i].x - px, qy = st.balls[i].y - py;
+        var d2 = qx * qx + qy * qy;
+        if (d2 < min) min = d2;
+      }
+    }
+    return isqrt(min);
   }
   function powHeur(c) {
     /* 力度启发 = clamp(250 + (dist_cg + dist_bp/cos_cut)×3/2¹², 150, 900)（§4.1） */
@@ -627,16 +695,76 @@
     }
     return best < 0 ? 8 : best;   // 只剩 8（清色局）
   }
+  /* 最近合法目标（GAMES-81 防犯规）：己组活球；清完=8；开放局=任意非 8。
+   * 安全球/随手兜底必须打合法球——打最近任意球会把对手球当首触（F3 实测源） */
+  function nearestLegal(st, seat) {
+    var g = st.groups[seat];
+    if (st.openTable || (g !== 1 && g !== 2)) return nearestBall(st);
+    if (ownRemaining(st, seat) === 0) return st.balls[8].pot ? nearestBall(st) : 8;
+    var cue = st.balls[0], best = -1, bd = 0;
+    for (var i = 1; i <= 15; i++) {
+      if (groupOf(i) !== g || st.balls[i].pot) continue;
+      var dx = st.balls[i].x - cue.x, dy = st.balls[i].y - cue.y, d2 = dx * dx + dy * dy;
+      if (best < 0 || d2 < bd) { best = i; bd = d2; }
+    }
+    return best < 0 ? 8 : best;
+  }
+  /* 最近且通路无阻的合法球（GAMES-81 防犯规）：按距扫合法球取首个 cue 线净空者
+   * ——被斯诺克时也先找缝，找不到才退最近（首触他球=F3 的最后防线） */
+  function nearestLegalClear(st, seat) {
+    var cue = st.balls[0], g = st.groups[seat];
+    var pool = st.openTable || (g !== 1 && g !== 2) ? allLive(st)
+      : ownRemaining(st, seat) === 0 ? (st.balls[8].pot ? allLive(st) : [8]) : liveOfGroup(st, g);
+    var list = [];
+    for (var i = 0; i < pool.length; i++) {
+      var b = st.balls[pool[i]];
+      var dx = b.x - cue.x, dy = b.y - cue.y;
+      list.push({ id: pool[i], d2: dx * dx + dy * dy });
+    }
+    list.sort(function (a, b) { return a.d2 - b.d2 || a.id - b.id; });
+    for (var k = 0; k < list.length; k++) {
+      var t = st.balls[list[k].id];
+      if (pathClear(st, cue.x, cue.y, t.x, t.y, list[k].id)) return list[k].id;
+    }
+    return list.length ? list[0].id : nearestLegal(st, seat);
+  }
 
-  /* brain（§4.2 三档；决策时机=tick 相对（确定性），rng=席位 rng） */
-  function brain(st, seat, level, rng) {
+  /* 开局树 ≥2 套/档（GAMES-81 §4.5）：break 杆力度/角度/杆法差异化；
+   * mem.opener=(rng()*2)|0 首决策一次定桩（botRng 席位派生——同 seed 同席位
+   * 必同树，QA 双证口径）。off=brads 角度偏置（符号随 rng），pow=力度，spinV=杆法 */
+  var OPENERS = {
+    casual: [
+      { name: '全力正冲', off: 2700, pow: 1000, spinV: 0 },   // 人设：抄起杆就大力抡
+      { name: '低力侧冲', off: 4200, pow: 700, spinV: 0 },    // 人设：没对准也懒得调
+    ],
+    balanced: [
+      { name: '全力正冲', off: 0, pow: 1000, spinV: 0 },      // 教科书正冲散球
+      { name: '九五微偏', off: 600, pow: 950, spinV: 0 },     // 保守九五力侧一点
+    ],
+    competitive: [
+      { name: '中杆正冲', off: 0, pow: 1000, spinV: 0 },      // 中杆全力——跟杆冲会跟进落袋（F1 实测）
+      { name: '拉杆刺冲', off: 800, pow: 950, spinV: -1 },    // 低杆拉回控母球居中（全力拉杆冲偶发白落，实测降至九五）
+    ],
+  };
+  /* 陪玩放水降档表（§4.4）：连败真人对席 bot 降一档；casual 触底再放=加噪 */
+  var DOWN = { competitive: 'balanced', balanced: 'casual', casual: 'casual' };
+  var botStats = { sandbag: 0 };   // 放水降档决策计数（_dbg 观测面，QA 取证）
+
+  /* brain（GAMES-81 §4 三档；决策时机=tick 相对（确定性），rng=席位 rng，
+   * env={kinds, foeLose}——foeLose[seat]=对席真人连败数（网关 pulse 台账）） */
+  function brain(st, seat, level, rng, env) {
     if (st.over || st.phase !== 'aim' || st.turn !== seat) return null;
+    /* 陪玩放水（§4.4）：真人连败 ≥2 → 降一档出手；真人连胜台账清零自动恢复 */
+    var sandbag = !!(env && env.foeLose && env.foeLose[seat] >= 2);
+    var eff = sandbag ? (DOWN[level] || level) : level;
+    if (sandbag) botStats.sandbag++;
+    var wildBoost = sandbag && level === 'casual' ? 1 : 0;    // casual 触底再放
     if (st.ballInHand || st.balls[0].pot) {
-      /* ball-in-hand 放置：网格 12×6 采样取静态评分最高位（§4.2） */
-      var bestX = -1, bestY = -1, bestScore = -2147483648;
-      var g = st.groups[seat], pool = st.openTable ? allLive(st) : liveOfGroup(st, g === 1 || g === 2 ? g : 1);
-      if (ownRemaining(st, seat) === 0) pool = st.balls[8].pot ? [] : [8];
-      var cands0 = pool.length ? candidates(st, seat, pool) : [];
+      /* ball-in-hand 处置三档分化（§4.2）：casual 随手放格 / balanced 静态
+       * 最优格 / competitive top-3 格各跑一杆前瞻取优（选最优放置点） */
+      var g0 = st.groups[seat], pool0 = st.openTable ? allLive(st) : liveOfGroup(st, g0 === 1 || g0 === 2 ? g0 : 1);
+      if (ownRemaining(st, seat) === 0) pool0 = st.balls[8].pot ? [] : [8];
+      var cells = [];
       for (var gx = 1; gx <= 12; gx++) {
         for (var gy = 1; gy <= 6; gy++) {
           var x = ((W_M - 2 * R) * gx / 13 + R) | 0, y = ((H_M - 2 * R) * gy / 7 + R) | 0;
@@ -644,58 +772,87 @@
           for (var p = 0; p < 6; p++) { var pdx = x - POCKETS[p][0], pdy = y - POCKETS[p][1]; if (pdx * pdx + pdy * pdy <= POCKETS[p][2] * POCKETS[p][2]) { legal = false; break; } }
           if (!legal) continue;
           for (var q = 1; q <= 15; q++) { if (st.balls[q].pot) continue; var qx = st.balls[q].x - x, qy = st.balls[q].y - y; if (qx * qx + qy * qy < 15001 * 15001) { legal = false; break; } }
-          if (!legal) continue;
-          var sc = placeScore(st, x, y, cands0);
-          if (bestX < 0 || sc > bestScore) { bestScore = sc; bestX = x; bestY = y; }
+          if (legal) cells.push({ x: x, y: y });
         }
       }
-      if (bestX >= 0) return { op: { k: 'place', x: bestX, y: bestY } };
-      return { op: { k: 'place', x: CUE0_X, y: CUE0_Y } };
+      if (!cells.length) return { op: { k: 'place', x: CUE0_X, y: CUE0_Y } };
+      if (eff === 'casual') {
+        var rc = cells[(rng() * cells.length) | 0];           // 随手放：随机合法格
+        return { op: { k: 'place', x: rc.x, y: rc.y } };
+      }
+      var cands0 = pool0.length ? candidates(st, seat, pool0, false) : [];
+      var scored = [];
+      for (var ci0 = 0; ci0 < cells.length; ci0++) scored.push({ x: cells[ci0].x, y: cells[ci0].y, sc: placeScore(st, cells[ci0].x, cells[ci0].y, cands0) });
+      scored.sort(function (a, b) { return b.sc - a.sc || a.x - b.x || a.y - b.y; });   // 全序
+      if (eff !== 'competitive' || !cands0.length) return { op: { k: 'place', x: scored[0].x, y: scored[0].y } };
+      var bestCell = scored[0], bestCellSc = -2147483648;     // competitive：top-3 格各跑一杆
+      for (var k3 = 0; k3 < 3 && k3 < scored.length; k3++) {
+        var esc = evalPlace(st, seat, scored[k3].x, scored[k3].y, pool0);
+        if (esc > bestCellSc) { bestCellSc = esc; bestCell = scored[k3]; }
+      }
+      return { op: { k: 'place', x: bestCell.x, y: bestCell.y } };
     }
     var mem = memOf(st, seat);
     var key = st.shotN + ':' + st.turn + ':' + st.phase;
     if (mem.turnKey !== key) {
       mem.turnKey = key;
-      var delay = level === 'casual' ? 50 + ((rng() * 100) | 0) : level === 'balanced' ? 100 + ((rng() * 100) | 0) : 200 + ((rng() * 100) | 0);
+      var delay = eff === 'casual' ? 50 + ((rng() * 100) | 0) : eff === 'balanced' ? 100 + ((rng() * 100) | 0) : 200 + ((rng() * 100) | 0);
       mem.fireAt = st.tick + delay;
       mem.plan = null;
+      if (mem.opener === undefined) mem.opener = (rng() * 2) | 0;   // 开局树定桩（一次性，§4.5）
       return null;
     }
     if (st.tick < mem.fireAt) return null;
-    /* 破球杆（shotN===0：第一杆） */
+    /* 破球杆（shotN===0）：开局树 OPENERS[eff][mem.opener] */
     if (st.shotN === 0) {
+      var op = (OPENERS[eff] || OPENERS.balanced)[mem.opener] || OPENERS.balanced[0];
       var apex = st.balls[1];
       var bang = unitTo(st.balls[0].x, st.balls[0].y, apex.x, apex.y);
-      if (level === 'casual') return { op: { k: 'shot', ang: ((bang + bradsNoise(rng, 2700)) << 3) & 0xFFFF, pow: 1000, spinV: 0, spinS: 0 } };
-      if (level === 'balanced') return { op: { k: 'shot', ang: (bang << 3) & 0xFFFF, pow: 1000, spinV: 0, spinS: 0 } };
-      return { op: { k: 'shot', ang: ((bang + (rng() < 0.5 ? -800 : 800)) << 3) & 0xFFFF, pow: 1000, spinV: 1, spinS: 0 } };
+      var sgn = rng() < 0.5 ? -1 : 1;
+      var off0 = op.off !== 0 ? op.off : (eff === 'casual' ? (bradsNoise(rng, 1200) | 0) : 0);
+      var pow0 = op.pow + (eff === 'casual' ? (((rng() * 200) | 0) - 100) : 0);   // casual 力度粗放 ±100
+      return { op: { k: 'shot', ang: ((bang + sgn * off0) << 3) & 0xFFFF, pow: clampI(pow0, 100, 1000), spinV: op.spinV, spinS: 0 } };
     }
-    /* 候选池 */
+    /* 候选池（balanced/competitive 允许一库反射补位，§4.1） */
     var g2 = st.groups[seat];
     var pool2 = st.openTable ? allLive(st) : liveOfGroup(st, g2 === 1 || g2 === 2 ? g2 : 1);
     if (!st.openTable && ownRemaining(st, seat) === 0 && !st.balls[8].pot) pool2 = [8];
-    var cands = candidates(st, seat, pool2);
-    if (level === 'casual') {
-      if (!cands.length) { var n1 = nearestBall(st); return { op: { k: 'shot', ang: (unitTo(st.balls[0].x, st.balls[0].y, st.balls[n1].x, st.balls[n1].y) << 3) & 0xFFFF, pow: 300 + ((rng() * 500) | 0), spinV: 0, spinS: 0 } }; }
+    var cands = candidates(st, seat, pool2, eff !== 'casual');
+    if (eff === 'casual') {
+      /* 随手率：15%（放水触底 30%）直接朝最近任意球开杆——错组 F3/贴身连击
+       * 失误的自然来源；其余时候候选池随机挑一杆+大噪声+粗放力度 */
+      var wildRate = wildBoost ? 30 : 15;
+      if (((rng() * 100) | 0) < wildRate || !cands.length) {
+        var n1 = nearestBall(st);
+        return { op: { k: 'shot', ang: ((unitTo(st.balls[0].x, st.balls[0].y, st.balls[n1].x, st.balls[n1].y) + bradsNoise(rng, 3000)) << 3) & 0xFFFF, pow: 300 + ((rng() * 500) | 0), spinV: 0, spinS: 0 } };
+      }
       var pick = cands[(rng() * cands.length) | 0];
-      return { op: { k: 'shot', ang: ((pick.ang + bradsNoise(rng, 2000)) << 3) & 0xFFFF, pow: 300 + ((rng() * 500) | 0), spinV: 0, spinS: 0 } };
+      return { op: { k: 'shot', ang: ((pick.ang + bradsNoise(rng, wildBoost ? 2700 : 2000)) << 3) & 0xFFFF, pow: 300 + ((rng() * 500) | 0), spinV: 0, spinS: 0 } };
     }
     if (!cands.length) {
-      /* 无候选：安全球（§4.2——competitive 轻杆贴库留位） */
-      var n2 = nearestBall(st);
+      /* 安全球（§4.2）：合法且通路无阻的最近球轻推、力度=路程比例保触库
+       * （F4 防线；GAMES-81：只打合法球+找缝——首触他球=F3 实测源） */
+      var n2 = nearestLegalClear(st, seat);
       var safeAng = unitTo(st.balls[0].x, st.balls[0].y, st.balls[n2].x, st.balls[n2].y);
-      return { op: { k: 'shot', ang: ((safeAng + bradsNoise(rng, level === 'competitive' ? 40 : 160)) << 3) & 0xFFFF, pow: 250, spinV: 0, spinS: 0 } };
+      var sd2 = (st.balls[n2].x - st.balls[0].x) * (st.balls[n2].x - st.balls[0].x) + (st.balls[n2].y - st.balls[0].y) * (st.balls[n2].y - st.balls[0].y);
+      var safePow = clampI(250 + ((isqrt(sd2) * 3) >> 12), 250, 420);
+      return { op: { k: 'shot', ang: ((safeAng + bradsNoise(rng, eff === 'competitive' ? 40 : 160)) << 3) & 0xFFFF, pow: safePow, spinV: 0, spinS: 0 } };
     }
-    if (level === 'balanced') {
+    if (eff === 'balanced') {
+      /* 几何瞄准：直球优先取头名（净空 ≥18000 优先，防贴线首触翻转）；一库反射
+       * 候选角度容差放宽+补偿力度（库边恢复非镜面） */
       var c1 = cands[0];
-      return { op: { k: 'shot', ang: ((c1.ang + bradsNoise(rng, 160)) << 3) & 0xFFFF, pow: powHeur(c1), spinV: 0, spinS: 0 } };
+      for (var mc = 0; mc < 3 && mc < cands.length; mc++) {
+        if (pathMargin(st, st.balls[0].x, st.balls[0].y, cands[mc].gx, cands[mc].gy, cands[mc].id) >= 18000) { c1 = cands[mc]; break }
+      }
+      return { op: { k: 'shot', ang: ((c1.ang + bradsNoise(rng, c1.bank ? 320 : 160)) << 3) & 0xFFFF, pow: clampI(powHeur(c1) + (c1.bank ? 150 : 0), 100, 1000), spinV: 0, spinS: 0 } };
     }
     /* competitive：静态 top-6 进前瞻（§4.3：scratch 副本合法，≤16 次硬帽） */
     if (!mem.plan) {
       mem.plan = lookahead(st, seat, cands.slice(0, 6));
     }
     var best = mem.plan;
-    var noise = best.fromLookahead ? 40 : 160;
+    var noise = best.fromLookahead ? 20 : 160;
     return { op: { k: 'shot', ang: ((best.ang + bradsNoise(rng, noise)) << 3) & 0xFFFF, pow: best.pow, spinV: best.spinV, spinS: 0 } };
   }
 
@@ -708,6 +865,36 @@
     var cs = candidates(st, st.turn, pool);
     st.balls[0].x = saved.x; st.balls[0].y = saved.y;
     return cs.length ? cs[0].score : -100000;
+  }
+
+  /* competitive 放置前瞻（GAMES-81 §4.2）：摆位后取静态最优候选实跑一杆
+   * （进球 +1000/白落 −800/early-eight −600/下一杆质量）——top-3 格各一次，§4.3 分池 */
+  function evalPlace(st, seat, x, y, pool) {
+    /* 候选必须从放置位视角解算（临时移 cue 再还原——placeScore 同范式）；
+     * 曾用旧 cue 位解算导致放置后实际杆线错乱（vs casual 犯规率 21% 实测源） */
+    var saved = { x: st.balls[0].x, y: st.balls[0].y };
+    st.balls[0].x = x; st.balls[0].y = y;
+    var cs = candidates(st, seat, pool, false);
+    st.balls[0].x = saved.x; st.balls[0].y = saved.y;
+    if (!cs.length) return -2147483647;
+    var c = cs[0];
+    var scratch = cloneForSim(st);
+    scratch.balls[0].x = x; scratch.balls[0].y = y; scratch.balls[0].vx = 0; scratch.balls[0].vy = 0;
+    if (scratch.balls[0].pot) scratch.balls[0].pot = 0;
+    scratch.ballInHand = false;
+    strike(scratch, seat, { ang: (c.ang << 3), pow: powHeur(c), spinV: 0, spinS: 0 });
+    var guard = 0;
+    while (scratch.phase === 'motion' && !scratch.over && guard++ < 1100) stepScratch(scratch);
+    var own = ownRemaining(st, seat);
+    var score = 1000 * (scratch.pottedBy[seat] - st.pottedBy[seat]);
+    if (scratch.facts.cuePotted) score -= 800;
+    if (scratch.facts.potted.indexOf(8) >= 0 && own !== 0) score -= 600;
+    var poolN = scratch.groups[seat] === -1 ? allLive(scratch) : liveOfGroup(scratch, scratch.groups[seat]);
+    if (ownRemaining(scratch, seat) === 0 && !scratch.balls[8].pot) poolN = [8];
+    var next = candidates(scratch, seat, poolN, false);
+    score += next.length ? clampI(next[0].score, -200, 200) : -200;
+    if (scratch.ballInHand && !scratch.over) score -= 700;   // 犯规感知同前瞻（GAMES-81）
+    return score;
   }
 
   /* 前瞻（§4.3）：克隆 scratch、跑确定性引擎至全停、按公式打分；≤2 变体×≤6 候选 */
@@ -733,13 +920,22 @@
         while (scratch.phase === 'motion' && !scratch.over && guard++ < 1100) stepScratch(scratch, pev);
         var score = 0;
         score += 1000 * (scratch.pottedBy[seat] - st.pottedBy[seat]);   // 己方进球数（开放局同样计）
-        if (scratch.facts.cuePotted) score -= 800;
+        if (scratch.facts.cuePotted) score -= 1600;                     // 白落=送对方 ball-in-hand，重罚
         if (scratch.facts.potted.indexOf(8) >= 0 && own !== 0) score -= 600;
+        /* 犯规感知（GAMES-81）：scratch 结算凡犯规（F1-F4 统一）都置 ballInHand
+         * 送对方——薄线翻转首触(F3)/空杆(F2)在 sim 里真实发生，必须进分值 */
+        if (scratch.ballInHand && !scratch.over) score -= 700;
+        /* 防犯规净空（GAMES-81 §4.3）：cue 线贴他球 <20000 → 罚（±噪声翻转首触=F3 源） */
+        var marg = pathMargin(st, st.balls[0].x, st.balls[0].y, c.gx, c.gy, c.id);
+        if (marg < 20000) score -= (20000 - marg) >> 2;
         /* 下一杆质量：终局静态评分最优值；无候选=−200 */
         var pool2 = scratch.groups[seat] === -1 ? allLive(scratch) : liveOfGroup(scratch, scratch.groups[seat]);
         if (ownRemaining(scratch, seat) === 0 && !scratch.balls[8].pot) pool2 = [8];
-        var next = candidates(scratch, seat, pool2);
+        var next = candidates(scratch, seat, pool2, false);
         score += next.length ? clampI(next[0].score, -200, 200) : -200;
+        /* 收尾清台路径（GAMES-81 §4.3）：最后一颗色球进后 8 号线头名即 8 → +200
+         * （优先"清完这颗正好衔接黑八"的走位，缩短收尾链路） */
+        if (own === 1 && next.length && next[0].id === 8) score += 200;
         /* 走位分：白球到下一目标平均距离的负值/2^15 */
         if (next.length) {
           var dsum = 0;
@@ -788,7 +984,7 @@
     create: create, step: step, applyOp: applyOp, strike: strike,
     serialize: serialize, hashState: hashState, serializeRules: serializeRules, hashRules: hashRules, replayShots: replayShots,
     brain: brain, fnv1a32: fnv1a32, mulberry32: mulberry32,
-    _dbg: { candidates: candidates, pathClear: pathClear, atan2Q: atan2Q, cosQ16: cosQ16, sinQ16: sinQ16 },
+    _dbg: { candidates: candidates, pathClear: pathClear, atan2Q: atan2Q, cosQ16: cosQ16, sinQ16: sinQ16, botStats: botStats, OPENERS: OPENERS },
     consts: {
       TICK_MS: TICK_MS, SUBS: SUBS, MAX_TICKS: MAX_TICKS, AIM_TICKS: AIM_TICKS, MOTION_CAP: MOTION_CAP,
       R: R, W_M: W_M, H_M: H_M, MU: MU, V_SLIP2: V_SLIP2, POCKETS: POCKETS, RACK: RACK,

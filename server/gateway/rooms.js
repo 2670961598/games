@@ -41,6 +41,9 @@ export class RoomManager {
     this.sessions = new Set()
     this.log = log
     this.onEnded = null     // BotHost 补房钩子（roomId, gameId）
+    // 真人胜负 pulse 台账（GAMES-81 陪玩放水信号源）：connCtx → {lose,win}——
+    // 同一连接跨房累计连败/连胜；WeakMap 随连接回收，无泄漏
+    this.pulse = new WeakMap()
   }
 
   register(sim) { this.sims.set(sim.META.gameId, sim) }
@@ -314,8 +317,21 @@ export class RoomManager {
 
     const inputs = {}
     // Bot 名册 env（GAMES-46）：把席位 kind 透传给 brain（陪玩模式判定"同队是否有真人"；
-    // 游戏 sim 可忽略第 5 参——net-tank 即如此，接口向后兼容）
-    const botEnv = { kinds: room.seats.map((s) => s.kind) }
+    // 游戏 sim 可忽略第 5 参——net-tank 即如此，接口向后兼容）。
+    // foeLose（GAMES-81 陪玩放水）：foeLose[seat]=该 bot 对席真人的连败局数
+    // （1v1 语义；团队作对席多人取最大）——sim 自行决定降档阈值（pool ≥2）
+    const foeLose = room.seats.map(() => 0)
+    for (let i = 0; i < room.seats.length; i++) {
+      if (room.seats[i].kind !== 'bot') continue
+      for (let j = 0; j < room.seats.length; j++) {
+        if (j === i) continue
+        const f = room.seats[j]
+        if (f.kind !== 'human' || !f.conn) continue
+        const rec = this.pulse.get(f.conn)
+        if (rec && rec.lose > foeLose[i]) foeLose[i] = rec.lose
+      }
+    }
+    const botEnv = { kinds: room.seats.map((s) => s.kind), foeLose }
     for (const s of room.seats) {
       if (s.kind === 'bot') {
         inputs[s.seat] = room.sim.brain(room.state, s.seat, s.level || 'balanced', s.botRng, botEnv)
@@ -352,6 +368,17 @@ export class RoomManager {
     room.result = result // 终局留档（测试 API 快照/断言读取；协议 §4.2 end 同形）
     this.broadcast(room, { t: 'end', frame: room.frame, result })
     this.log({ k: 'room-end', roomId: room.id, result })
+    // 真人胜负 pulse 更新（GAMES-81）：1v1 终局记对席真人连败/连胜（放水信号源）；
+    // 团队作（>2 席）不适用——empire 走同队 carry（GAMES-71），不按对手放水
+    if (room.sim.META.seats === 2 && result && (result.winner === 'A' || result.winner === 'B')) {
+      const winSeat = result.winner === 'A' ? 0 : 1
+      for (const s of room.seats) {
+        if (s.kind !== 'human' || !s.conn) continue
+        const rec = this.pulse.get(s.conn) || { lose: 0, win: 0 }
+        if (s.seat === winSeat) { rec.win++; rec.lose = 0 } else { rec.lose++; rec.win = 0 }
+        this.pulse.set(s.conn, rec)
+      }
+    }
     if (this.onEnded) { try { this.onEnded(room, result) } catch { /* 钩子异常不拖垮房间 */ } }
   }
 
