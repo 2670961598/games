@@ -14,9 +14,24 @@
  * 网关零特例——与真人直接发帧逐字节同形，入输入日志参与确定性回放）。
  * ===================================================================== */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const EMP = require('../../../games/multiplayer/empire-sprout/sim.cjs')
+
+/* GAMES-71（slg GAMES-46 同款）：启动时读 game.json net.botTuning（陪玩接管
+ * 时延等）注入 sim——game.json 是可调事实源，sim.cjs 内置同值默认兜底（离线
+ * 端无读取链路时行为一致）。仅影响 Bot 决策（服务端侧），判定路径与确定性
+ * 红线不受影响。 */
+try {
+  const gameJson = JSON.parse(readFileSync(fileURLToPath(new URL('../../../games/multiplayer/empire-sprout/game.json', import.meta.url)), 'utf8'))
+  const tuning = gameJson.net && gameJson.net.botTuning
+  if (tuning && EMP.setBotTuning) EMP.setBotTuning(tuning)
+} catch (err) {
+  // game.json 缺失/畸形：维持 sim 内置默认（不阻断网关启动）
+  console.error(JSON.stringify({ k: 'emp-tuning-load-failed', error: String(err && err.message || err) }))
+}
 
 const FULL_EVERY = 300   // 每 300 张强制全量（防增量漂移，mmo 先例）
 const FULL_DIRTY = 16    // 脏实体 >16（设计 §5.2 阈值）→ 直接全量
