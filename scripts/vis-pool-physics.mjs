@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 /* =====================================================================
  * GAMES-80 八球台球识图 v2 + perf 复检（F3 补位，适配自 vis-empire-sprout.mjs，
- * 断言集移植自 GAMES-79 QA1 挂具 /tmp/games79/vis-bench.mjs 的 13 断言）：
+ * 断言集移植自 GAMES-79 QA1 挂具 /tmp/games79/vis-bench.mjs 的 13 断言）；
+ * GAMES-85 视觉统一扩容 13→25：
  *   A) perf 三跑中位（?debug=1 离线 Bot 对打，5s rAF 页面内采样；
  *      红线 avgFps ≥55 且 jank <2%，GAMES-30 口径）；
  *   B) 识图 v2（几何/墨水带/HF 字号双审计/worldProbe/aim-motion 双态截图）：
  *      带位 顶栏 0-90 / 桌面 250-420（台呢绿 #1F7A4D）/ 底栏 545-667（操作条）；
+ *      + GAMES-85 像素取证（?debug=1 固定 seed 确定性局·静态 aim 期采样）：
+ *      台呢暗角/袋口阴影晕/球体高光一致性/花色环带与号码盘（色盲双编码）/
+ *      回合指示白框/剩余球彩点阵；
  *   C) online 冒烟（同源 quick 匹配：mode=online + physicsHashOk=true，
- *      F1 修复的 online 路径回归证）。
+ *      F1 修复的 online 路径回归证）；
+ *   D) 瞄准层级分档对照（normal vs master vs relaxed 同 seed 墨水差分）；
+ *   E) 大厅卡槽一致（/multiplayer.html 静态目录：pool 槽位在册+卡/槽同圆角）。
  * 用法：node scripts/vis-pool-physics.mjs [--out dir]
  * ===================================================================== */
 import { spawn } from 'node:child_process'
@@ -19,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = process.argv.includes('--out')
   ? process.argv[process.argv.indexOf('--out') + 1]
-  : '/Volumes/BigDisk/Studio/kernel/workers/GAMES-80-shots'
+  : '/Volumes/BigDisk/Studio/kernel/workers/GAMES-85-shots'
 
 let passed = 0, failed = 0
 const ok = (id, name, cond, detail = '') => {
@@ -44,7 +50,7 @@ await new Promise((res) => {
 })
 await mkdir(OUT, { recursive: true })
 const URL = `http://127.0.0.1:${PORT}/games/multiplayer/pool-physics/index.html`
-const report = { perf: [], vis: [], onlineSmoke: null }
+const report = { perf: [], vis: [], onlineSmoke: null, polish: null, tier: null, lobby: null }
 
 const browser = await chromium.launch({ headless: true })
 
@@ -140,6 +146,52 @@ console.log('== B. 识图 v2（DSF=1 真实视口）==')
 
   const probe1 = await page.evaluate(() => window.__GAMES_DEBUG__.worldProbe())
   ok('V-PROBE', 'worldProbe 钩子（mode/tier/assist/phase/turn/shotN）', (probe1.mode === 'offline' || probe1.mode === 'online') && probe1.tier === 'normal' && probe1.assist === 1 && probe1.phase !== undefined, JSON.stringify(probe1))
+
+  /* ---- GAMES-85 像素取证（?debug=1 固定 seed 确定性局，静态 aim 期零位移采样） ---- */
+  const polish = await page.evaluate(() => {
+    const c = document.getElementById('cv').getContext('2d')
+    const px = (x, y) => { const d = c.getImageData(Math.round(x), Math.round(y), 1, 1).data; return [d[0], d[1], d[2]] }
+    const lum = (p) => 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
+    const st = window.__GAMES_DEBUG__.state()
+    const TX = (375 - 340) / 2, TY = 250
+    const feltC = lum(px(187.5, 320)), feltE = lum(px(29.5, 320))            // 台呢暗角（y=320 避开瞄准线 335）
+    let pkHit = 0                                                            // 袋口阴影晕（向心向 r15 晕内 vs r22 晕外）
+    for (const [mx, my] of [[0, 0], [170000, -6000], [340000, 0], [0, 170000], [170000, 176000], [340000, 170000]]) {
+      const kx = 17.5 + mx * 0.001, ky = 250 + my * 0.001                    // sim 真袋位（GAMES-85 修后渲染同源）
+      const dxc = 187.5 - kx, dyc = 335 - ky, dl = Math.hypot(dxc, dyc) || 1
+      if (lum(px(kx + dxc / dl * 15, ky + dyc / dl * 15)) + 5 < lum(px(kx + dxc / dl * 22, ky + dyc / dl * 22))) pkHit++
+    }
+    let hlOk = 0, hlN = 0, ringOk = 0, ringN = 0, numOk = 0, numN = 0        // 高光/环带/号码三通道
+    for (let i = 0; i < 16; i++) {
+      const b = st.balls[i]; if (!b || b.pot) continue
+      const bx = TX + b.x * 0.001, by = TY + b.y * 0.001
+      if (i <= 8) {   // 可度量组：纯色/黑八高光落本色（Δ≥25）；白球白上白只证存在（≥235）；花色高光落白环不度量
+        hlN++
+        if (i === 0) { if (lum(px(bx - 2.6, by - 2.9)) >= 235) hlOk++ }
+        else if (lum(px(bx - 2.6, by - 2.9)) - lum(px(bx + 2.6, by + 2.9)) >= 25) hlOk++
+      }
+      if (i === 0 || i === 8) continue
+      numN++
+      if (i > 8) { ringN++; if (lum(px(bx + 5.2, by)) >= 215) ringOk++ }             // 花色：白环带在位
+      else { ringN++; if (lum(px(bx + 5.2, by)) < 215) ringOk++ }                    // 纯色：同半径仍为本色
+      let dark = 0
+      for (let dx = -2; dx <= 2; dx++) for (let dy2 = -2; dy2 <= 2; dy2++) if (lum(px(bx + dx, by + dy2)) < 110) dark++
+      if (dark >= 2) numOk++                                                          // 号码字迹（白盘 #222）
+    }
+    let dotOk = 0                                                             // 剩余球彩点阵（y=70 左排前 5）
+    for (const dx3 of [26, 38, 50, 62, 74]) { const p = px(dx3, 70); if (Math.max(...p) - Math.min(...p) >= 30) dotOk++ }
+    return { feltC: +feltC.toFixed(1), feltE: +feltE.toFixed(1), pkHit, hlOk, hlN, ringOk, ringN, numOk, numN, dotOk,
+      turnFrame: +lum(px(60, 10)).toFixed(0) }                                // 我方回合白框（seat A）
+  })
+  ok('V-POLISH-1', '台呢径向暗角（中心亮于边带 ≥2）', polish.feltC - polish.feltE >= 2, `中心 ${polish.feltC} vs 边带 ${polish.feltE}`)
+  ok('V-POLISH-2', '袋口阴影晕（晕内比晕外暗 ≥5，≥4/6 袋）', polish.pkHit >= 4, `${polish.pkHit}/6 袋`)
+  ok('V-POLISH-3', '球体高光一致性（纯色/黑八 Δ≥25 + 白球在位，度量组全过）', polish.hlOk === polish.hlN, `${polish.hlOk}/${polish.hlN}（花色白环组不度量）`)
+  ok('V-CB-1', '色盲双编码·花色白环带（灰度 ≥215）vs 纯色无环（<215）', polish.ringOk === polish.ringN, `${polish.ringOk}/${polish.ringN} 球全对`)
+  ok('V-CB-2', '色盲双编码·号码白盘字迹（中心 5×5 暗 px ≥2，≥80%）', polish.numOk >= Math.ceil(polish.numN * 0.8), `${polish.numOk}/${polish.numN}`)
+  ok('V-HUD-1', '台面 HUD 四要素 HF 达标（name/cnt/timer/shotN ≥13）', ['name', 'cnt', 'timer', 'shotN'].every(k => hf.top && hf.top[k] >= 13) && !!(hf.ctl && hf.ctl.pow >= 13 && hf.ctl.shoot >= 13), `top/${JSON.stringify(hf.top || {})} ctl/${JSON.stringify(hf.ctl || {})}`)
+  ok('V-HUD-2', '回合指示（我方白框在位，灰度 ≥180）', polish.turnFrame >= 180, `框线 ${polish.turnFrame}`)
+  ok('V-HUD-3', '分色剩余计数彩点阵（饱和度 ≥30，≥3/5）', polish.dotOk >= 3, `${polish.dotOk}/5 采样点`)
+  report.polish = polish
   await page.waitForFunction(() => { const p = window.__GAMES_DEBUG__.worldProbe(); return p && p.phase === 'aim' }, null, { timeout: 30000 }).catch(() => { /* 兜底见下 */ })
   const probe0 = await page.evaluate(() => window.__GAMES_DEBUG__.worldProbe())
   await page.screenshot({ path: join(OUT, 'pool-aim.png') })
@@ -183,6 +235,73 @@ console.log('== C. online 冒烟（独立网关 quick 匹配）==')
   }
   await ctx.close()
   try { gw.kill('SIGTERM') } catch { /* best effort */ }
+}
+
+/* ---------- D. 瞄准层级分档对照（normal/master/relaxed 同 seed 墨水差分） ---------- */
+console.log('== D. 瞄准辅助视觉层级（同 seed 三档对照）==')
+{
+  const inkOf = async (tierQ) => {
+    const ctx3 = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 1, hasTouch: true })
+    const pg = await ctx3.newPage()
+    await pg.goto(`${URL}?debug=1&tier=${tierQ}`, { waitUntil: 'load', timeout: 20000 })
+    await pg.waitForFunction(() => { const p = window.__GAMES_DEBUG__ && window.__GAMES_DEBUG__.worldProbe(); return p && p.phase === 'aim' }, null, { timeout: 15000 })
+    const r = await pg.evaluate(() => {
+      const c = document.getElementById('cv').getContext('2d')
+      let bright = 0, orange = 0, blue = 0
+      for (let y = 252; y < 418; y++) for (let x = 20; x < 356; x += 2) {
+        const d = c.getImageData(x, y, 1, 1).data
+        if (0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2] > 185) bright++
+        if (x >= 250 && d[0] > 170 && d[1] >= 120 && d[1] <= 210 && d[2] < 100) orange++   // 目标线橙（含叠白环混色）
+        if (x >= 250 && d[0] < 95 && d[1] > 140 && d[2] > 150) blue++                      // 白球分离线青蓝
+      }
+      /* Ghost 环圆周采样：默认瞄准角 0（+x）首触=框顶球，接触点=cue.x+首球距-球径——确定性几何 */
+      const st = window.__GAMES_DEBUG__.state()
+      let gd = null, gy2 = 85000
+      for (let i = 1; i < 16; i++) { const b = st.balls[i]; if (!b || b.pot) continue; const d = b.x - 15000 - st.balls[0].x; if (d > 0 && (!gd || d < gd)) { gd = d; gy2 = b.y } }
+      const gx = 17.5 + (st.balls[0].x + gd) * 0.001, gyy = 250 + gy2 * 0.001
+      let ghost = 0
+      for (let k = 0; k < 12; k++) {
+        const a = k / 12 * Math.PI * 2
+        let hit2 = false
+        for (const rr of [6.9, 7.5, 8.1]) {   // 三半径取优（1.4-2px 描边圆周的整像素采样需抗 AA）
+          const p = c.getImageData(Math.round(gx + Math.cos(a) * rr), Math.round(gyy + Math.sin(a) * rr), 1, 1).data
+          if (p[0] > 165 && p[1] >= 105 && p[1] <= 175 && p[2] < 115) { hit2 = true; break }
+        }
+        if (hit2) ghost++
+      }
+      return { bright, orange, blue, ghost }
+    })
+    await pg.screenshot({ path: join(OUT, `pool-aim-${tierQ}.png`) })
+    await ctx3.close()
+    return r
+  }
+  const nI = await inkOf('normal'), mI = await inkOf('master'), rI = await inkOf('relaxed')
+  report.tier = { normal: nI, master: mI, relaxed: rI }
+  ok('V-AIM-1', '瞄准层级：normal 主线墨水 > master 裸打（差 ≥20 采样点）', nI.bright - mI.bright >= 20, `normal ${nI.bright} vs master ${mI.bright}`)
+  ok('V-AIM-2', '全辅助 Ghost 球在位（relaxed 圆周橙 ≥6/12 且 normal 为 0）', rI.ghost >= 6 && nI.ghost === 0, `relaxed ${rI.ghost}/12 vs normal ${nI.ghost}/12`)
+}
+
+/* ---------- E. 大厅卡槽一致（/multiplayer.html 静态目录） ---------- */
+console.log('== E. 大厅卡槽一致 ==')
+{
+  const ctx4 = await browser.newContext({ viewport: { width: 375, height: 667 } })
+  const lp = await ctx4.newPage()
+  await lp.goto(`http://127.0.0.1:${PORT}/multiplayer.html`, { waitUntil: 'load', timeout: 15000 })
+  const lob = await lp.evaluate(() => {
+    const slots = [...document.querySelectorAll('.mp-slot')]
+    const pool = slots.find(s => s.textContent.includes('八球台球'))
+    const radii = [...new Set(slots.map(s => getComputedStyle(s).borderRadius))]
+    let cardRule = ''
+    for (const sh of document.styleSheets) {
+      try { for (const r of sh.cssRules) if (r.selectorText && r.selectorText.split(',').map(s => s.trim()).includes('.mp-card') && r.style.borderRadius) cardRule = r.style.borderRadius } catch { /* 跨域样式表跳过 */ }
+    }
+    return { n: slots.length, poolOk: !!pool && pool.textContent.includes('S4') && !!pool.getAttribute('href'),
+      href: pool ? pool.getAttribute('href') : '', radii, cardRule }
+  })
+  report.lobby = lob
+  ok('V-LOBBY-1', '大厅 pool 槽位在册（八球台球 · S4 · 直入对局）', lob.poolOk && /pool-physics/.test(lob.href || ''), `${lob.n} 槽，href=${(lob.href || '').slice(0, 40)}`)
+  ok('V-LOBBY-2', '卡/槽一致（.mp-card 与 .mp-slot 同 14px 圆角）', lob.radii.length === 1 && lob.cardRule === lob.radii[0], `slot=${lob.radii.join('|')} card=${lob.cardRule}`)
+  await ctx4.close()
 }
 
 await browser.close()
