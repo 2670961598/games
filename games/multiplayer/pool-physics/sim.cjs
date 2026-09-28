@@ -22,9 +22,12 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  /* 烘焙三角表（§2.2）：Node require / 浏览器前置内联 window.PoolTrig */
+  /* 烘焙三角表（§2.2）：Node require / 浏览器前置内联 window.PoolTrig。
+   * F1（GAMES-80）：必须走 globalThis——本 factory 是 UMD 实参位置的表达式，在全局
+   * 作用域求值，看不到外层 IIFE 的 root 形参；Node 分支 require 短路掩盖，浏览器
+   * 分支 root.PoolTrig 必抛 ReferenceError（QA1 F1 取证，勿回退此写法）。 */
   var TRIG = (typeof module === 'object' && module.exports && typeof require === 'function')
-    ? require('./trig16.cjs') : root.PoolTrig;
+    ? require('./trig16.cjs') : globalThis.PoolTrig;
   var TRIG16 = TRIG.TRIG16, ATAN8 = TRIG.ATAN8;
 
   /* ---------- PRNG 参考实现（与 games/_shared/common.js 逐字一致，冻结；仅 Bot/代打用） ---------- */

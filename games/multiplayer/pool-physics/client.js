@@ -37,6 +37,8 @@
   var banner = { txt: '', ttl: 0 };
   var fx = [];                      // 落袋缩入/库边微粒 juice（§3.3）
   var lastAimSeat = -1, replayPrev = null, replayT = 0;
+  var dbgEvents = [];               // QA 证据：__GAMES_DEBUG__.events（GAMES-80 F3，对齐 slg/mmo/emp 泳道契约）
+  function logEv(name, payload) { dbgEvents.push({ event: name, payload: payload, at: Date.now() }); }
   var HUDF = {};                    // HF 字号登记表（识图复检断言源，GAMES-75 范式）
   function HF(grp, key, px, w) {
     ctx.font = (w || 400) + ' ' + px + 'px ' + FONT;
@@ -466,6 +468,17 @@
   }
 
   /* ================= 启动 ================= */
+  function startOffline(level, opts) {   // ?debug=1 / 网关不可达（同 sim 同 brain 本地对打；perf-smoke 契约）
+    var o = opts || {};
+    var seed = Number.isInteger(o.seed) ? o.seed : (((level || 1) * 2654435761) >>> 0);
+    mode = 'offline'; matchOver = false; replay = null; started = true;
+    st = S.create(seed);
+    botRng = S.mulberry32(seed);
+    aimAng = 8192 << 3; pow = 500; spinV = 0; spinS = 0;
+    var r = document.getElementById('result'); if (r) r.style.display = 'none';
+    var j = document.getElementById('joining'); if (j) j.style.display = 'none';
+    logEv('start', { mode: 'offline', seed: seed, tier: tier });
+  }
   function boot() {
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr;
@@ -476,9 +489,12 @@
     botRng = S.mulberry32(st.seed);
     var params = new URLSearchParams(location.search);
     var roomId = params.get('room');
-    session = G.connect({
+    logEv('boot', { mode: params.get('debug') === '1' ? 'offline' : 'online', tier: tier });
+    if (params.get('debug') === '1') startOffline(1);   // perf-smoke 口径：零网关本地对打（同 slg/mmo/emp）
+    else session = G.connect({
       quick: !roomId, roomId: roomId || undefined, gameId: 'pool-physics', name: '玩家',
       onWelcome: function (m) {
+        logEv('welcome', { seat: m.seat, role: m.role });
         mySeat = m.role === 'player' ? m.seat : -1;
         if (mySeat < 0) mySeat = 0;
         mode = 'online';
@@ -486,15 +502,17 @@
         if (m.state) { st = m.state; syncState(m.state); }
         document.getElementById('joining').style.display = 'none';
       },
-      onStarted: function (m) { started = true; if (m.state) { st = m.state; syncState(m.state); } },
-      onRuling: onRuling,
-      onSnapshot: onSnapshot,
+      onStarted: function (m) { logEv('started', {}); started = true; if (m.state) { st = m.state; syncState(m.state); } },
+      onRuling: function (m) { logEv('ruling', { phase: m.phase, turn: m.turn }); onRuling(m); },
+      onSnapshot: function (m) { if (dbgEvents.length < 1200) logEv('snapshot', { n: (m.balls || []).length }); onSnapshot(m); },
       onSeat: function (m) {
         rosterMap = {};
         for (var i = 0; i < m.seats.length; i++) rosterMap[m.seats[i].seat] = m.seats[i];
+        logEv('seat', { seats: m.seats.length });
       },
-      onEnd: onEnd,
+      onEnd: function (m) { logEv('end', { winner: m.result && m.result.winner }); onEnd(m); },
       onStatus: function (s) {
+        logEv('status', { s: s });
         var j = document.getElementById('joining');
         if (s === 'lost' || s === 'closed') { if (!matchOver) { mode = 'offline'; if (j) j.style.display = 'none'; } }
         else if (j && started) j.style.display = 'none';
@@ -510,6 +528,12 @@
   cv.addEventListener('touchend', onUp);
 
   window.__GAMES_DEBUG__ = window.__GAMES_DEBUG__ || {};
+  window.__GAMES_DEBUG__.events = dbgEvents;                                                    // F3：perf-smoke 消费（boot/start/…）
+  window.__GAMES_DEBUG__.start = function (level, opts) { startOffline(level || 1, opts); };     // 离线重开一局
+  window.__GAMES_DEBUG__.state = function () { return JSON.parse(JSON.stringify(st)); };
+  window.__GAMES_DEBUG__.seat = function () { return mySeat; };
+  window.__GAMES_DEBUG__.roomId = function () { return session ? session.roomId : null; };
+  window.__GAMES_DEBUG__.mode = function () { return mode; };
   window.__GAMES_DEBUG__.hudFonts = function () { return HUDF; };
   window.__GAMES_DEBUG__.worldProbe = function () {
     return { mode: mode, tier: tier, assist: assist, phase: st && st.phase, turn: st && st.turn, physicsHashOk: physicsHashOk,
