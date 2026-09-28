@@ -97,6 +97,25 @@ waiting ──(满最低人数或倒计时到)──▶ live ──(胜负判定
 | `error` | `{t, code, message}` | `room-full`/`room-gone`/`bad-msg`/`version`/`game-unknown` |
 | `closed` | `{t, reason}` | 房间回收前告知（客户端回大厅或快速匹配） |
 
+### 4.3 welcome 帧锚语义（join 锚 = 当前 tick，而非局首）〔GAMES-74 口径披露〕
+
+`welcome.frame` 的语义按入房时点分两式（`started` 恒为 `frame:0`）：
+
+- **开赛前入房**（waiting 房）：`welcome.frame = 0`，随后 `started{frame:0}` 对齐局首——时间线锚=局首。
+- **join 运行中房 / 重连**（live 房）：`welcome.frame = 加入时刻房间的当前 tick`（随附 `state` 即该 tick
+  全量态）。**这不是局首**：客户端若按 `welcomeAt − frame × tickMs` 重建时间线，得到的是"假设房史
+  零欠帧"的推算局首，而非真实开赛时刻。
+
+**口径警示（GAMES-73 QA2 O1 实测）**：长周期房房史若有欠帧跳账（tickLive stepCap 跳齐不追账），
+上述推算锚存在**系统性恒值平移**（实测 2 局 +568/+768ms，帧间隔本身稳定），且平移量随房史累积、
+不可从单端观测还原。因此：
+
+1. **联机延迟取证勿用绝对滞后**（`welcomeAt − frame×tickMs` 对真值的偏差无界）——用两臂对照
+   （同房两客户端差分）或帧间隔分布作判据；
+2. 开赛在场客户端（`started`/liveAt 锚）不受影响，可作对照臂；
+3. 协议增强候选（未实现，非缺陷）：`welcome` 附带服务端 `liveAt` 时间戳，供 join 端重建真实时间线。
+   列入后续协议变更单评估，v1.1 不动字段。
+
 ## 5. S1 帧同步协议（冻结 · net-tank 首证）
 
 - **定频**：服务端按 `tickMs`（net-tank=100ms）逐帧推进；帧 `F` 携带第 `F` 帧全席位输入向量。
@@ -232,5 +251,6 @@ HOST=0.0.0.0 nohup node server/gateway/index.js > server/data/gateway.log 2>&1 &
 
 | 版本 | 日期 | 单据 | 变更 |
 |---|---|---|---|
+| （无版本变更） | 2026-09-28 | GAMES-74 | §4.3 新增：welcome 帧锚语义文档化（join 锚=当前 tick 而非局首；欠帧跳账致推算锚恒值平移的取证警示）。**既有字段/语义零改动**，纯口径披露，不触发版本号 +1 |
 | v1.1 | 2026-09-26 | GAMES-41 | 新增 §8 测试 API（仅回环鉴权的测试房管理端点/框架控制 op/net.api 声明规范/api-check 与 net-check 分工）；房间管理器支持 seed/test/timeScale，测试房隔离（不进 feed/quick/BotHost 配额）。v1 全部既有语义不变（timeScale=1 逐字节一致） |
 | v1 | 2026-09-26 | GAMES-40 | 首版冻结：生命周期/feed/WS/S1 帧协议/S2-S7 预留/SDK/运维 |
