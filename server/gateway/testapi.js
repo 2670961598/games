@@ -115,6 +115,7 @@ export class TestHost {
       phase: room.phase, frame: room.frame, tick: room.state.tick,
       timeScale: room.timeScale, playerSeat: rec.playerSeat, token: rec.token,
       seats: this.rooms.roster(room), state: room.state, result: room.result || null,
+      stateHash: room.sim.hashState ? room.sim.hashState(room.state) : undefined, // S4+ 确定性断言锚（GAMES-78 A6）
       events: rec.log.slice(to), cursor: rec.log.length,
       lastInject: rec.injects.length ? rec.injects[rec.injects.length - 1] : null,
     }
@@ -161,7 +162,19 @@ export class TestHost {
       return { status: 200, body: { ok: true, op } }
     }
 
-    /* 游戏 op：按 net.api.ops 映射到 WS input 消息（S1：payload 即输入向量，可包 keys 壳） */
+    /* 游戏 op：按 net.api.ops 映射到 WS input 消息（S1：payload 即输入向量，可包 keys 壳）。
+       S4+ op 通道游戏（sim.op 存在，GAMES-78）：payload.op 直接走 rooms.op——
+       与 WS t:'op' 完全同一条 sim 入口（applyOp 权威校验/一次性语义）。 */
+    const opPayload = payload.op && typeof payload.op === 'object' && typeof payload.op.k === 'string' ? payload.op : null
+    if (rec.room.sim.op && opPayload) {
+      if (rec.vctx.role !== 'player') return { status: 409, body: { ok: false, error: 'not-connected（$disconnect 后须先 $reconnect）' } }
+      if (Number.isInteger(body.seat) && body.seat !== rec.vctx.seat) return { status: 403, body: { ok: false, error: 'seat（本房 API 玩家固定席）' } }
+      this.rooms.op(rec.vctx, Object.assign({ t: 'op' }, opPayload))
+      const receivedAt = Date.now()
+      rec.injects.push({ ts: receivedAt, op: opPayload.k, keys: opPayload, frame: rec.room.frame })
+      if (rec.injects.length > 64) rec.injects.shift()
+      return { status: 200, body: { ok: true, op: opPayload.k, seat: rec.vctx.seat, frame: rec.room.frame, receivedAt } }
+    }
     if (rec.vctx.role !== 'player') return { status: 409, body: { ok: false, error: 'not-connected（$disconnect 后须先 $reconnect）' } }
     if (Number.isInteger(body.seat) && body.seat !== rec.vctx.seat) return { status: 403, body: { ok: false, error: 'seat（本房 API 玩家固定席）' } }
     const msg = { t: 'input', keys: payload.keys && typeof payload.keys === 'object' ? payload.keys : payload }

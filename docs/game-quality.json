@@ -1056,6 +1056,19 @@
     "chain": "GAMES-66..76 十单链完整"
    },
    "notes": "E6-W1-T3 轨 S3 混合同步首证收官（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥 T+1/静默期 tick1800 爆发）。STRESS 三组 PASS（6 test 房+BotHost 并行 8min tick 10Hz 漂移[0,1]、5min 满编 4/4 spot 9.97-10.00Hz、四游戏混编零错误；四件套全过附 RSS 高水位披露）；QA1/QA2 红线全过（200ms 延迟无偏置[房型分层判据]/重连 10s+1 拍/满员旁观/feed ≤404ms）；两轮事故复盘（影子网关缺省 PORT 静默死亡/接力器复活竞态误 SIGTERM）。合并链 f672fe0→1fd9966→66bad6f→3c2ad71→df7048a→3bd218c→1bae6ff→de4579c→41ef278→(GAMES-76)"
+  },
+  "multiplayer:pool-physics": {
+   "stage": "dev-landed",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 1,
+   "net": {
+    "tech": "S4",
+    "bot": "三档物理Bot(casual 随机乱枪/balanced ghost-ball 几何瞄准/competitive +前瞻模拟≤16次) + 超时 casual 代打",
+    "chain": "GAMES-77 设计 → GAMES-78 DEV（单链 2/10）"
+   },
+   "notes": "E6-W1-T4 轨 S4 服务端权威物理首证（Q16.16 纯整数定点/500Hz 固定子步/固定 2 轮碰撞/TRIG16-ATAN8 烘焙常量零 Math/双相快照静止事件驱动+球动 10Hz/op-ruling S5 通道复用/客户端确定性重演+版本护栏）。api-check 19/19 绿含 A6 三联（双跑 stateHash 相等+shot 日志逐字节相等+replay==在线 restHash）。QA/FEEL/VIS/STRESS 后续单待排"
   }
  }
 }
