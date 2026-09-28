@@ -1,0 +1,67 @@
+{
+  "slug": "pool-physics",
+  "title": "八球台球",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 330,
+  "scoring": {
+    "win": "合法打进黑八",
+    "lose": "提前落黑八/打八白球落袋/超时剩球判负/认输",
+    "s2": "进球数 0-7",
+    "s3": "超时比己组剩球数，开放局比总剩球"
+  },
+  "description": "指尖几何对决：瞄准、力度、旋转三段出杆，清完色球打进黑八。服务端权威物理，同帧观战。",
+  "net": {
+    "tech": "S4",
+    "gameId": "pool-physics",
+    "mode": "1v1-pool",
+    "seats": 2,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "shot":   { "ws": "op", "keys": ["ang", "pow", "spinV", "spinS"],
+                    "desc": "出杆：ang uint16 brads(1/65536圈，入sim前>>3量化0.044°)、pow 0..1000、spinV/spinS ∈{-1,0,1}——仅aim期当前回合席位受理；回执 ruling{phase:'motion',shot} + 球动期 10Hz snapshot" },
+        "place":  { "ws": "op", "keys": ["x", "y"],
+                    "desc": "ball-in-hand 放白球：milli 桌局部系，合法域（界内/不叠球/不贴袋）校验，非法 {k:'reject'} 事件" },
+        "concede":{ "ws": "op", "keys": [], "desc": "认负 → end{reason:'resign'}" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）",
+        "winner": "'A'=席0 ｜ 'B'=席1 ｜ 'draw'",
+        "teams": { "A": [0], "B": [1] },
+        "reason": "eight-ball（合法黑八） ｜ early-eight（提前黑八/打八白落） ｜ timeout（48000 tick 剩球少者胜） ｜ afk（连续3次超时） ｜ resign ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live + welcome.state（16球固定阵型/开放局/turn=0/timer=30s）+ room.physics 声明块",
+        "A2 能赢：pot-solver 剧本 A 席 eight-ball 终态（几何解算核连清 7+黑八，对手 casual 乱杆）",
+        "A3 能输：idle 剧本 B 席 afk 终态（3×30s 超时随手杆后认负——超时/托管路径一并覆盖）",
+        "A4 操作注入→反映 <100ms：shot 注入→首张 motion snapshot ≤10 tick（服务端同钟）",
+        "A5 断线重连 <10s：$reconnect 后 welcome 全量恢复（球位/分组/回合/计时/ball-in-hand）",
+        "A6 确定性双跑：同 seed 同策略两房，终态 hash 与输入日志逐字节相等；且在线终态 hash == 回放器重放 hash（S4 红线首证）"
+      ],
+      "script": {
+        "seed": 20260928, "timeScale": 8, "startDelayMs": 600, "maxTicks": 48000,
+        "scenarios": {
+          "win":  { "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "pot-solver" },
+          "lose": { "botLevels": [null, "competitive"], "expectWinner": "B", "policy": "idle" },
+          "deterministic": {
+            "runs": 2, "botLevels": [null, "balanced"], "expectWinner": "any",
+            "policy": "pot-solver",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志(shot 序列)逐字节相等 && stateHash == replayHash"
+          }
+        }
+      }
+    }
+  }
+}

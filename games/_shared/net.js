@@ -56,6 +56,7 @@
       rttMs: 0, offsetMs: 0, status: 'connecting',
       seat: -1, role: null, token: null, roomId: null, frame: 0, tickMs: 100,
       sendInput: function (keys) { sendInput(keys); },
+      sendOp: function (op) { return send(Object.assign({ t: 'op' }, op)); }, // S4+ 一次性指令（shot/place/concede）
       sync: function () { send({ t: 'sync' }); }, // 缺帧时请求全量重同步（协议 §4.1）
       close: function () { userClose = true; try { ws.close(); } catch (e) { /* 已断 */ } },
     };
@@ -133,6 +134,10 @@
           case 'snapshot':          // S2 状态同步（GAMES-52）：二式快照（全量/增量+ext.aoi/ack）
             session.frame = msg.frame;
             emit('onSnapshot', msg);
+            break;
+          case 'ruling':            // S4+ 回合裁决通道（协议 §6 S5 预留位，GAMES-78 首证）
+            session.frame = msg.frame;
+            emit('onRuling', msg);
             break;
           case 'seat':
             emit('onSeat', msg);

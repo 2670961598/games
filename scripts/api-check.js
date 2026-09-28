@@ -21,7 +21,8 @@
  * ===================================================================== */
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import { networkInterfaces } from 'node:os'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -160,6 +161,93 @@ const POLICIES = {
       : { mx: 0, my: 0, cmd: { k: 'gather', entId: best.id, phase: 'start' } }
   },
   /**
+   * 几何解算（pool-physics A2/A6，设计 §6：脚本侧 ghost ball 反射几何核——
+   * api-check 经 /api/test/state 读全量 state 合法，逐杆注入 shot；
+   * ball-in-hand 时 place 在目标球-袋连线上直接摆位。零 rng——确定性双跑前提）。
+   */
+  'pot-solver': (() => {
+    const POCKETS = [[0, 0], [170000, -6000], [340000, 0], [0, 170000], [170000, 176000], [340000, 170000]]
+    const R = 7500, W_M = 340000, H_M = 170000
+    const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l] }
+    const clear = (st, x1, y1, x2, y2, ignore) => {
+      const d = Math.hypot(x2 - x1, y2 - y1), steps = Math.max(1, Math.floor(d / 7500))
+      for (let s = 1; s <= steps; s++) {
+        const px = x1 + (x2 - x1) * s / steps, py = y1 + (y2 - y1) * s / steps
+        for (const b of st.balls) { if (b.pot) continue; if (b === st.balls[0] || b.id === ignore) continue; const bi = st.balls.indexOf(b); if (bi === ignore || bi === 0) continue; if (Math.hypot(b.x - px, b.y - py) < 15000) return false }
+      }
+      return true
+    }
+    const targets = (st, seat) => {
+      const g = st.groups[seat]
+      let pool = []
+      if (st.openTable) pool = st.balls.filter((b, i) => i >= 1 && i <= 15 && i !== 8 && !b.pot).map((b) => st.balls.indexOf(b))
+      else {
+        const own = st.balls.filter((b, i) => g === 1 ? i >= 1 && i <= 7 : i >= 9 && i <= 15).filter((b) => !b.pot)
+        pool = own.map((b) => st.balls.indexOf(b))
+        if (pool.length === 0 && !st.balls[8].pot) pool = [8]
+      }
+      return pool
+    }
+    return (state, seat) => {
+      if (!state || state.phase !== 'aim' || state.turn !== seat) return {}
+      const st = state
+      /* 破球（shot 1）：正瞄尖球全力 */
+      if (st.shotN === 0) {
+        const apex = st.balls[1]
+        const a = Math.atan2(apex.y - st.balls[0].y, apex.x - st.balls[0].x) / (2 * Math.PI)
+        return { op: { k: 'shot', ang: Math.round((a < 0 ? a + 1 : a) * 65536) & 0xFFFF, pow: 1000, spinV: 0, spinS: 0 } }
+      }
+      const cue = st.balls[0], pool = targets(st, seat)
+      /* ball-in-hand：目标球-袋连线后方 70px 摆位（直线杆） */
+      if (st.ballInHand || cue.pot) {
+        let best = null
+        for (const id of pool.length ? pool : []) for (const [px, py] of POCKETS) {
+          const b = st.balls[id]
+          const [ux, uy] = norm(px - b.x, py - b.y)
+          for (const D of [80000, 60000, 100000]) {
+            const x = Math.round(b.x - ux * D), y = Math.round(b.y - uy * D)
+            if (x < R + 100 || x > W_M - R - 100 || y < R + 100 || y > H_M - R - 100) continue
+            if (POCKETS.some(([qx, qy]) => Math.hypot(x - qx, y - qy) < 14000)) continue
+            if (st.balls.some((o, i) => i !== 0 && !o.pot && Math.hypot(o.x - x, o.y - y) < 16000)) continue
+            const cut = 1 // 连线摆位=直线杆
+            const score = cut - Math.hypot(px - b.x, py - b.y) / 400000
+            if (!best || score > best.score) best = { x, y, score }
+          }
+        }
+        if (best) return { op: { k: 'place', x: best.x, y: best.y } }
+        return { op: { k: 'place', x: 85000, y: 85000 } }
+      }
+      /* 常规杆：ghost ball 候选评分（cut 主导、路程次之） */
+      let best = null
+      for (const id of pool) for (let pi = 0; pi < 6; pi++) {
+        const b = st.balls[id], [px, py] = POCKETS[pi]
+        const [ux, uy] = norm(px - b.x, py - b.y)
+        const gx = b.x - ux * 15000, gy = b.y - uy * 15000
+        if (gx < R || gx > W_M - R || gy < R || gy > H_M - R) continue
+        const [ax, ay] = norm(gx - cue.x, gy - cue.y)
+        const cut = ax * ux + ay * uy
+        if (cut < 0.35) continue
+        if (!clear(st, cue.x, cue.y, gx, gy, id)) continue
+        if (!clear(st, b.x, b.y, px, py, id)) continue
+        const dcg = Math.hypot(gx - cue.x, gy - cue.y), dbp = Math.hypot(px - b.x, py - b.y)
+        const score = cut * cut - dcg / 400000 - dbp / 300000 - (id === 8 ? 0 : 0.02)
+        if (!best || score > best.score) best = { score, ang: Math.atan2(gy - cue.y, gx - cue.x), cut, dcg, dbp }
+      }
+      if (best) {
+        const a = best.ang / (2 * Math.PI)
+        const pow = Math.round(Math.min(1000, Math.max(200, 250 + (best.dcg + best.dbp / Math.max(best.cut, 0.35)) * 3 / 4096)))
+        return { op: { k: 'shot', ang: Math.round((a < 0 ? a + 1 : a) * 65536) & 0xFFFF, pow, spinV: 0, spinS: 0 } }
+      }
+      /* 无候选：朝最近合法球中力（防 F2 空杆） */
+      let near = null
+      for (const id of pool) { const b = st.balls[id]; if (b.pot) continue; const d = Math.hypot(b.x - cue.x, b.y - cue.y); if (!near || d < near.d) near = { id, d } }
+      if (!near) return {}
+      const nb = st.balls[near.id]
+      const a = Math.atan2(nb.y - cue.y, nb.x - cue.x) / (2 * Math.PI)
+      return { op: { k: 'shot', ang: Math.round((a < 0 ? a + 1 : a) * 65536) & 0xFFFF, pow: 500, spinV: 0, spinS: 0 } }
+    }
+  })(),
+  /**
    * 帝国速攻（empire-sprout A2 能赢，设计书 §6 剧本策略全貌）：
    * 查表 build order（t≈150 lumber → ≈350 farm → ≈550 camp，资源就绪门控）
    * → 循环 train camp inf n=5（队列空位即补）→ tick≥1800 且 CD 好：attack lane1 全池
@@ -221,7 +309,7 @@ async function playScript(roomId, policy, deadlineMs, isS2 = false) {
     const r = await gwState(roomId, cursor)
     if (!r.json || !r.json.ok) return { error: r.json && r.json.error || `HTTP ${r.status}` }
     cursor = r.json.cursor
-    if (r.json.phase === 'ended') return { result: r.json.result, tick: r.json.tick, state: r.json.state }
+    if (r.json.phase === 'ended') return { result: r.json.result, tick: r.json.tick, state: r.json.state, stateHash: r.json.stateHash }
     if (Date.now() > deadlineMs) return { error: '剧本超时未终局' }
     if (r.json.phase === 'live') {
       const inp = policy(r.json.state, r.json.playerSeat)
@@ -242,12 +330,13 @@ if (!gameId) {
 const tsStart = Date.now()
 
 /* 游戏 game.json 定位与 net.api 校验 */
-let meta = null
+let meta = null, gameDir = null
 for (const type of await readdir(join(ROOT, 'games'))) {
   if (type.startsWith('_') || type.startsWith('.')) continue
   try {
     const p = join(ROOT, 'games', type, gameId, 'game.json')
     meta = JSON.parse(await readFile(p, 'utf8'))
+    gameDir = join(ROOT, 'games', type, gameId)
     break
   } catch { /* 换下一个类型目录 */ }
 }
@@ -333,6 +422,15 @@ try {
         })()
       ok('A1', 'S2 首张全量快照（full=1）', !!firstFull,
         firstFull ? `snapSeq=${firstFull.msg.snapSeq} ents=${firstFull.msg.ents.length} aoi.r=${firstFull.msg.ext && firstFull.msg.ext.aoi && firstFull.msg.ext.aoi.r}` : '未见快照')
+    } else if (meta.net.tech === 'S4') {
+      /* S4 服务端权威物理（GAMES-78）：welcome.state 16 球固定阵型 + room.physics
+         声明块（引擎版本护栏，设计 §5.1）——静止期无快照流是正常态（事件驱动） */
+      const ballsN = smoke.state && Array.isArray(smoke.state.balls) ? smoke.state.balls.length : 0
+      ok('A1', 'S4 welcome.state 含 16 球固定阵型', ballsN === 16 && !smoke.state.balls[8].pot && smoke.state.openTable === true,
+        `balls=${ballsN} openTable=${smoke.state && smoke.state.openTable} turn=${smoke.state && smoke.state.turn}`)
+      const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.physics)
+      ok('A1', 'S4 room.physics 声明块（engine+hash）', !!wel && !!wel.msg.room.physics.engine && Number.isInteger(wel.msg.room.physics.hash),
+        wel ? `${wel.msg.room.physics.engine}#${wel.msg.room.physics.hash}` : '未见声明块')
     } else if (meta.net.tech === 'S3') {
       /* S3 混合同步（GAMES-68）：welcome.state 双层（build 资源/建筑位 + battle 空态墙/心）
          + 首张建设快照（ext.layer='build'，设计 §6 A1）——静默期无战斗帧是正常态（附决策 1） */
@@ -357,8 +455,11 @@ try {
         firstBuild ? `snapSeq=${firstBuild.msg.snapSeq} frame=${firstBuild.msg.frame} ents=${firstBuild.msg.ents.length}` : '未见建设快照')
     }
     /* A4 注入 → 帧反映（服务端同钟：receivedAt → 帧广播 ts）。
-       S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。 */
-    const injPayload = isS2 ? { mx: 63, my: 0, fire: 0, frame: 1 } : { mx: 63, my: 0, fire: 0 }
+       S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。
+       S4：注入 shot op → 首张球动期 snapshot（ext.physics，≤10 tick/100ms，§6 A4）。 */
+    const injPayload = isS2 ? { mx: 63, my: 0, fire: 0, frame: 1 }
+      : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
+      : { mx: 63, my: 0, fire: 0 }
     const inj = await gwInput(smoke.roomId, smoke.playerSeat, 'ctrl', injPayload)
     const receivedAt = inj.json && inj.json.receivedAt
     let refl = null, r4 = s, c4 = cursor
@@ -368,7 +469,9 @@ try {
       r4 = r.json; c4 = r.json.cursor
       refl = isS2
         ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && Number(e.msg.ext.ack) >= 1)
-        : (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
+        : meta.net.tech === 'S4'
+          ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && e.msg.ext.physics)
+          : (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
       if (!refl) await sleep(30)
     }
     smokeEnd.reflMs = refl ? refl.ts - receivedAt : -1
@@ -404,13 +507,50 @@ try {
   if (smoke) await gw('DELETE', '/api/test/room', { roomId: smoke.roomId }).catch(() => {})
 }
 
-/* ---------- A2 能赢 / A3 能输（剧本局；额外剧本名以 A+ 标注） ---------- */
+/* ---------- A2 能赢 / A3 能输（剧本局；额外剧本名以 A+ 标注；S4 deterministic 双跑） ---------- */
 for (const [name, sc] of Object.entries(script.scenarios)) {
   const aid = name === 'win' ? 'A2' : name === 'lose' ? 'A3' : `A+(${name})`
-  console.log(`[${aid}] 剧本局 ${name}（policy=${sc.policy}，期望胜方 ${sc.expectWinner}）`)
+  console.log(`[${aid}] 剧本局 ${name}（policy=${sc.policy}，期望胜方 ${sc.expectWinner}${sc.runs ? ` ×${sc.runs} runs` : ''}）`)
   const t0 = Date.now()
   let room = null
   try {
+    /* S4 确定性双跑（GAMES-78 A6，设计 §6）：同 seed 同策略两房——
+       ① 两 run 终态 stateHash 相等；② 输入日志（shot 序列，剥 frame 墙钟字段）逐字节相等；
+       ③ 在线终态 == 回放器重放（本地引 sim.cjs 跑 replayShots，S4 红线首证）。 */
+    if (sc.runs && sc.runs > 1) {
+      const runs = []
+      for (let ri = 0; ri < sc.runs; ri++) {
+        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
+        const rr = created.json && created.json.ok ? created.json : null
+        if (!rr) { ok(aid, `${name} 建房 run${ri + 1}`, false, `HTTP ${created.status}`); break }
+        const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
+        const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
+        const played = await playScript(rr.roomId, POLICIES[sc.policy || 'idle'] || POLICIES.idle, Date.now() + budgetMs, isS2)
+        await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
+        if (!played.result) { ok(aid, `${name} run${ri + 1} 达成终态`, false, played.error || '未终局'); break }
+        runs.push(played)
+      }
+      if (runs.length === sc.runs) {
+        const stripFrame = (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
+        const hash0 = runs[0].stateHash, log0 = stripFrame(runs[0].state)
+        const hashesEq = runs.every((x) => x.stateHash === hash0)
+        const logsEq = runs.every((x) => stripFrame(x.state) === log0)
+        ok(aid, `${name}：同 seed 同策略两房终态 stateHash 相等`, hashesEq, `hash=${hash0}${hashesEq ? '' : ' 各房不一：' + runs.map((x) => x.stateHash).join('/')}`)
+        ok(aid, `${name}：输入日志（shot 序列）逐字节相等`, logsEq, `${JSON.parse(log0).length} 杆${logsEq ? '' : '（序列不一致）'}`)
+        let replayOk = false, replayDetail = '未找到可回放 sim'
+        try {
+          const req = createRequire(pathToFileURL(join(gameDir, 'sim.cjs')).href)
+          const sim = req(join(gameDir, 'sim.cjs'))
+          if (sim && sim.replayShots && sim.hashRules) {
+            const rp = sim.replayShots(script.seed, runs[0].state.shots, script.maxTicks)
+            replayOk = sim.hashRules(rp) === runs[0].state.restHash
+            replayDetail = replayOk ? `replay==在线 restHash（${sim.hashRules(rp)}）` : `replay ${sim.hashRules(rp)} ≠ 在线 ${runs[0].state.restHash}`
+          }
+        } catch (e) { replayDetail = `回放器加载失败：${e.message}` }
+        ok(aid, `${name}：在线终态 == 回放器重放（S4 确定性首证）`, replayOk, replayDetail)
+      }
+      continue
+    }
     const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
     room = created.json && created.json.ok ? created.json : null
     if (!room) { ok(aid, `${name} 建房`, false, `HTTP ${created.status} ${created.json && created.json.error}`); continue }

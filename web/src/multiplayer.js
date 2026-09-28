@@ -21,7 +21,7 @@ const CATALOG = [
   { name: '帝国萌芽', track: 'T3 混合', tech: 'S3', on: true, url: '/games/multiplayer/empire-sprout/index.html' },
   { name: '街头足球', track: 'T3 混合', tech: 'S3+S4' },
   { name: '极限接力', track: 'T3 混合', tech: 'S3' },
-  { name: '八球台球', track: 'T4 物理', tech: 'S4' },
+  { name: '八球台球', track: 'T4 物理', tech: 'S4', on: true, url: '/games/multiplayer/pool-physics/index.html' },
   { name: '苍穹争锋', track: 'T4 物理', tech: 'S4' },
   { name: '元素对决', track: 'T5 回合', tech: 'S5' },
   { name: '弈界棋阁', track: 'T5 回合', tech: 'S5' },

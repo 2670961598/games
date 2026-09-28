@@ -215,6 +215,20 @@ export class RoomManager {
     }
   }
 
+  /* ---------- op 通道（S4+，协议 §6 S5 预留位：一次性指令，服务器权威校验在 sim） ---------- */
+  op(connCtx, msg) {
+    const room = connCtx.room
+    if (!room || connCtx.role !== 'player' || room.phase !== 'live') return
+    const s = room.seats[connCtx.seat]
+    if (!s || s.conn !== connCtx) return
+    if (!room.sim.op) return
+    try {
+      room.sim.op(room, connCtx.seat, msg)
+    } catch (err) {
+      this.log({ k: 'op-error', roomId: room.id, error: String(err && err.message || err) })
+    }
+  }
+
   /* ---------- 帧 advance（由网关全局定时器驱动） ---------- */
   tickAll(now) {
     for (const room of [...this.rooms.values()]) {
@@ -263,10 +277,12 @@ export class RoomManager {
     if (room.phase === 'ended' && now >= room.disposeAt) this.dispose(room, 'ended')
   }
 
-  /** live 帧推进（S1/S2 共用；帧距/追帧上限随 timeScale 缩放，timeScale=1 与原语义逐字节一致） */
+  /** live 帧推进（S1/S2/S4 共用；帧距/追帧上限随 timeScale 缩放，timeScale=1 与原语义逐字节一致） */
   tickLive(room, now) {
     const dueMs = room.sim.META.tickMs / (room.timeScale || 1)
-    const stepCap = Math.max(2, Math.ceil(2 * (room.timeScale || 1)))
+    // 追帧上限按 tickMs 归一（GAMES-78）：tickMs=100 时与旧式 ceil(2×timeScale) 逐字节一致；
+    // 快钟游戏（pool tickMs=10）在 8x 假时钟下需 800 步/s，50ms 驱动拍须放开步帽。
+    const stepCap = Math.max(2, Math.ceil((2 * (room.timeScale || 1) * 100) / (room.sim.META.tickMs || 100)))
     let steps = 0
     while (now - room.lastFrameAt >= dueMs && steps < stepCap) {
       room.lastFrameAt += dueMs
@@ -366,6 +382,7 @@ export class RoomManager {
   sendWelcome(ctx) {
     const room = ctx.room
     const s = ctx.role === 'player' ? room.seats[ctx.seat] : null
+    const extra = room.sim.welcomeExtra ? room.sim.welcomeExtra() : null // S4 物理声明块（协议 §6 S4 位）
     ctx.conn.send(JSON.stringify({
       t: 'welcome', roomId: room.id, gameId: room.gameId,
       role: ctx.role, seat: ctx.role === 'player' ? ctx.seat : undefined,
@@ -375,6 +392,7 @@ export class RoomManager {
         name: room.name, mode: room.sim.META.mode, state: room.phase,
         countdownMs: Math.max(0, room.liveAt - nowMs()),
         seats: this.roster(room),
+        ...(extra || {}),
       },
       state: room.state,
     }))
