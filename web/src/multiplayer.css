@@ -68,10 +68,10 @@ a { color: inherit; text-decoration: none; }
 .mp-card {
   flex: 0 0 200px;
   scroll-snap-align: start;
-  border-radius: 14px;
+  border-radius: 14px;                      /* 与 .mp-slot 同圆角/同青系描边（GAMES-75 卡槽一致） */
   padding: 12px;
-  background: linear-gradient(160deg, rgba(37, 99, 235, 0.16), rgba(20, 24, 34, 0.9));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(160deg, rgba(56, 189, 248, 0.14), rgba(20, 24, 34, 0.9));
+  border: 1px solid rgba(56, 189, 248, 0.35);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -84,7 +84,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px;
   padding: 5px 14px;
   border-radius: 999px;
-  background: #2563eb;
+  background: #0284c7;                      /* 槽位同青系（#38bdf8 族的实底档，白字对比 ≥4.5:1） */
   color: #fff;
 }
 .mp-card__join.spectate { background: rgba(255, 255, 255, 0.1); color: #8b93a7; }
