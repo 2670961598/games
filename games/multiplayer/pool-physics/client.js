@@ -14,6 +14,9 @@
  *   juice：杆头回抽-停顿-击出三段（击出帧=op 注入帧）/白球冲击波纹/落袋吸入+袋口闪光/碰撞音效位 4 档；
  *   节奏：对手回合观战运镜（跟球移镜，夹紧不越识图墨水带）/回合切换动效/倒计时最后 5s 脉动；
  *   音效位五组（击球/碰撞/落袋/犯规/胜利）平台协议静音占位（登记台账不出声，音源接驳在平台层）。
+ * GAMES-85 视觉统一（只动渲染层，sim/net 零改动）：
+ *   台面质感/袋口阴影预烘焙离屏层（帧内一张 drawImage）；球体高光全 16 球同位同径 sprite；
+ *   瞄准辅助三级视觉层级（主线 1.6 > Ghost/分离线 1.4/1 > 反射段 1）；色盲双编码=花色白环带+号码白盘（§7 校验表）。
  * ===================================================================== */
 (function () {
   'use strict';
@@ -163,19 +166,57 @@
       '#F2C31D', '#2D5FA8', '#D0342C', '#7B3FA0', '#E8862D', '#1E7A3C', '#8B2942'];
     return c[id];
   }
-  function drawTable() {
-    ctx.fillStyle = WOOD; ctx.fillRect(TX - 14, TY - 14, TABLE_W + 28, TABLE_H + 28);
-    ctx.fillStyle = GREEN; ctx.fillRect(TX, TY, TABLE_W, TABLE_H);
+  /* ---- GAMES-85 视觉统一：台面质感/袋口阴影预渲染层 ----
+   * 木框渐变+内棱高光 / 台呢径向暗角+库边内阴影 / 袋口阴影晕+袋唇反光，
+   * 一回性烘焙进离屏层，帧内仅一张 drawImage（观战运镜 z≤1.14 下 sc=dpr×1.25 仍 ≥1x 物理分辨率）。 */
+  var tableLayer = null;
+  function buildTableLayer(dpr) {
+    var sc = dpr * 1.25;
+    var oc = document.createElement('canvas');
+    oc.width = Math.round(W * sc); oc.height = Math.round(H * sc);
+    var c = oc.getContext('2d');
+    c.setTransform(sc, 0, 0, sc, 0, 0);
+    var wg = c.createLinearGradient(0, TY - 14, 0, TY + TABLE_H + 14);          // 木框：纵向渐变
+    wg.addColorStop(0, '#7A5633'); wg.addColorStop(.5, WOOD); wg.addColorStop(1, '#5A3D22');
+    c.fillStyle = wg; c.fillRect(TX - 14, TY - 14, TABLE_W + 28, TABLE_H + 28);
+    c.strokeStyle = 'rgba(255,235,200,.16)'; c.lineWidth = 1;
+    c.strokeRect(TX - 13.5, TY - 13.5, TABLE_W + 27, TABLE_H + 27);              // 框内棱高光
+    var fg = c.createRadialGradient(TX + TABLE_W / 2, TY + TABLE_H / 2, 30, TX + TABLE_W / 2, TY + TABLE_H / 2, TABLE_W * 0.62);
+    fg.addColorStop(0, '#24835A'); fg.addColorStop(.62, GREEN); fg.addColorStop(1, '#17563A');   // 台呢暗角（中心亮→边暗）
+    c.fillStyle = fg; c.fillRect(TX, TY, TABLE_W, TABLE_H);
+    c.strokeStyle = 'rgba(0,0,0,.30)'; c.lineWidth = 2;
+    c.strokeRect(TX + 1, TY + 1, TABLE_W - 2, TABLE_H - 2);                      // 库边内阴影（一圈压暗）
     var pockets = S.consts.POCKETS;
     for (var p = 0; p < 6; p++) {
-      var px = TX + pockets[p][0] * M2P, py = TY + pockets[p][1] * M2P;
-      ctx.fillStyle = POCKET;
-      ctx.beginPath(); ctx.arc(TX + Math.max(8, Math.min(TABLE_W - 8, px)), TY + Math.max(8, Math.min(TABLE_H - 8, py)), 10, 0, 7); ctx.fill();
+      /* GAMES-85 修（既有 F 级视觉错位）：旧代码 arc(TX+clamp(px)) 对已含 TX 的 px 二次偏移+错向 clamp，
+       * 6 袋坍缩为底边 3 点、顶边无袋（sim 判袋一直在真坐标——渲染-物理错位，GAMES-78 起隐性）。
+       * 现：袋位=POCKETS 真坐标（角袋在角/中袋切库边），袋径=捕获半径同源（角 13.5px/中 11.5px）。 */
+      var pr = pockets[p][2] * M2P;
+      var cx2 = TX + pockets[p][0] * M2P, cy2 = TY + pockets[p][1] * M2P;
+      var halo = c.createRadialGradient(cx2, cy2, pr, cx2, cy2, pr + 5.5);      // 袋口阴影晕
+      halo.addColorStop(0, 'rgba(4,8,6,.6)'); halo.addColorStop(1, 'rgba(4,8,6,0)');
+      c.fillStyle = halo; c.beginPath(); c.arc(cx2, cy2, pr + 5.5, 0, 7); c.fill();
+      c.fillStyle = POCKET; c.beginPath(); c.arc(cx2, cy2, pr, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.10)'; c.lineWidth = 1.2;
+      c.beginPath(); c.arc(cx2, cy2, pr + 0.8, Math.PI * 0.15, Math.PI * 0.85); c.stroke();   // 下缘袋唇反光
     }
-    ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1;
-    ctx.strokeRect(TX + 85, TY + 4, 1, TABLE_H - 8);   // 开球线（x=85000）
+    c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 1;
+    c.strokeRect(TX + 85, TY + 4, 1, TABLE_H - 8);   // 开球线（x=85000）
+    return oc;
   }
+  function drawTable() { ctx.drawImage(tableLayer, 0, 0, W, H); }
   function ballPx(id, b) { return [TX + b.x * M2P, TY + b.y * M2P]; }
+  /* 高光一致性（GAMES-85）：全 16 球同一 sprite 同位（左上 -2.6,-2.9）同径（r2.5）同亮度，
+   * 径向渐变一次烘焙——色盲/灰度下也是稳定的体积线索（不依赖色相）。 */
+  var hlSprite = null;
+  function buildHlSprite() {
+    var s = 12, oc = document.createElement('canvas'); oc.width = s; oc.height = s;
+    var c = oc.getContext('2d');
+    var g = c.createRadialGradient(s / 2, s / 2, 0.5, s / 2, s / 2, s / 2);
+    g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(.55, 'rgba(255,255,255,.38)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(s / 2, s / 2, s / 2, 0, 7); c.fill();
+    return oc;
+  }
   function drawBalls() {
     var balls = (replay ? replay.st.balls : st.balls) || [];
     for (var i = 0; i < 16; i++) {
@@ -183,14 +224,18 @@
       var xy = ballPx(i, b), x = xy[0], y = xy[1];
       ctx.fillStyle = ballColor(i);
       ctx.beginPath(); ctx.arc(x, y, 7.5, 0, 7); ctx.fill();
-      if (i === 0) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.arc(x - 2, y - 2, 1.5, 0, 7); ctx.fill(); continue; }
-      if (i > 8) {   // 花色白环带（形状第二通道，§7）
-        ctx.strokeStyle = '#F4F0E6'; ctx.lineWidth = 3.2;
-        ctx.beginPath(); ctx.arc(x, y, 5.2, 0, 7); ctx.stroke();
+      if (i === 0) {   // 白球：中心杆法标记点（共享高光在下统一落）
+        ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.arc(x, y, 1.3, 0, 7); ctx.fill();
+      } else {
+        if (i > 8) {   // 花色白环带（形状第二通道，§7）
+          ctx.strokeStyle = '#F4F0E6'; ctx.lineWidth = 3.2;
+          ctx.beginPath(); ctx.arc(x, y, 5.2, 0, 7); ctx.stroke();
+        }
+        ctx.fillStyle = '#F4F0E6'; ctx.beginPath(); ctx.arc(x, y, 3.4, 0, 7); ctx.fill();
+        ctx.fillStyle = '#222'; HF('ball', 'no', 9, 600); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(i), x, y + 0.5);
       }
-      ctx.fillStyle = '#F4F0E6'; ctx.beginPath(); ctx.arc(x, y, 3.4, 0, 7); ctx.fill();
-      ctx.fillStyle = '#222'; HF('ball', 'no', 9, 600); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(i), x, y + 0.5);
+      ctx.drawImage(hlSprite, x - 5.1, y - 5.4, 5, 5);   // 球体高光（含白球，同位同径）
     }
   }
   /* 瞄准辅助（§3.1 分档：全辅助=瞄准线+Ghost+分离线；normal 长线；裸打=40px 短杆；
@@ -202,8 +247,9 @@
     var dx = Math.cos(q / 8192 * Math.PI * 2), dy = Math.sin(q / 8192 * Math.PI * 2);
     var cue = balls[0], cx = TX + cue.x * M2P, cy = TY + cue.y * M2P;
     var reveal = assist === 0 ? 0 : Math.max(0, Math.min(1, (aimHold - 800) / 400));   // 长按渐显（400ms 淡入）
+    /* 视觉层级（GAMES-85）：主瞄准线（1.6/.78，顶层）> Ghost/分离线（1.4/1）> 反射预测段（1/.35，最弱） */
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,.65)'; ctx.lineWidth = 1.2; ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = 'rgba(255,255,255,.78)'; ctx.lineWidth = 1.6; ctx.setLineDash([5, 5]);
     var hit = rayBall(cue, dx, dy, balls);
     if (assist === 0) {
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + dx * 40, cy + dy * 40); ctx.stroke();
@@ -213,11 +259,13 @@
       if (assist === 2 || reveal > 0) {
         ctx.save();
         if (assist < 2) ctx.globalAlpha = reveal;
+        ctx.setLineDash([]);   // Ghost/分离线实线（GAMES-85：主瞄准线才虚线——既有虚线幽灵球是 setLineDash 未复位的隐性层级行为）
         var nb = balls[hit.id];
         var nx = (nb.x - (cue.x + dx * hit.d)) / 15000, ny = (nb.y - (cue.y + dy * hit.d)) / 15000;
         var nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
-        ctx.strokeStyle = 'rgba(232,163,61,.8)';
-        ctx.beginPath(); ctx.arc(hx, hy, 7.5, 0, 7); ctx.stroke();          // Ghost 球
+        ctx.strokeStyle = 'rgba(232,163,61,.8)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(hx, hy, 7.5, 0, 7); ctx.stroke();          // Ghost 球（实线轮廓 lw2：球体读形）
+        ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + nx * 46, hy + ny * 46); ctx.stroke();  // 目标球分离线
         ctx.strokeStyle = 'rgba(61,200,232,.7)';
         var ox = dx - nx * (dx * nx + dy * ny), oy = dy - ny * (dx * nx + dy * ny);
@@ -232,13 +280,16 @@
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
         ctx.save();
         if (assist < 2) ctx.globalAlpha = reveal;
-        ctx.strokeStyle = 'rgba(255,255,255,.3)';
+        ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + far.rx * 60, ey + far.ry * 60); ctx.stroke();
         ctx.restore();
       } else {
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(TX + far.x * M2P, TY + far.y * M2P); ctx.stroke();
       }
     }
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.beginPath(); ctx.arc(cx + dx * 9, cy + dy * 9, 1.6, 0, 7); ctx.fill();   // 触点锚（白球出杆接触点，层级顶）
     ctx.restore();
     drawCue(cx, cy, dx, dy);
   }
@@ -415,9 +466,9 @@
     ctx.restore();
     ctx.globalAlpha = 1;
   }
-  function pocketPx(p) {            // 袋口像素位（含桌面绘制同款贴边夹紧）
-    var pk = S.consts.POCKETS[p] || [170000, 85000];
-    return [TX + Math.max(8, Math.min(TABLE_W - 8, pk[0] * M2P)), TY + Math.max(8, Math.min(TABLE_H - 8, pk[1] * M2P))];
+  function pocketPx(p) {            // 袋口像素位（sim 真坐标，与桌面渲染同源——GAMES-85 修双重偏移）
+    var pk = S.consts.POCKETS[p] || [170000, 85000, 11500];
+    return [TX + pk[0] * M2P, TY + pk[1] * M2P];
   }
   function drawFx(dt) {
     for (var i = fx.length - 1; i >= 0; i--) {
@@ -664,6 +715,7 @@
     cv.width = W * dpr; cv.height = H * dpr;
     cv.style.width = W + 'px'; cv.style.height = H + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    tableLayer = buildTableLayer(dpr); hlSprite = buildHlSprite();   // GAMES-85 视觉层烘焙（一次构建，帧内 drawImage）
     st = S.create((Math.random() * 0xfffffff) | 0);       // 先摆一张本地桌（未连上也有画面）
     st.balls.forEach(function (b) { });
     botRng = S.mulberry32(st.seed);
