@@ -55,7 +55,7 @@
         "A6 确定性双跑：同 seed 两房终态 stateHash 与输入日志（picks+ops）逐字节相等；且在线终态 hash == 回放器重放 hash（S5 红线首证）"
       ],
       "script": {
-        "seed": 20260929, "timeScale": 8, "startDelayMs": 600, "maxTicks": 48000,
+        "seed": 20261001, "timeScale": 8, "startDelayMs": 600, "maxTicks": 48000,
         "scenarios": {
           "win":  { "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "burn-face" },
           "lose": { "botLevels": [null, "competitive"], "expectWinner": "B", "policy": "idle" },

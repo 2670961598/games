@@ -51,9 +51,16 @@
   cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'
   ctx.scale(dpr, dpr)
   document.getElementById('stage').style.background = '#1E1030'
+  document.getElementById('boot').style.display = 'none' // 藏 DOM 引导字（canvas 全宽；几何断言防 flex 溢出）
+
+  /* ---------- QA 证据：__GAMES_DEBUG__.events（GAMES-90 F3，对齐 pool/slg/mmo/emp 泳道契约） ---------- */
+  const dbgEvents = []
+  const report = (event, payload) => { dbgEvents.push({ event, payload: payload || null, at: Date.now() }) }
 
   const S = { // 客户端态
     conn: null, seat: 0, token: null, roomId: null, roster: [],
+    spectator: false, // F2：满员转旁观（seat=-1）——渲染走 rs() 观战视角、输入全禁
+    offline: false, offlineLevel: 'balanced', // F3：?debug=1 本地对打（同 sim 同 brain，零网关）
     view: null, // 最新个性化 state（§5.3 视图）
     lastRulingAt: 0, deadlineAt: 0, timerMs0: 0,
     sel: null, // {mode:'card'|'atk'|'power', card?, from?}
@@ -62,9 +69,10 @@
     fx: [], banners: [], result: null, over: false,
     mullKeep: null, err: '', connLost: false,
   }
-  const myViewHand = () => (S.view && S.view.hand && S.view.hand[S.seat]) || []
-  const oppSeat = () => 1 - S.seat
-  const flip = (c) => (S.seat === 1 ? (2 - ((c / 3) | 0)) * 3 + (c % 3) : c) // 席 B 翻转渲染（服务器行号绝对，§1.3）
+  const rs = () => (S.spectator ? 0 : S.seat) // 渲染席（F2：观战以席 A 视角看全场；真人席=自身）
+  const myViewHand = () => (S.view && S.view.hand && Array.isArray(S.view.hand[rs()]) ? S.view.hand[rs()] : []) // 观战=双隐藏→空扇
+  const oppSeat = () => 1 - rs()
+  const flip = (c) => (rs() === 1 ? (2 - ((c / 3) | 0)) * 3 + (c % 3) : c) // 席 B 翻转渲染（服务器行号绝对，§1.3；观战不翻）
   const cellXY = (c) => { const d = flip(c), row = (d / 3) | 0, col = d % 3; return { x: BOARD.x + col * (BOARD.cellW + BOARD.gap), y: BOARD.y + row * (BOARD.cellH + BOARD.gap) } }
   const cellAt = (x, y) => { for (let c = 0; c < 9; c++) { const p = cellXY(c); if (x >= p.x && x <= p.x + BOARD.cellW && y >= p.y && y <= p.y + BOARD.cellH) return c } return -1 }
 
@@ -82,13 +90,15 @@
     ws.onclose = () => { S.connLost = true }
     ws.onerror = () => { S.connLost = true }
   }
-  const sendOp = (op) => { if (S.conn && S.conn.readyState === 1) S.conn.send(JSON.stringify(Object.assign({ t: 'op' }, op))) }
+  const sendOp = (op) => {
+    if (S.offline) { offlineApply(op); return } // F3 离线对打：同一 applyOp 权威入口
+    if (S.conn && S.conn.readyState === 1) S.conn.send(JSON.stringify(Object.assign({ t: 'op' }, op)))
+  }
 
   function onMsg(m) {
     if (m.t === 'error') { S.err = m.code || m.message; setTimeout(() => { S.err = '' }, 2500); return }
     if (m.t === 'welcome') {
-      S.roomId = m.roomId; S.seat = m.role === 'player' ? m.seat : -1; S.token = m.token
-      if (m.role !== 'player') { S.spectator = true }
+      S.roomId = m.roomId; S.spectator = m.role !== 'player'; S.seat = S.spectator ? -1 : m.seat; S.token = m.token
       if (m.token != null) { try { sessionStorage.setItem('ed-' + S.roomId, JSON.stringify({ seat: S.seat, token: S.token })) } catch {} }
       S.view = m.state
       if (m.room && m.room.duel && m.room.duel.hash !== undefined) S.duelHash = m.room.duel.hash
@@ -108,10 +118,10 @@
   }
   function startTimer(view) { S.timerMs0 = view && view.timerMs || 0; S.deadlineAt = performance.now() + S.timerMs0 }
   function onEvent(ev, m) {
-    const posOf = (tgt) => { if (!tgt) return null; if (tgt.c === -1) return tgt.s === S.seat ? { x: W / 2, y: H - 158 } : { x: W / 2, y: 56 }; const p = cellXY(tgt.c); return { x: p.x + BOARD.cellW / 2, y: p.y + BOARD.cellH / 2 } }
+    const posOf = (tgt) => { if (!tgt) return null; if (tgt.c === -1) return tgt.s === rs() ? { x: W / 2, y: H - 158 } : { x: W / 2, y: 56 }; const p = cellXY(tgt.c); return { x: p.x + BOARD.cellW / 2, y: p.y + BOARD.cellH / 2 } }
     if (ev.k === 'damage' || ev.k === 'heal') { const p = posOf(ev.tgt); if (p) S.fx.push({ k: ev.k, n: ev.n, x: p.x, y: p.y, t0: performance.now() }) }
     if (ev.k === 'reaction') { const r = RT[ev.rt]; S.banners.push({ txt: r[0] + '反应！', c1: r[1], c2: r[2], t0: performance.now() }) }
-    if (ev.k === 'turn') { S.banners.push({ txt: ev.s === S.seat ? '你的回合' : '对方回合', c1: ev.s === S.seat ? COL_A : COL_B, c2: '#B9A8E8', t0: performance.now(), sys: 1 }) }
+    if (ev.k === 'turn') { S.banners.push({ txt: S.spectator ? '玩家' + (ev.s === 0 ? 'A' : 'B') + ' 的回合' : (ev.s === S.seat ? '你的回合' : '对方回合'), c1: ev.s === 0 ? COL_A : COL_B, c2: '#B9A8E8', t0: performance.now(), sys: 1 }) }
     if (ev.k === 'reject') { S.fx.push({ k: 'reject', x: W / 2, y: 330, t0: performance.now() }); S.sel = null; S.drag = null }
     if (ev.k === 'burn') { S.banners.push({ txt: '手牌溢出·烧毁', c1: '#E85D3D', c2: '#1E1030', t0: performance.now(), sys: 1 }) }
     if (ev.k === 'fatigue') { S.banners.push({ txt: '疲劳 ' + ev.n, c1: '#9D6BE8', c2: '#1E1030', t0: performance.now(), sys: 1 }) }
@@ -120,8 +130,8 @@
   }
 
   /* ---------- 客户端合法目标预判（仅引导；权威在服务器，reject 回弹） ---------- */
-  function affordable(i) { const h = myViewHand(); const d = CARDS[h[i]]; return d && S.view.heroes[S.seat].mana >= d.c }
-  function ownCount() { let n = 0; for (let c = 0; c < 9; c++) if (S.view.board[c] && S.view.board[c].seat === S.seat) n++; return n }
+  function affordable(i) { const h = myViewHand(); const d = CARDS[h[i]]; return d && S.view.heroes[rs()].mana >= d.c }
+  function ownCount() { let n = 0; for (let c = 0; c < 9; c++) if (S.view.board[c] && S.view.board[c].seat === rs()) n++; return n }
   function legalCells(i) {
     const h = myViewHand(), d = CARDS[h[i]]
     if (!d || d.sp || !affordable(i) || ownCount() >= 4) return []
@@ -133,31 +143,31 @@
     const h = myViewHand(), id = h[i]
     const out = []
     for (let c = 0; c < 9; c++) { const m = S.view.board[c]; if (!m) continue
-      if (id === 'FS1' || id === 'TS1' || id === 'WS2') { if (m.seat !== S.seat) out.push({ tgt: { s: m.seat, c } }) }
-      else if (id === 'WS1') { if (m.seat === S.seat) out.push({ tgt: { s: S.seat, c } }) }
-      else if (id === 'NS2') { if (m.seat === S.seat) for (let t = 0; t < 9; t++) if (!S.view.board[t]) out.push({ tgt: { from: c, to: t } }) }
+      if (id === 'FS1' || id === 'TS1' || id === 'WS2') { if (m.seat !== rs()) out.push({ tgt: { s: m.seat, c } }) }
+      else if (id === 'WS1') { if (m.seat === rs()) out.push({ tgt: { s: rs(), c } }) }
+      else if (id === 'NS2') { if (m.seat === rs()) for (let t = 0; t < 9; t++) if (!S.view.board[t]) out.push({ tgt: { from: c, to: t } }) }
     }
     if (id === 'FS1') out.push({ tgt: { s: oppSeat(), c: -1 } })
-    if (id === 'WS1') out.push({ tgt: { s: S.seat, c: -1 } })
+    if (id === 'WS1') out.push({ tgt: { s: rs(), c: -1 } })
     if (id === 'FS2') for (let r = 0; r < 3; r++) out.push({ tgt: { row: r } })
     if (id === 'NS1' || id === 'TS2' || id === 'X0') out.push({})
     return out
   }
   function atkTargets(from) {
     const m = S.view.board[from], e = oppSeat(), out = []
-    if (!m || m.seat !== S.seat || !m.ready || m.frozen > 0) return out
+    if (!m || m.seat !== rs() || !m.ready || m.frozen > 0) return out
     let taunt = false
     for (let c = 0; c < 9; c++) { const t = S.view.board[c]; if (t && t.seat === e && t.taunt) taunt = true }
     const adj = new Set([from - 3, from + 1, from + 3, from - 1])
     for (let c = 0; c < 9; c++) { const t = S.view.board[c]; if (!t || t.seat !== e) continue; if (taunt && !t.taunt) continue; if (m.melee && !adj.has(c)) continue; out.push(c) }
-    const nearFoeRow = S.seat === 0 ? 0 : 2
+    const nearFoeRow = rs() === 0 ? 0 : 2
     if (!taunt && !m.newly && (m.ranged || ((from / 3) | 0) === nearFoeRow)) out.push(-1)
     return out
   }
   function powerTargets() {
-    const hero = S.view.heroes[S.seat].hero, out = []
+    const hero = S.view.heroes[rs()].hero, out = []
     if (hero === 0) { out.push({ tgt: { s: oppSeat(), c: -1 } }); for (let c = 0; c < 9; c++) if (S.view.board[c]) out.push({ tgt: { s: S.view.board[c].seat, c } }) }
-    else if (hero === 1) { out.push({ tgt: { s: S.seat, c: -1 } }); for (let c = 0; c < 9; c++) if (S.view.board[c] && S.view.board[c].seat === S.seat) out.push({ tgt: { s: S.seat, c } }) }
+    else if (hero === 1) { out.push({ tgt: { s: rs(), c: -1 } }); for (let c = 0; c < 9; c++) if (S.view.board[c] && S.view.board[c].seat === rs()) out.push({ tgt: { s: rs(), c } }) }
     else if (hero === 2) out.push({})
     else if (hero === 3) for (let c = 0; c < 9; c++) if (S.view.board[c]) out.push({ tgt: { s: S.view.board[c].seat, c } })
     return out
@@ -165,8 +175,8 @@
   function faceDamage() { // 斩杀线客户端复算（§3.2，只用己方可见信息）
     const e = oppSeat(); let d = 0
     for (let c = 0; c < 9; c++) { const m = S.view.board[c]; if (!m || m.seat === e || m.taunt) { if (m && m.seat === e && m.taunt) return 0 } }
-    for (let c = 0; c < 9; c++) { const m = S.view.board[c]; if (!m || m.seat !== S.seat || !m.ready || m.frozen > 0 || m.newly) continue; const nearFoeRow = S.seat === 0 ? 0 : 2; if (m.ranged || ((c / 3) | 0) === nearFoeRow) d += m.atk }
-    const me = S.view.heroes[S.seat]
+    for (let c = 0; c < 9; c++) { const m = S.view.board[c]; if (!m || m.seat !== rs() || !m.ready || m.frozen > 0 || m.newly) continue; const nearFoeRow = rs() === 0 ? 0 : 2; if (m.ranged || ((c / 3) | 0) === nearFoeRow) d += m.atk }
+    const me = S.view.heroes[rs()]
     if (!me.powerUsed && me.mana >= 2 && me.hero === 0) d += 2
     const h = myViewHand()
     for (let i = 0; i < h.length; i++) if (h[i] === 'FS1' && me.mana >= 3) d += 4
@@ -179,7 +189,7 @@
     if (!m || m.sp) return out
     const row = (cell / 3) | 0, col = cell % 3
     const nbr = [row > 0 ? cell - 3 : -1, col < 2 ? cell + 1 : -1, row < 2 ? cell + 3 : -1, col > 0 ? cell - 1 : -1]
-    for (const n of nbr) { const b = n >= 0 ? S.view.board[n] : null; if (b && b.seat === S.seat && b.school !== m.s) out.push(n) }
+    for (const n of nbr) { const b = n >= 0 ? S.view.board[n] : null; if (b && b.seat === rs() && b.school !== m.s) out.push(n) }
     return out
   }
 
@@ -225,7 +235,8 @@
       return
     }
     if (!v) return
-    if (v.phase === 'pick' && v.heroes[S.seat].hero < 0) { // 选英雄浮层
+    if (S.spectator) return // F2：观战零输入（托管/技能/结束钮全禁——底栏仅作态势显示）
+    if (v.phase === 'pick' && v.heroes[rs()].hero < 0) { // 选英雄浮层
       for (let hI = 0; hI < 4; hI++) { const r = { x: 18 + (hI % 2) * 176, y: 150 + ((hI / 2) | 0) * 190, w: 162, h: 176 }; if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) sendOp({ k: 'pick', hero: hI }) }
       return
     }
@@ -334,7 +345,7 @@
     ctx.fillText(String(m.hp), x + w - 18, y + h - 8)
     ctx.strokeStyle = '#7CE8B8'; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(x + 6, y + h - 6); ctx.lineTo(x + 20, y + h - 6); ctx.stroke()
-    if (mine && m.ready && !m.frozen && S.view.turn === S.seat && S.view.phase === 'play') { ctx.strokeStyle = `rgba(124,232,184,${0.4 + 0.3 * Math.sin(performance.now() / 220)})`; ctx.lineWidth = 1.5; roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 6); ctx.stroke() }
+    if (mine && m.ready && !m.frozen && S.view.turn === rs() && S.view.phase === 'play') { ctx.strokeStyle = `rgba(124,232,184,${0.4 + 0.3 * Math.sin(performance.now() / 220)})`; ctx.lineWidth = 1.5; roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 6); ctx.stroke() }
     ctx.restore()
   }
   function drawCard(id, x, y, sel) {
@@ -361,7 +372,7 @@
     heroBar(6, oppSeat(), true)
     ctx.fillStyle = '#9C8CC8'; ctx.font = F2(9); ctx.textAlign = 'center'
     const turnSec = Math.max(0, Math.ceil((S.deadlineAt - now) / 1000))
-    ctx.fillText(`${v.phase === 'play' ? (v.turn === S.seat ? '你的回合 · ' + turnSec + 's' : '对方回合 · ' + turnSec + 's') : v.phase === 'pick' ? '选择英雄 · ' + turnSec + 's' : v.phase === 'mulligan' ? '换牌 · ' + turnSec + 's' : '对局结束'}  ·  第 ${Math.max(1, Math.ceil((v.turnNo + 1) / 2))} 回合`, W / 2, 108)
+    ctx.fillText(`${S.spectator ? '观战 · ' : ''}${v.phase === 'play' ? (S.spectator ? '玩家' + (v.turn === 0 ? 'A' : 'B') + ' 行动 · ' : v.turn === S.seat ? '你的回合 · ' : '对方回合 · ') + turnSec + 's' : v.phase === 'pick' ? '选择英雄 · ' + turnSec + 's' : v.phase === 'mulligan' ? '换牌 · ' + turnSec + 's' : '对局结束'}  ·  第 ${Math.max(1, Math.ceil((v.turnNo + 1) / 2))} 回合`, W / 2, 108)
     /* 棋盘 3×3（发光格） */
     for (let c = 0; c < 9; c++) {
       const p = cellXY(c)
@@ -376,7 +387,7 @@
         for (const n of previewReactions(c, id)) { const q = cellXY(n); ctx.strokeStyle = SC[CARDS[id].s]; ctx.lineWidth = 3; roundRect(q.x + 2, q.y + 2, BOARD.cellW - 4, BOARD.cellH - 4, 6); ctx.stroke() }
       }
       const m = v.board[c]
-      if (m) drawMinion(m, p.x, p.y, BOARD.cellW, BOARD.cellH, m.seat === S.seat)
+      if (m) drawMinion(m, p.x, p.y, BOARD.cellW, BOARD.cellH, m.seat === rs())
     }
     /* 攻击指示线（§3.2）+ 合法目标高亮 */
     if (S.sel && S.sel.mode === 'atk') {
@@ -397,7 +408,7 @@
         if (!t.tgt) { ctx.fillStyle = 'rgba(232,163,61,0.16)'; roundRect(100, 300, W - 200, 60, 10); ctx.fill(); ctx.fillStyle = '#F2ECFF'; ctx.font = F1(13); ctx.textAlign = 'center'; ctx.fillText('点击施放', W / 2, 335) }
       }
     }
-    heroBar(H - 66 - 132 - 66, S.seat, false)
+    heroBar(H - 66 - 132 - 66, rs(), false)
     /* 手牌扇（迷雾：对方视角只见张数——此处恒为本人视图牌面） */
     const hand = myViewHand()
     for (let i = 0; i < hand.length; i++) { const r = handRect(i); if (S.drag && S.drag.card === i) continue; drawCard(hand[i], r.x, r.y, S.sel && S.sel.mode === 'card' && S.sel.card === i) }
@@ -409,7 +420,7 @@
     if (S.drag != null) { ctx.globalAlpha = 0.72; drawCard(myViewHand()[S.drag.card], S.drag.x - 39, S.drag.y - 54, true); ctx.globalAlpha = 1 }
     /* 底栏：托管 40×48 ｜ 技能 56×48 ｜ 结束回合 108×48 */
     const barY = H - 58
-    const myTurn = v.turn === S.seat && v.phase === 'play'
+    const myTurn = !S.spectator && v.turn === S.seat && v.phase === 'play'
     const secLeft = (S.deadlineAt - now) / 1000
     const btn = (x, w2, label, active, danger) => {
       ctx.fillStyle = active ? '#4A3380' : '#2A1B4A'; roundRect(x, barY, w2, 48, 8); ctx.fill()
@@ -417,14 +428,14 @@
       roundRect(x, barY, w2, 48, 8); ctx.stroke()
       ctx.fillStyle = danger ? '#FF9D85' : '#EDE6FF'; ctx.font = F1(12); ctx.textAlign = 'center'; ctx.fillText(label, x + w2 / 2, barY + 28)
     }
-    btn(14, 40, v.host[S.seat] ? '夺回' : '托管', v.host[S.seat], false)
-    const hero = v.heroes[S.seat]
+    btn(14, 40, v.host[rs()] ? '夺回' : '托管', v.host[rs()], false)
+    const hero = v.heroes[rs()]
     const canPower = myTurn && !hero.powerUsed && hero.mana >= 2
     btn(66, 56, canPower ? '技能' : '技能·' + (hero.powerUsed ? '已用' : '2费'), canPower && !(S.sel && S.sel.mode === 'power'), false)
     btn(252, 108, '结束回合', myTurn, myTurn && secLeft < 5)
     if (S.sel && S.sel.mode === 'power') { ctx.fillStyle = '#F2ECFF'; ctx.font = F1(11); ctx.textAlign = 'center'; ctx.fillText(HEROES[hero.hero] ? HEROES[hero.hero].p : '', 130, barY + 28) }
     /* 浮层：选英雄 */
-    if (v.phase === 'pick' && v.heroes[S.seat].hero < 0) {
+    if (v.phase === 'pick' && v.heroes[rs()].hero < 0) {
       ctx.fillStyle = 'rgba(13,6,24,0.92)'; ctx.fillRect(0, 120, W, H - 120)
       ctx.fillStyle = '#F2ECFF'; ctx.font = F1(14); ctx.textAlign = 'center'; ctx.fillText('选择英雄（10s 超时随机）', W / 2, 142)
       for (let hI = 0; hI < 4; hI++) {
@@ -440,8 +451,13 @@
         ctx.fillStyle = '#9C8CC8'; ctx.fillText(deck, r.x + r.w / 2, r.y + 158)
       }
     }
-    /* 浮层：换牌 */
-    if (v.phase === 'mulligan' && !v.mullDoneByMe) {
+    /* 浮层：换牌（观战双隐藏——显示观战条，无 keep 交互） */
+    if (v.phase === 'mulligan' && S.spectator) {
+      ctx.fillStyle = 'rgba(13,6,24,0.88)'; ctx.fillRect(0, 118, W, 96)
+      ctx.fillStyle = '#B9A8E8'; ctx.font = F1(14); ctx.textAlign = 'center'
+      ctx.fillText('观战中 · 双方换牌（手牌隐藏）', W / 2, 170)
+    }
+    if (v.phase === 'mulligan' && !v.mullDoneByMe && !S.spectator) {
       const keep = S.mullKeep || (S.mullKeep = hand.map(() => true))
       ctx.fillStyle = 'rgba(13,6,24,0.88)'; ctx.fillRect(0, 118, W, H - 118)
       ctx.fillStyle = '#F2ECFF'; ctx.font = F1(14); ctx.textAlign = 'center'; ctx.fillText('换牌：点选保留（30s 全保留）', W / 2, 144)
@@ -476,10 +492,11 @@
     /* 结算页（§7）：胜负大字+战报条+评语+再来一局 */
     if (S.over && S.result) {
       const r = S.result
-      const meWin = r.winner === (S.seat === 0 ? 'A' : 'B')
+      const meWin = r.winner === (rs() === 0 ? 'A' : 'B')
+      const verdict = r.winner === 'draw' ? '平局' : S.spectator ? '玩家' + r.winner + ' 胜利' : meWin ? '胜利' : '败北'
       ctx.fillStyle = 'rgba(13,6,24,0.95)'; ctx.fillRect(0, 0, W, H)
-      ctx.fillStyle = r.winner === 'draw' ? '#B9A8E8' : meWin ? COL_A : COL_B
-      ctx.font = F0(34); ctx.textAlign = 'center'; ctx.fillText(r.winner === 'draw' ? '平局' : meWin ? '胜利' : '败北', W / 2, 150)
+      ctx.fillStyle = r.winner === 'draw' ? '#B9A8E8' : r.winner === 'A' ? COL_A : COL_B
+      ctx.font = F0(34); ctx.textAlign = 'center'; ctx.fillText(verdict, W / 2, 150)
       ctx.font = F1(12); ctx.fillStyle = '#9C8CC8'; ctx.fillText('reason: ' + r.reason, W / 2, 176)
       const sc = r.scores || {}
       ctx.fillStyle = '#EDE6FF'; ctx.font = F1(12)
@@ -500,12 +517,58 @@
     requestAnimationFrame(render)
   }
 
+  /* ---------- 离线对打（F3：?debug=1 / 门禁契约；同 sim 同 brain——零网关本地 1v1） ---------- */
+  let ost = null, otimer = null, opaused = false, osalt = 0
+  const SIM = window.EDuelSim
+  function offlineDrain() { // 引擎裁决队列 → ruling 形消息（走同一 onMsg 渲染路径）
+    if (!ost) return
+    const payloads = ost.outbox.splice(0, ost.outbox.length)
+    for (const p of payloads) onMsg({ t: 'ruling', state: SIM.viewFor(ost, 0), events: p })
+    if (ost.over) { onMsg({ t: 'end', result: ost.result }); clearInterval(otimer); otimer = null }
+  }
+  function offlineApply(op) { // 真人席 0：同一 applyOp 权威入口
+    if (!ost || ost.over) return
+    const res = SIM.applyOp(ost, 0, op)
+    if (res && res.reject) { onMsg({ t: 'ruling', state: SIM.viewFor(ost, 0), events: [{ k: 'reject', why: res.reject, seat: 0 }] }) }
+    offlineDrain()
+  }
+  function offlineStart(level, opts) {
+    if (!SIM) return
+    if (S.conn) { try { S.conn.onclose = null; S.conn.onerror = null; S.conn.close() } catch {} S.conn = null }
+    if (otimer) { clearInterval(otimer); otimer = null }
+    S.offline = true; S.spectator = false; S.seat = 0; S.over = false; S.result = null; S.reveal = null
+    S.sel = null; S.drag = null; S.mullKeep = null; S.fx = []; S.banners = []; S.err = ''; S.connLost = false
+    S.offlineLevel = ['casual', 'balanced', 'competitive'][Math.max(0, Math.min(2, (Number(level) || 1) - 1))] || 'balanced'
+    osalt++
+    ost = SIM.create(SIM.fnv1a32('offline-' + (((opts && opts.seedSalt) || '') + osalt)))
+    onMsg({ t: 'welcome', roomId: 'offline', role: 'player', seat: 0, room: { seats: [{ kind: 'human', name: '你' }, { kind: 'bot', level: S.offlineLevel }] }, state: SIM.viewFor(ost, 0) })
+    report('start', { mode: 'offline', level: S.offlineLevel, seed: ost.seed })
+    otimer = setInterval(() => { // 20ms×2 tick ≈ 实时（tickMs=10）；bot=brain 席 1，真人 op 走 sendOp→offlineApply
+      if (opaused || !ost || ost.over) return
+      for (let i = 0; i < 2 && ost && !ost.over; i++) {
+        const inputs = {}
+        const b = SIM.brain(ost, 1, S.offlineLevel)
+        if (b && b.op) inputs[1] = b
+        SIM.step(ost, inputs)
+        offlineDrain()
+      }
+    }, 20)
+  }
+
   /* ---------- HUD 自证 + 暴露 ---------- */
   window.__GAMES_DEBUG__ = window.__GAMES_DEBUG__ || {}
   window.__GAMES_DEBUG__.hudFonts = function () { const out = {}; for (const k in HUDF) out[k] = { minPx: HUDF[k].minPx, samples: HUDF[k].n }; return out }
-  window.__GAMES_DEBUG__.state = () => ({ view: S.view, seat: S.seat, roster: S.roster, result: S.result })
+  window.__GAMES_DEBUG__.state = () => ({ view: S.view, seat: S.seat, roster: S.roster, result: S.result, offline: S.offline, over: ost ? ost.over : S.over })
   window.__GAMES_DEBUG__.sendOp = sendOp
+  window.__GAMES_DEBUG__.events = dbgEvents                                   // F3：perf-smoke/visual-check 消费（boot/start）
+  window.__GAMES_DEBUG__.start = function (level, opts) { offlineStart(level || 1, opts) } // 离线重开一局
+  window.__GAMES_DEBUG__.pause = function (on) { opaused = !!on }             // visual-check 截图冻结演化（rAF 照跑）
+  window.__GAMES_DEBUG__.roomId = function () { return S.roomId }
+  window.__GAMES_DEBUG__.seat = function () { return S.seat }
+  window.__GAMES_DEBUG__.mode = function () { return S.offline ? 'offline' : 'net' }
 
-  connect()
+  report('boot', { slug: 'element-duel', version: '1.0.0', mode: q.get('debug') === '1' ? 'offline' : 'net' })
+  if (q.get('debug') === '1' && SIM) offlineStart(1) // 门禁口径：零网关本地对打（同 pool/emp 先例）
+  else connect()
   requestAnimationFrame(render)
 })()

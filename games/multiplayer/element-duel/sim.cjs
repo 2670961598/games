@@ -1,7 +1,8 @@
 /* =====================================================================
  * 元素对决 确定性回合引擎（GAMES-88 · S5 回合权威本格首证）
  * 单一事实源：服务端适配器（server/gateway/sims/element-duel.js）require 本文件；
- * 客户端不跑 sim——渲染=ruling 全量 state 直染（设计 §5.2 附决策 5）。
+ * 客户端离线对打/门禁契约（GAMES-90 F3）以 classic script 载入同一份代码——
+ * 双环境出口见底部 UMD（Node=module.exports / 浏览器=root.EDuelSim）。
  *
  * 确定性纪律（设计 §5.5/§5.6 红线）：
  *   - 判定路径零 Math.random/Date.now；随机仅存在于洗牌流（deckSeed 派生）与
@@ -11,6 +12,11 @@
  *   - hashState 键字母序、数组固定序；tick/deadline/opsLog 不入 hash。
  * ===================================================================== */
 'use strict'
+;(function (root, factory) {
+  const api = factory()
+  if (typeof module === 'object' && module.exports) module.exports = api // Node（.cjs：网关/api-check require）
+  root.EDuelSim = api                                                     // 浏览器 classic script（F3 离线对打）
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
 
 /* ---------- 常量：卡池 24 + 微粒（§2.2，可直接执行事实源） ---------- */
 const MINIONS = {
@@ -55,7 +61,8 @@ const DECKS = [
   { hero: 2, name: '疾风掠地', cards: ['N1','N1','N2','N2','N3','N3','N4','N4','NS1','NS1','NS2','NS2','T1','T1','TS1','TS1','W1','W1','FS1','FS1'] },
   { hero: 3, name: '雷鸣苍穹', cards: ['T1','T1','T2','T2','T3','T3','T4','T4','TS1','TS1','TS2','TS2','N1','N1','N3','N3','NS1','WS2','WS2','W1'] },
 ]
-/* 元素反应表（§1.4：6 对全覆盖；键=系对字典序） */
+/* 元素反应表（§1.4：6 对全覆盖；键=系对字典序——triggerReactions 查表侧 [a,b].sort() 拼接，
+ * 表键必须同为排序序。GAMES-90 F1：原 'W+N'/'W+T' 未排序致查询永 miss（迷雾/感电死代码），已改 'N+W'/'T+W'） */
 const REACTIONS = {
   'F+W': { rt: 'steam', apply: (st, ev, seat) => aoeMinions(st, ev, foe(seat), 1) }, // 蒸气：全部敌方随从 1
   'N+T': { rt: 'chain', apply: (st, ev, seat) => { // 连锁：hp 最高敌随从（平局 cell 小）2 + 其邻接敌随从 1
@@ -64,10 +71,14 @@ const REACTIONS = {
   'F+T': { rt: 'blast', apply: (st, ev, seat, a, b) => { // 引爆：两枚反应随从所在行全部随从（双方）各 2
     const rows = new Set([(a / 3) | 0, (b / 3) | 0])
     for (let c = 0; c < 9; c++) if (st.board[c] && rows.has((c / 3) | 0)) hitMinion(st, ev, c, 2) } },
-  'W+N': { rt: 'mist', apply: (st, ev, seat) => { // 迷雾：己方全体 +0/+2（含刚部署者）
+  'N+W': { rt: 'mist', apply: (st, ev, seat) => { // 迷雾：己方全体 +0/+2（含刚部署者）
     for (let c = 0; c < 9; c++) { const m = st.board[c]; if (m && m.seat === seat) { m.hp += 2; m.mhp += 2 } } } },
   'F+N': { rt: 'wildfire', apply: (st, ev, seat) => hitHero(st, ev, foe(seat), 2) }, // 燎原：敌方英雄 2
-  'W+T': { rt: 'surge', apply: (st, ev) => { for (let c = 0; c < 9; c++) if (st.board[c]) hitMinion(st, ev, c, 1) } }, // 感电：全体 1
+  'T+W': { rt: 'surge', apply: (st, ev) => { for (let c = 0; c < 9; c++) if (st.board[c]) hitMinion(st, ev, c, 1) } }, // 感电：全体 1
+}
+/* 排序键表自证（QA 取证法固化：凡「排序键查表」常量表逐键断言 k===sorted(k)） */
+for (const _rk of Object.keys(REACTIONS)) {
+  if (_rk !== _rk.split('+').sort().join('+')) throw new Error('REACTIONS key not sorted: ' + _rk)
 }
 const RT_NAME = { steam: '蒸气', chain: '连锁', blast: '引爆', mist: '迷雾', wildfire: '燎原', surge: '感电' }
 const SCHOOL_COLOR = { F: '#E85D3D', W: '#3DA8E8', N: '#7CE8B8', T: '#E8C93D' }
@@ -662,6 +673,7 @@ function lethalReach(st, seat) {
 /* 三档出牌核（§4.4；hosted=§4.5 牌风化 balanced） */
 function smartNext(st, seat, level) {
   const opts = {}
+  if (level === 'competitive') opts.combo = true // §4.3 comboBonus=competitive 专属项（+6/手中伙伴对；GAMES-90 F4 接线）
   if (level === 'hosted') { // 托管牌风化：按被托管者牌组配方查表（§4.5）
     const hero = st.heroes[seat].hero
     if (hero >= 0) {
@@ -718,8 +730,18 @@ function pickAction(st, seat, level) {
   return { k: 'pick', hero: (rng() * 4) | 0 }
 }
 function mulliganAction(st, seat, level) {
-  if (level === 'casual') return { k: 'mulligan', keep: st.hands[seat].map(() => true) }
-  return { k: 'mulligan', keep: st.hands[seat].map((id) => (MINIONS[id] || SPELLS[id]).cost <= 2) } // 保留 ≤2 费
+  const hand = st.hands[seat]
+  if (level === 'casual') return { k: 'mulligan', keep: hand.map(() => true) } // 随手：全保留
+  const def = (id) => MINIONS[id] || SPELLS[id]
+  const cheap = hand.map((id) => def(id).cost <= 2)
+  const sch = hand.map((id) => def(id).school)
+  const pairOf = (i) => { // 反应伙伴对成员（按反应表 6 对——F1 修复后 W+N/W+T 对亦生效）
+    for (let j = 0; j < hand.length; j++) if (j !== i && sch[j] !== sch[i] && REACTIONS[[sch[i], sch[j]].sort().join('+')]) return true
+    return false
+  }
+  if (level === 'balanced') return { k: 'mulligan', keep: hand.map((_, i) => cheap[i] || pairOf(i)) } // ≤2 费 + 反应伙伴对（§4.4）
+  const hasCheap = cheap.some(Boolean) // competitive：同左 + 无 2 费以下重抽——起手无 ≤2 费则连伙伴对也换血找曲线（§4.4 裁量）
+  return { k: 'mulligan', keep: hand.map((_, i) => cheap[i] || (hasCheap && pairOf(i))) }
 }
 function brain(state, seat, level) {
   const st = state
@@ -790,8 +812,9 @@ function replayOps(seed, ops, maxTicks) {
   return st
 }
 
-module.exports = {
+return {
   META, LEVELS, MINIONS, SPELLS, HEROES, DECKS, REACTIONS, RT_NAME, SCHOOL_COLOR, SCHOOL_GLYPH,
   fnv1a32, mulberry32, create, step, applyOp, brain, viewFor, serialize, hashState, replayOps,
   legalAttackTargets, enumerateActions, evaluate, lethalReach, quip, adjCells, nearEnemyRow,
 }
+})
