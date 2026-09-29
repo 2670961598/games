@@ -33,6 +33,26 @@
   const SG = { F: '▲', W: '●', N: '➤', T: '⚡' }                        // 字形通道（canvas 矢量绘制，见 glyph()）
   const COL_A = '#E8A33D', COL_B = '#3DC8E8' // 玩家双色（平台标准）
   const W = 375, H = 667
+
+  /* ---------- 音效位预留（GAMES-92：抽牌/出牌/攻击/反应/技能/胜利 六组·平台协议静音占位） ---------- */
+  const sfx = {
+    calls: [], // 触发台账（REPORT/识图证据；零真实音频=协议静音）
+    play(group, tag) {
+      this.calls.push({ group, tag: tag || '', at: performance.now() })
+      const hook = window.PlatformAudio // 平台音频协议钩子：有则委托，无则无声占位
+      if (hook && typeof hook.play === 'function') { try { hook.play('element-duel:' + group, tag || '') } catch {} }
+    },
+  }
+
+  /* ---------- 动效时长表（GAMES-92：反馈类 ≤80ms 起效；氛围类可长——REPORT 逐项对表） ---------- */
+  const FXD = {
+    deployFly: 58, deployShake: 42,  // 出牌确认=飞行+落震 合计 100ms（确认感 58ms 处即达）
+    atkImpact: 80, atkTrail: 200,    // 攻击冲击 80ms / 挥击拖尾 200ms
+    drawFlip: 340, powerGlow: 420, reactionFx: 620, deathShatter: 480,
+    dmgPop: 700, banner: 900,        // 飘字 700ms（首 90ms 弹跳放大）/ 横幅 900ms（首 150ms 滑入）
+  }
+  const easeOut = (t) => 1 - Math.pow(1 - t, 3)
+  const shake = new Array(9).fill(null) // 每格落格震动 {t0, amp}（渲染期偏移，命中检测不受扰）
   const BOARD = { x: 22, y: 118, cellW: 105, cellH: 54, gap: 8 } // 行 0 顶=近对方侧（§1.3）
   const HAND_Y = H - 66 - 132 + 8
 
@@ -113,20 +133,81 @@
       for (const ev of m.events || []) onEvent(ev, m)
       return
     }
-    if (m.t === 'end') { S.over = true; S.result = m.result; S.view = S.view || {}; if (m.result && m.result.reveal) S.reveal = m.result.reveal.hands; return }
+    if (m.t === 'end') { S.over = true; S.result = m.result; S.view = S.view || {}; if (m.result && m.result.reveal) S.reveal = m.result.reveal.hands; sfx.play('win', m.result ? String(m.result.winner) : '?'); return }
     if (m.t === 'closed') { S.connLost = true }
   }
   function startTimer(view) { S.timerMs0 = view && view.timerMs || 0; S.deadlineAt = performance.now() + S.timerMs0 }
   function onEvent(ev, m) {
     const posOf = (tgt) => { if (!tgt) return null; if (tgt.c === -1) return tgt.s === rs() ? { x: W / 2, y: H - 158 } : { x: W / 2, y: 56 }; const p = cellXY(tgt.c); return { x: p.x + BOARD.cellW / 2, y: p.y + BOARD.cellH / 2 } }
     if (ev.k === 'damage' || ev.k === 'heal') { const p = posOf(ev.tgt); if (p) S.fx.push({ k: ev.k, n: ev.n, x: p.x, y: p.y, t0: performance.now() }) }
-    if (ev.k === 'reaction') { const r = RT[ev.rt]; S.banners.push({ txt: r[0] + '反应！', c1: r[1], c2: r[2], t0: performance.now() }) }
+    if (ev.k === 'reaction') {
+      const r = RT[ev.rt]
+      S.banners.push({ txt: r[0] + '反应！', c1: r[1], c2: r[2], t0: performance.now() })
+      const p = ev.at != null && ev.at >= 0 ? posOf({ c: ev.at }) : { x: W / 2, y: 240 }
+      S.fx.push(spawnRtFx(ev.rt, p.x, p.y))
+      sfx.play('reaction', ev.rt)
+    }
     if (ev.k === 'turn') { S.banners.push({ txt: S.spectator ? '玩家' + (ev.s === 0 ? 'A' : 'B') + ' 的回合' : (ev.s === S.seat ? '你的回合' : '对方回合'), c1: ev.s === 0 ? COL_A : COL_B, c2: '#B9A8E8', t0: performance.now(), sys: 1 }) }
     if (ev.k === 'reject') { S.fx.push({ k: 'reject', x: W / 2, y: 330, t0: performance.now() }); S.sel = null; S.drag = null }
     if (ev.k === 'burn') { S.banners.push({ txt: '手牌溢出·烧毁', c1: '#E85D3D', c2: '#1E1030', t0: performance.now(), sys: 1 }) }
     if (ev.k === 'fatigue') { S.banners.push({ txt: '疲劳 ' + ev.n, c1: '#9D6BE8', c2: '#1E1030', t0: performance.now(), sys: 1 }) }
     if (ev.k === 'timeout-turn') { S.banners.push({ txt: '托管代打', c1: '#9D6BE8', c2: '#1E1030', t0: performance.now(), sys: 1 }) }
     if (ev.k === 'host') { S.banners.push({ txt: ev.on ? '托管中·随时夺回' : '已夺回', c1: '#9D6BE8', c2: '#1E1030', t0: performance.now(), sys: 1 }) }
+    /* ---------- GAMES-92 juice：抽牌翻面/入场飞行+落震/攻击冲击/死亡碎裂/技能光效 ---------- */
+    if (ev.k === 'draw' && ev.s === rs() && !S.spectator) {
+      S.fx.push({ k: 'draw', x0: W - 26, y0: H - 66 - 132 - 66 + 34, t0: performance.now() })
+      sfx.play('draw')
+    }
+    if (ev.k === 'play') {
+      sfx.play('play', ev.cell != null ? 'minion' : 'spell')
+      if (ev.cell != null) {
+        const to = posOf({ c: ev.cell })
+        const from = ev.s === rs() ? { x: W / 2, y: H - 66 - 132 + 24 + 54 } : { x: W / 2, y: 76 + 11 } // 己方=手牌扇心 / 对方=背面牌列
+        S.fx.push({ k: 'deploy', id: ev.card, from, to, cell: ev.cell, t0: performance.now() })
+        shake[ev.cell] = { t0: performance.now() + FXD.deployFly, amp: 4 } // 落格震动（飞行到位后起震）
+      } else {
+        const p = ev.tgt ? posOf(ev.tgt) : { x: W / 2, y: 330 }
+        S.fx.push({ k: 'spellBurst', x: p.x, y: p.y, t0: performance.now(), sc: SC[(CARDS[ev.id] || {}).s] || '#B9A8E8' })
+      }
+    }
+    if (ev.k === 'attack') {
+      sfx.play('attack')
+      const a = posOf({ c: ev.from }), b = posOf(ev.tgt)
+      if (a && b) S.fx.push({ k: 'atk', from: a, to: b, t0: performance.now() })
+    }
+    if (ev.k === 'death') {
+      const p = posOf(ev.tgt)
+      if (p) S.fx.push(spawnShatter(p.x, p.y, ev.tgt.s === 0 ? COL_A : COL_B, SC[(CARDS[ev.card] || {}).s] || '#B9A8E8'))
+    }
+    if (ev.k === 'heroPower') {
+      sfx.play('power')
+      const src = ev.s === rs() ? { x: 39, y: H - 66 - 132 - 66 + 32 } : { x: 39, y: 6 + 32 }
+      const tgt = ev.tgt ? posOf(ev.tgt) : null
+      S.fx.push({ k: 'power', x: src.x, y: src.y, tx: tgt ? tgt.x : null, ty: tgt ? tgt.y : null, sc: SC[(HEROES[ev.hero] || {}).s] || '#B9A8E8', t0: performance.now() })
+    }
+  }
+  /* 元素反应特效（六对差异化；mist/surge=FIX1 复活对的专属特效）：粒子参数在生成期定桩（渲染零随机） */
+  function spawnRtFx(rt, x, y) {
+    const R = (a, b) => a + Math.random() * (b - a)
+    const f = { k: 'rt', rt, x, y, t0: performance.now(), ps: [] }
+    if (rt === 'steam') for (let i = 0; i < 3; i++) f.ps.push({ dx: R(-14, 14), dy: R(-8, 6), r: R(8, 13), c: i % 2 ? '#3DA8E8' : '#E85D3D', ph: R(0, 6.28) })          // 蒸气：双色泡上浮扩散
+    else if (rt === 'chain') { // 连锁：向邻接占位格的锯齿电弧
+      const cell = cellAt(x, y); f.bolts = []
+      const nbr = [cell - 3, cell + 1, cell + 3, cell - 1].filter((n) => n >= 0 && n < 9 && S.view.board[n])
+      for (const n of nbr) { const q = cellXY(n); const pts = []; for (let i = 0; i < 5; i++) pts.push({ dx: (q.x + BOARD.cellW / 2 - x) * (i / 4) + R(-7, 7), dy: (q.y + BOARD.cellH / 2 - y) * (i / 4) + R(-7, 7) }); f.bolts.push(pts) }
+      if (!f.bolts.length) f.bolts.push([{ dx: 0, dy: -22 }, { dx: 10, dy: 0 }, { dx: 0, dy: 22 }]) // 无邻接兜底：就地弧
+    }
+    else if (rt === 'blast') for (let i = 0; i < 8; i++) f.ps.push({ ang: (Math.PI * 2 * i) / 8 + R(-0.2, 0.2), len: R(16, 26), c: i % 2 ? '#E85D3D' : '#E8C93D' }) // 引爆：放射尖刺
+    else if (rt === 'mist') for (let i = 0; i < 4; i++) f.ps.push({ dx: R(-20, 20), dy: R(-14, 10), r: R(10, 18), c: i % 2 ? '#3DA8E8' : '#7CE8B8' })                          // 迷雾：青绿雾团漂移
+    else if (rt === 'wildfire') { const up = y > 120 ? -1 : 1; for (let i = 0; i < 5; i++) f.ps.push({ dx: R(-12, 12), dy0: R(0, 8), s: R(6, 10), ph: R(0, 6.28), up }) }      // 燎原：火苗扑向敌英雄
+    else if (rt === 'surge') { f.cells = []; for (let c = 0; c < 9; c++) if (S.view.board[c]) f.cells.push(c) }                                                              // 感电：全体占位格电弧
+    return f
+  }
+  function spawnShatter(x, y, col1, col2) { // 死亡碎裂：7 枚双色碎片（旋转+重力）
+    const R = (a, b) => a + Math.random() * (b - a)
+    const ps = []
+    for (let i = 0; i < 7; i++) ps.push({ ang: R(0, 6.28), v: R(18, 44), rot: R(0, 6.28), vr: R(-7, 7), sz: R(3, 6), c: i % 2 ? col1 : col2 })
+    return { k: 'death', x, y, t0: performance.now(), ps }
   }
 
   /* ---------- 客户端合法目标预判（仅引导；权威在服务器，reject 回弹） ---------- */
@@ -201,7 +282,7 @@
     const p = pos(e)
     if (!ptr.down) { S.hoverCell = cellAt(p.x, p.y); return }
     if (Math.hypot(p.x - ptr.x, p.y - ptr.y) > 8) ptr.moved = true
-    if (ptr.moved && ptr.card != null) S.drag = { card: ptr.card, x: p.x, y: p.y }
+    if (ptr.moved && ptr.card != null && (!S.view || S.view.phase !== 'play' || affordable(ptr.card))) S.drag = { card: ptr.card, x: p.x, y: p.y } // 费用不足/非行动期不产生拖牌（灰化即不可拖）
     S.hoverCell = cellAt(p.x, p.y)
   }, { passive: false })
   cv.addEventListener('pointerup', (e) => {
@@ -348,19 +429,20 @@
     if (mine && m.ready && !m.frozen && S.view.turn === rs() && S.view.phase === 'play') { ctx.strokeStyle = `rgba(124,232,184,${0.4 + 0.3 * Math.sin(performance.now() / 220)})`; ctx.lineWidth = 1.5; roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 6); ctx.stroke() }
     ctx.restore()
   }
-  function drawCard(id, x, y, sel) {
+  function drawCard(id, x, y, sel, afford) {
     const d = CARDS[id]
     ctx.save()
     ctx.fillStyle = '#231543'; roundRect(x, y, 78, 108, 8); ctx.fill()
-    ctx.strokeStyle = sel ? '#F2ECFF' : (d.s ? SC[d.s] : '#55447A'); ctx.lineWidth = sel ? 2.5 : 1.5; roundRect(x, y, 78, 108, 8); ctx.stroke()
-    ctx.fillStyle = SC[d.s]; ctx.beginPath(); ctx.arc(x + 14, y + 14, 10, 0, Math.PI * 2); ctx.fill() // 费用宝石
+    ctx.strokeStyle = afford === false ? '#55447A' : sel ? '#F2ECFF' : (d.s ? SC[d.s] : '#55447A'); ctx.lineWidth = sel ? 2.5 : 1.5; roundRect(x, y, 78, 108, 8); ctx.stroke()
+    ctx.fillStyle = afford === false ? '#E85D3D' : SC[d.s]; ctx.beginPath(); ctx.arc(x + 14, y + 14, 10, 0, Math.PI * 2); ctx.fill() // 费用宝石（不足=红）
     ctx.fillStyle = '#170D2E'; ctx.font = F0(14); ctx.textAlign = 'center'; ctx.fillText(String(d.c), x + 14, y + 19)
-    glyph(SG[d.s], x + 39, y + 48, 34, SC[d.s]) // 元素字形大图标
+    glyph(SG[d.s], x + 39, y + 48, 34, afford === false ? '#6A5A9C' : SC[d.s]) // 元素字形大图标（不足=褪色）
     ctx.fillStyle = '#EDE6FF'; ctx.font = F1(11); ctx.fillText(d.n, x + 39, y + 78)
     if (d.sp) { ctx.fillStyle = '#B9A8E8'; ctx.font = F1(11) } else ctx.font = F0(14)
     ctx.fillStyle = d.sp ? '#B9A8E8' : '#F2ECFF'
     if (d.sp) { /* 法术关键词两行封顶（§7） */ const words = (d.d || '').split(''); ctx.fillText(words.slice(0, 8).join(''), x + 39, y + 92); ctx.fillText(words.slice(8, 16).join(''), x + 39, y + 104) }
     else { ctx.fillText(d.a + '/' + d.h, x + 39, y + 98); ctx.fillStyle = '#9C8CC8'; ctx.font = F1(11); ctx.fillText(d.kw || '', x + 39, y + 79) }
+    if (afford === false) { ctx.fillStyle = 'rgba(13,6,24,0.55)'; roundRect(x, y, 78, 108, 8); ctx.fill(); ctx.fillStyle = '#B9A8E8'; ctx.font = F1(11); ctx.fillText('费用不足', x + 39, y + 54) } // 费用不足灰化（GAMES-92）
     ctx.restore()
   }
   function render() {
@@ -373,15 +455,28 @@
     ctx.fillStyle = '#9C8CC8'; ctx.font = F2(9); ctx.textAlign = 'center'
     const turnSec = Math.max(0, Math.ceil((S.deadlineAt - now) / 1000))
     ctx.fillText(`${S.spectator ? '观战 · ' : ''}${v.phase === 'play' ? (S.spectator ? '玩家' + (v.turn === 0 ? 'A' : 'B') + ' 行动 · ' : v.turn === S.seat ? '你的回合 · ' : '对方回合 · ') + turnSec + 's' : v.phase === 'pick' ? '选择英雄 · ' + turnSec + 's' : v.phase === 'mulligan' ? '换牌 · ' + turnSec + 's' : '对局结束'}  ·  第 ${Math.max(1, Math.ceil((v.turnNo + 1) / 2))} 回合`, W / 2, 108)
-    /* 棋盘 3×3（发光格） */
+    /* 目标选中圈（GAMES-92）：旋转虚线环——攻击/法术/技能三类目标态共用 */
+    const targetRing = (x, y, w, h, col) => {
+      ctx.save()
+      ctx.strokeStyle = col || 'rgba(232,163,61,0.92)'; ctx.lineWidth = 2
+      ctx.setLineDash([6, 5]); ctx.lineDashOffset = -(now / 24) % 11
+      roundRect(x + 2.5, y + 2.5, w - 5, h - 5, 6); ctx.stroke()
+      ctx.restore()
+    }
+    /* 棋盘 3×3（发光格；落格震动=渲染期偏移，命中检测走 cellXY 不受扰） */
     for (let c = 0; c < 9; c++) {
       const p = cellXY(c)
+      const sk = shake[c]
+      if (sk) { const e = now - sk.t0
+        if (e >= FXD.deployShake) shake[c] = null
+        else if (e >= 0) { const d = 1 - e / FXD.deployShake; p.x += Math.sin(e * 0.9) * sk.amp * d; p.y += Math.cos(e * 1.7) * sk.amp * 0.5 * d } }
       const glow = S.sel && S.sel.mode === 'card' && legalCells(S.sel.card).includes(c)
       const dragGlow = S.drag != null && legalCells(S.drag.card).includes(c) && c === S.hoverCell
       ctx.fillStyle = glow || dragGlow ? '#3A2A6A' : '#2A1B4A'
       roundRect(p.x, p.y, BOARD.cellW, BOARD.cellH, 7); ctx.fill()
       ctx.strokeStyle = dragGlow ? `rgba(242,236,255,${0.5 + 0.4 * Math.sin(now / 160)})` : '#453178'; ctx.lineWidth = dragGlow ? 2 : 1
       roundRect(p.x, p.y, BOARD.cellW, BOARD.cellH, 7); ctx.stroke()
+      if (glow && !dragGlow) targetRing(p.x, p.y, BOARD.cellW, BOARD.cellH) // 选中态格=旋转虚线圈
       if (dragGlow && S.drag != null) { /* 反应预览色环（§3.2）：悬停格+将触发反应邻格 */
         const id = myViewHand()[S.drag.card]
         for (const n of previewReactions(c, id)) { const q = cellXY(n); ctx.strokeStyle = SC[CARDS[id].s]; ctx.lineWidth = 3; roundRect(q.x + 2, q.y + 2, BOARD.cellW - 4, BOARD.cellH - 4, 6); ctx.stroke() }
@@ -389,35 +484,44 @@
       const m = v.board[c]
       if (m) drawMinion(m, p.x, p.y, BOARD.cellW, BOARD.cellH, m.seat === rs())
     }
-    /* 攻击指示线（§3.2）+ 合法目标高亮 */
+    /* 攻击指示线（§3.2）+ 合法目标高亮（+目标选中圈） */
     if (S.sel && S.sel.mode === 'atk') {
       const p = cellXY(S.sel.from)
       for (const c of atkTargets(S.sel.from)) {
         ctx.setLineDash([4, 4]); ctx.strokeStyle = '#E8A33D'; ctx.lineWidth = 1.5
         const q = c === -1 ? { x: W / 2, y: 52 } : (() => { const z = cellXY(c); return { x: z.x + BOARD.cellW / 2, y: z.y + BOARD.cellH / 2 } })()
         ctx.beginPath(); ctx.moveTo(p.x + BOARD.cellW / 2, p.y + BOARD.cellH / 2); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([])
-        if (c === -1) { ctx.strokeStyle = '#E85D3D'; ctx.lineWidth = 2; roundRect(60, 8, W - 120, 54, 10); ctx.stroke() }
+        if (c === -1) { ctx.strokeStyle = '#E85D3D'; ctx.lineWidth = 2; roundRect(60, 8, W - 120, 54, 10); ctx.stroke(); targetRing(60, 8, W - 120, 54, 'rgba(232,93,61,0.92)') }
+        else { const z = cellXY(c); targetRing(z.x, z.y, BOARD.cellW, BOARD.cellH) }
       }
     }
     if (S.sel && S.sel.mode === 'card' && !CARDS[myViewHand()[S.sel.card]].sp) for (const c of legalCells(S.sel.card)) { const p = cellXY(c); ctx.fillStyle = 'rgba(124,232,184,0.10)'; roundRect(p.x, p.y, BOARD.cellW, BOARD.cellH, 7); ctx.fill() }
     if (S.sel && (S.sel.mode === 'card' ? CARDS[myViewHand()[S.sel.card]].sp : S.sel.mode === 'power')) {
       const ts = S.sel.mode === 'power' ? powerTargets() : spellTargets(S.sel.card)
       for (const t of ts) {
-        if (t.tgt && t.tgt.c >= 0) { const p = cellXY(t.tgt.c); ctx.fillStyle = 'rgba(232,163,61,0.12)'; roundRect(p.x, p.y, BOARD.cellW, BOARD.cellH, 7); ctx.fill() }
+        if (t.tgt && t.tgt.c >= 0) { const p = cellXY(t.tgt.c); ctx.fillStyle = 'rgba(232,163,61,0.12)'; roundRect(p.x, p.y, BOARD.cellW, BOARD.cellH, 7); ctx.fill(); targetRing(p.x, p.y, BOARD.cellW, BOARD.cellH) }
         if (t.tgt && t.tgt.row !== undefined) { ctx.fillStyle = 'rgba(232,163,61,0.10)'; ctx.fillRect(BOARD.x, BOARD.y + t.tgt.row * (BOARD.cellH + BOARD.gap), BOARD.cellW * 3 + BOARD.gap * 2, BOARD.cellH) }
-        if (!t.tgt) { ctx.fillStyle = 'rgba(232,163,61,0.16)'; roundRect(100, 300, W - 200, 60, 10); ctx.fill(); ctx.fillStyle = '#F2ECFF'; ctx.font = F1(13); ctx.textAlign = 'center'; ctx.fillText('点击施放', W / 2, 335) }
+        if (!t.tgt) { ctx.fillStyle = 'rgba(232,163,61,0.16)'; roundRect(100, 300, W - 200, 60, 10); ctx.fill(); ctx.fillStyle = '#F2ECFF'; ctx.font = F1(13); ctx.textAlign = 'center'; ctx.fillText('点击施放', W / 2, 335); targetRing(100, 300, W - 200, 60) }
       }
     }
     heroBar(H - 66 - 132 - 66, rs(), false)
-    /* 手牌扇（迷雾：对方视角只见张数——此处恒为本人视图牌面） */
+    /* 手牌扇（迷雾：对方视角只见张数——此处恒为本人视图牌面；费用不足灰化=不可拖不可选） */
     const hand = myViewHand()
-    for (let i = 0; i < hand.length; i++) { const r = handRect(i); if (S.drag && S.drag.card === i) continue; drawCard(hand[i], r.x, r.y, S.sel && S.sel.mode === 'card' && S.sel.card === i) }
+    for (let i = 0; i < hand.length; i++) { const r = handRect(i); if (S.drag && S.drag.card === i) continue; drawCard(hand[i], r.x, r.y, S.sel && S.sel.mode === 'card' && S.sel.card === i, v.phase === 'play' ? affordable(i) : true) }
     /* 对方手牌（背面张数，顶栏下缘） */
     const oh = v.hand[oppSeat()]
     const on = Array.isArray(oh) ? oh.length : oh.n
     for (let i = 0; i < on; i++) { const bx = W / 2 - (on * 20) / 2 + i * 20 + 2; ctx.fillStyle = '#2A1B4A'; roundRect(bx, 76, 16, 22, 3); ctx.fill(); ctx.strokeStyle = COL_B; ctx.lineWidth = 0.8; roundRect(bx, 76, 16, 22, 3); ctx.stroke() }
-    /* 拖牌幽灵（本地 0ms 待裁决，§3.1） */
-    if (S.drag != null) { ctx.globalAlpha = 0.72; drawCard(myViewHand()[S.drag.card], S.drag.x - 39, S.drag.y - 54, true); ctx.globalAlpha = 1 }
+    /* 拖牌幽灵（本地 0ms 待裁决，§3.1）——悬停合法格=吸附缩放置于格心（GAMES-92 吸附手感） */
+    if (S.drag != null) {
+      const id = myViewHand()[S.drag.card]
+      if (S.hoverCell >= 0 && legalCells(S.drag.card).includes(S.hoverCell)) {
+        const p = cellXY(S.hoverCell)
+        ctx.save(); ctx.globalAlpha = 0.88
+        ctx.translate(p.x + BOARD.cellW / 2, p.y + BOARD.cellH / 2); ctx.scale(0.62, 0.62)
+        drawCard(id, -39, -54, true, true); ctx.restore()
+      } else { ctx.globalAlpha = 0.72; drawCard(id, S.drag.x - 39, S.drag.y - 54, true, true); ctx.globalAlpha = 1 }
+    }
     /* 底栏：托管 40×48 ｜ 技能 56×48 ｜ 结束回合 108×48 */
     const barY = H - 58
     const myTurn = !S.spectator && v.turn === S.seat && v.phase === 'play'
@@ -434,6 +538,24 @@
     btn(66, 56, canPower ? '技能' : '技能·' + (hero.powerUsed ? '已用' : '2费'), canPower && !(S.sel && S.sel.mode === 'power'), false)
     btn(252, 108, '结束回合', myTurn, myTurn && secLeft < 5)
     if (S.sel && S.sel.mode === 'power') { ctx.fillStyle = '#F2ECFF'; ctx.font = F1(11); ctx.textAlign = 'center'; ctx.fillText(HEROES[hero.hero] ? HEROES[hero.hero].p : '', 130, barY + 28) }
+    /* 回合节奏（GAMES-92）：对手回合思考中胶囊（动态省略号）+ 倒计时最后 5s 红脉动徽标 */
+    if (v.phase === 'play' && !S.over) {
+      if (!S.spectator && v.turn !== S.seat) {
+        const dots = '.'.repeat(1 + (((now / 380) | 0) % 3))
+        const py = H - 66 - 132 - 66 - 34
+        ctx.fillStyle = 'rgba(42,27,74,0.92)'; roundRect(W / 2 - 84, py, 168, 26, 13); ctx.fill()
+        ctx.strokeStyle = COL_B; ctx.lineWidth = 1.5; roundRect(W / 2 - 84, py, 168, 26, 13); ctx.stroke()
+        ctx.fillStyle = '#B9A8E8'; ctx.font = F1(12); ctx.textAlign = 'center'; ctx.fillText('对方思考中' + dots, W / 2, py + 18)
+      }
+      if (turnSec <= 5 && turnSec > 0) {
+        const pu = 0.5 + 0.5 * Math.sin(now / 80)
+        ctx.save(); ctx.globalAlpha = 0.55 + 0.45 * pu
+        ctx.fillStyle = '#E85D3D'; ctx.beginPath(); ctx.arc(W - 30, 108, 15, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = '#FF9D85'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(W - 30, 108, 15 + 3 * pu, 0, Math.PI * 2); ctx.stroke()
+        ctx.globalAlpha = 1; ctx.fillStyle = '#FFF'; ctx.font = F0(15); ctx.textAlign = 'center'; ctx.fillText(String(turnSec), W - 30, 113)
+        ctx.restore()
+      }
+    }
     /* 浮层：选英雄 */
     if (v.phase === 'pick' && v.heroes[rs()].hero < 0) {
       ctx.fillStyle = 'rgba(13,6,24,0.92)'; ctx.fillRect(0, 120, W, H - 120)
@@ -461,32 +583,92 @@
       const keep = S.mullKeep || (S.mullKeep = hand.map(() => true))
       ctx.fillStyle = 'rgba(13,6,24,0.88)'; ctx.fillRect(0, 118, W, H - 118)
       ctx.fillStyle = '#F2ECFF'; ctx.font = F1(14); ctx.textAlign = 'center'; ctx.fillText('换牌：点选保留（30s 全保留）', W / 2, 144)
-      for (let i = 0; i < hand.length; i++) { const r = handRect(i); drawCard(hand[i], r.x, r.y - 10, keep[i]); if (keep[i]) { ctx.strokeStyle = '#7CE8B8'; ctx.lineWidth = 2.5; roundRect(r.x, r.y - 10, 78, 108, 8); ctx.stroke(); ctx.fillStyle = '#7CE8B8'; ctx.font = F1(11); ctx.fillText('保留', r.x + 39, r.y + 108) } }
+      for (let i = 0; i < hand.length; i++) { const r = handRect(i); drawCard(hand[i], r.x, r.y - 10, keep[i], true); if (keep[i]) { ctx.strokeStyle = '#7CE8B8'; ctx.lineWidth = 2.5; roundRect(r.x, r.y - 10, 78, 108, 8); ctx.stroke(); ctx.fillStyle = '#7CE8B8'; ctx.font = F1(11); ctx.fillText('保留', r.x + 39, r.y + 108) } }
       ctx.fillStyle = '#4A3380'; roundRect(W / 2 - 80, H - 92, 160, 52, 10); ctx.fill()
       ctx.strokeStyle = '#B9A8E8'; ctx.lineWidth = 2; roundRect(W / 2 - 80, H - 92, 160, 52, 10); ctx.stroke()
       ctx.fillStyle = '#F2ECFF'; ctx.font = F1(14); ctx.fillText(`确认（保留 ${keep.filter(Boolean).length} 张）`, W / 2, H - 60)
     }
-    /* fx：伤害/治疗飘字（400ms 非阻塞，§3.1） */
-    S.fx = S.fx.filter((f) => now - f.t0 < 700)
+    /* ---------- fx 引擎（GAMES-92）：飘字首 90ms 弹跳 / 入场飞行 58ms / 攻击冲击 80ms / 死亡碎裂 / 反应六对 / 技能光效 / 抽牌翻面 ---------- */
+    S.fx = S.fx.filter((f) => now - f.t0 < FXD.dmgPop)
     for (const f of S.fx) {
-      const t = (now - f.t0) / 700
-      ctx.globalAlpha = 1 - t
-      ctx.fillStyle = f.k === 'damage' ? '#FF6B4A' : f.k === 'heal' ? '#6FE87C' : '#FFD37A'
-      ctx.font = f.k === 'reject' ? F1(13) : F0(20); ctx.textAlign = 'center'
-      ctx.fillText(f.k === 'damage' ? '-' + f.n : f.k === 'heal' ? '+' + f.n : '非法操作', f.x, f.y - 28 * t)
-      ctx.globalAlpha = 1
+      const age = now - f.t0
+      if (f.k === 'damage' || f.k === 'heal' || f.k === 'reject') {
+        const t = age / FXD.dmgPop
+        const pop = f.k !== 'reject' && t < 0.13 ? 1 + 0.3 * (1 - t / 0.13) : 1
+        ctx.save(); ctx.globalAlpha = 1 - t
+        ctx.fillStyle = f.k === 'damage' ? '#FF6B4A' : f.k === 'heal' ? '#6FE87C' : '#FFD37A'
+        ctx.font = f.k === 'reject' ? F1(13) : F0(Math.round(20 * pop)); ctx.textAlign = 'center'
+        ctx.fillText(f.k === 'damage' ? '-' + f.n : f.k === 'heal' ? '+' + f.n : '非法操作', f.x, f.y - 28 * t)
+        ctx.restore()
+      } else if (f.k === 'deploy') { // 出牌确认：飞行 58ms 缩放坠入 → 落格白闪环（震动在棋盘层）
+        const t = Math.min(1, age / FXD.deployFly), e = easeOut(t)
+        const cx = f.from.x + (f.to.x - f.from.x) * e, cy = f.from.y + (f.to.y - f.from.y) * e
+        if (t < 1) { ctx.save(); ctx.globalAlpha = 0.92; ctx.translate(cx, cy); ctx.scale(0.9 - 0.35 * e, 0.9 - 0.35 * e); drawCard(f.id, -39, -54, true, true); ctx.restore() }
+        else { ctx.save(); ctx.globalAlpha = Math.max(0, 1 - (age - FXD.deployFly) / FXD.deployShake); ctx.strokeStyle = '#F2ECFF'; ctx.lineWidth = 2.5; roundRect(f.to.x - BOARD.cellW / 2 + 2, f.to.y - BOARD.cellH / 2 + 2, BOARD.cellW - 4, BOARD.cellH - 4, 6); ctx.stroke(); ctx.restore() }
+      } else if (f.k === 'spellBurst') { // 法术施放波纹
+        const t = age / FXD.reactionFx
+        ctx.save(); ctx.globalAlpha = Math.max(0, 0.9 * (1 - t)); ctx.strokeStyle = f.sc; ctx.lineWidth = 2.5
+        ctx.beginPath(); ctx.arc(f.x, f.y, 6 + 40 * easeOut(t), 0, Math.PI * 2); ctx.stroke()
+        ctx.beginPath(); ctx.arc(f.x, f.y, 4 + 22 * easeOut(t), 0, Math.PI * 2); ctx.stroke(); ctx.restore()
+      } else if (f.k === 'atk') { // 攻击：冲击闪 80ms + 挥击拖尾 200ms
+        const t = age / FXD.atkTrail
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t)
+        ctx.strokeStyle = '#FFD37A'; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(f.from.x, f.from.y); ctx.lineTo(f.to.x, f.to.y); ctx.stroke()
+        if (age < FXD.atkImpact) { ctx.globalAlpha = 1 - age / FXD.atkImpact; ctx.fillStyle = '#FF6B4A'; ctx.beginPath(); ctx.arc(f.to.x, f.to.y, 4 + 12 * (age / FXD.atkImpact), 0, Math.PI * 2); ctx.fill() }
+        ctx.restore()
+      } else if (f.k === 'death') { // 死亡碎裂：双色碎片旋转+重力坠落
+        const t = age / FXD.deathShatter
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t)
+        for (const s of f.ps) {
+          const d = easeOut(t), x = f.x + Math.cos(s.ang) * s.v * d, y = f.y + Math.sin(s.ang) * s.v * d + 26 * t * t
+          ctx.save(); ctx.translate(x, y); ctx.rotate(s.rot + s.vr * t); ctx.fillStyle = s.c
+          ctx.beginPath(); ctx.moveTo(0, -s.sz); ctx.lineTo(s.sz * 0.8, s.sz * 0.7); ctx.lineTo(-s.sz * 0.8, s.sz * 0.7); ctx.closePath(); ctx.fill(); ctx.restore()
+        }
+        ctx.restore()
+      } else if (f.k === 'power') { // 英雄技能光效：像框双层扩散环（+目标能量束）
+        const t = age / FXD.powerGlow, e = easeOut(t)
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - t); ctx.strokeStyle = f.sc; ctx.lineWidth = 3
+        ctx.beginPath(); ctx.arc(f.x, f.y, 8 + 40 * e, 0, Math.PI * 2); ctx.stroke()
+        ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(f.x, f.y, 4 + 26 * e, 0, Math.PI * 2); ctx.stroke()
+        if (f.tx != null) { const g = ctx.createLinearGradient(f.x, f.y, f.tx, f.ty); g.addColorStop(0, f.sc); g.addColorStop(1, 'rgba(242,236,255,0)'); ctx.strokeStyle = g; ctx.lineWidth = Math.max(0.5, 3 * (1 - t)); ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.tx, f.ty); ctx.stroke() }
+        ctx.restore()
+      } else if (f.k === 'draw') { // 抽牌翻面：牌背 ✦ → 正面元素，从牌库飞入手牌扇
+        const t = Math.min(1, age / FXD.drawFlip), e = easeOut(t)
+        const x = f.x0 + (W / 2 - f.x0) * e, y = f.y0 + (H - 66 - 132 + 64 - f.y0) * e
+        const flip = Math.max(0.08, Math.abs(Math.cos(Math.PI * Math.min(1, t * 1.15))))
+        ctx.save(); ctx.translate(x, y); ctx.scale(flip, 1); ctx.globalAlpha = t < 0.85 ? 1 : (1 - t) / 0.15
+        ctx.fillStyle = t < 0.5 ? '#2A1B4A' : '#231543'; roundRect(-20, -28, 40, 56, 5); ctx.fill()
+        ctx.strokeStyle = t < 0.5 ? '#55447A' : '#B9A8E8'; ctx.lineWidth = 1.5; roundRect(-20, -28, 40, 56, 5); ctx.stroke()
+        if (t >= 0.5) { glyph('➤', 0, -4, 20, '#7CE8B8'); ctx.fillStyle = '#EDE6FF'; ctx.font = F1(11); ctx.textAlign = 'center'; ctx.fillText('抽牌', 0, 22) }
+        else { ctx.fillStyle = '#55447A'; ctx.font = F0(16); ctx.textAlign = 'center'; ctx.fillText('✦', 0, 6) }
+        ctx.restore()
+      } else if (f.k === 'rt') { // 反应特效六对差异化（mist/surge=FIX1 复活对专属特效）
+        const t = age / FXD.reactionFx, a = Math.max(0, 1 - t)
+        ctx.save(); ctx.globalAlpha = a
+        if (f.rt === 'steam') for (const p of f.ps) { ctx.fillStyle = p.c; ctx.globalAlpha = a * 0.65; ctx.beginPath(); ctx.arc(f.x + p.dx * (0.4 + 0.6 * t), f.y + p.dy - 16 * t, p.r * (0.6 + 0.7 * t), 0, Math.PI * 2); ctx.fill() } // 蒸气：双色泡上浮
+        else if (f.rt === 'chain') { ctx.strokeStyle = '#7CE8B8'; ctx.lineWidth = 2; ctx.globalAlpha = a * (0.55 + 0.45 * Math.sin(now / 26)); for (const bolt of f.bolts) { ctx.beginPath(); ctx.moveTo(f.x, f.y); for (const pt of bolt) ctx.lineTo(f.x + pt.dx, f.y + pt.dy); ctx.stroke() } } // 连锁：锯齿电弧闪烁
+        else if (f.rt === 'blast') for (const p of f.ps) { const d = easeOut(t) * p.len; ctx.strokeStyle = p.c; ctx.lineWidth = 2.5; ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(f.x + Math.cos(p.ang) * 6, f.y + Math.sin(p.ang) * 6); ctx.lineTo(f.x + Math.cos(p.ang) * (6 + d), f.y + Math.sin(p.ang) * (6 + d)); ctx.stroke() } // 引爆：放射尖刺
+        else if (f.rt === 'mist') { ctx.globalAlpha = a * 0.45; for (const p of f.ps) { ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(f.x + p.dx * (0.5 + 0.5 * t), f.y + p.dy * (0.5 + 0.5 * t) - 6 * t, p.r * (0.7 + 0.6 * t), 0, Math.PI * 2); ctx.fill() } } // 迷雾：青绿雾团漂移
+        else if (f.rt === 'wildfire') { ctx.globalAlpha = a; for (const p of f.ps) { const y = f.y + (p.dy0 + 60 * t) * p.up; glyph('▲', f.x + p.dx * (1 - 0.3 * t) + Math.sin(now / 60 + p.ph) * 3, y, p.s * (1 - 0.4 * t), t < 0.5 ? '#E85D3D' : '#E8C93D') } } // 燎原：火苗扑向敌英雄
+        else if (f.rt === 'surge') { ctx.strokeStyle = '#E8C93D'; ctx.lineWidth = 1.6; ctx.globalAlpha = a * (0.5 + 0.5 * Math.sin(now / 22)); for (const c of f.cells) { const q = cellXY(c), cx = q.x + BOARD.cellW / 2, cy = q.y + BOARD.cellH / 2; ctx.beginPath(); ctx.moveTo(cx - 5, cy - 7); ctx.lineTo(cx + 3, cy - 1); ctx.lineTo(cx - 2, cy + 1); ctx.lineTo(cx + 5, cy + 7); ctx.stroke() } } // 感电：全体占位格电弧
+        ctx.restore()
+      }
     }
-    /* 横幅（反应/回合切换，500ms 非阻塞） */
-    S.banners = S.banners.filter((b) => now - b.t0 < 900)
+    /* 横幅（反应/回合切换，900ms 非阻塞；首 150ms 顶部滑入=回合结算横幅手感） */
+    S.banners = S.banners.filter((b) => now - b.t0 < FXD.banner)
     S.banners.forEach((b, i) => {
-      const t = (now - b.t0) / 900
-      ctx.globalAlpha = t < 0.8 ? 1 : (1 - t) / 0.2
+      const t = (now - b.t0) / FXD.banner
+      const inT = Math.min(1, (now - b.t0) / 150)
+      ctx.save()
+      ctx.globalAlpha = (t < 0.8 ? 1 : (1 - t) / 0.2) * inT
+      ctx.translate(0, -18 * (1 - easeOut(inT)))
       ctx.fillStyle = b.sys ? 'rgba(30,16,48,0.92)' : 'rgba(13,6,24,0.85)'
       ctx.fillRect(0, 210 + i * 44, W, 40)
       const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, b.c1); g.addColorStop(1, b.c2 || b.c1)
       ctx.fillStyle = g; ctx.fillRect(0, 210 + i * 44, W, 3)
       ctx.fillStyle = '#F2ECFF'; ctx.font = F1(14); ctx.textAlign = 'center'; ctx.fillText(b.txt, W / 2, 236 + i * 44)
-      ctx.globalAlpha = 1
+      ctx.restore()
     })
     if (S.err) { ctx.fillStyle = '#FF6B4A'; ctx.font = F1(11); ctx.textAlign = 'center'; ctx.fillText('✕ ' + S.err, W / 2, 116) }
     /* 结算页（§7）：胜负大字+战报条+评语+再来一局 */
@@ -513,7 +695,7 @@
       ctx.fillStyle = '#F2ECFF'; ctx.fillText('回大厅', 270, H - 96)
     }
     /* 页脚 P2 */
-    ctx.fillStyle = '#6A5A9C'; ctx.font = F2(9); ctx.textAlign = 'left'; ctx.fillText('element-duel · v1.0.0 · S5', 10, H - 6)
+    ctx.fillStyle = '#6A5A9C'; ctx.font = F2(9); ctx.textAlign = 'left'; ctx.fillText('element-duel · v1.1.0 · S5', 10, H - 6)
     requestAnimationFrame(render)
   }
 
@@ -566,6 +748,8 @@
   window.__GAMES_DEBUG__.roomId = function () { return S.roomId }
   window.__GAMES_DEBUG__.seat = function () { return S.seat }
   window.__GAMES_DEBUG__.mode = function () { return S.offline ? 'offline' : 'net' }
+  window.__GAMES_DEBUG__.sfx = function () { return { groups: ['draw', 'play', 'attack', 'reaction', 'power', 'win'], calls: sfx.calls.slice(-64) } } // GAMES-92 音效位六组（协议静音占位）
+  window.__GAMES_DEBUG__.fxSpec = function () { return Object.assign({}, FXD) } // GAMES-92 动效时长表（REPORT/识图对表源）
 
   report('boot', { slug: 'element-duel', version: '1.0.0', mode: q.get('debug') === '1' ? 'offline' : 'net' })
   if (q.get('debug') === '1' && SIM) offlineStart(1) // 门禁口径：零网关本地对打（同 pool/emp 先例）
