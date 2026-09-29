@@ -396,6 +396,13 @@ export class RoomManager {
 
   /* ---------- 下行 ---------- */
   broadcast(room, msg) {
+    // S5 迷雾下发（GAMES-88 element-duel 先例，设计 §5.3）：sim 声明 personalize 时
+    // 按连接个性化（started/welcome 类带 state 的消息逐席换视图；无 sim 分叉零感知）
+    if (room.sim && room.sim.personalize) {
+      for (const s of room.seats) if (s.conn && s.conn.conn.writable) s.conn.conn.send(JSON.stringify(room.sim.personalize(room, s.conn, msg)))
+      for (const c of room.spectators) if (c.conn.writable) c.conn.send(JSON.stringify(room.sim.personalize(room, c, msg)))
+      return
+    }
     const text = JSON.stringify(msg)
     for (const s of room.seats) if (s.conn && s.conn.conn.writable) s.conn.conn.send(text)
     for (const c of room.spectators) if (c.conn.writable) c.conn.send(text)
@@ -412,8 +419,8 @@ export class RoomManager {
   sendWelcome(ctx) {
     const room = ctx.room
     const s = ctx.role === 'player' ? room.seats[ctx.seat] : null
-    const extra = room.sim.welcomeExtra ? room.sim.welcomeExtra() : null // S4 物理声明块（协议 §6 S4 位）
-    ctx.conn.send(JSON.stringify({
+    const extra = room.sim.welcomeExtra ? room.sim.welcomeExtra() : null // S4 物理/S5 牌局声明块（协议 §6）
+    let msg = {
       t: 'welcome', roomId: room.id, gameId: room.gameId,
       role: ctx.role, seat: ctx.role === 'player' ? ctx.seat : undefined,
       token: s ? s.token : undefined,
@@ -425,7 +432,10 @@ export class RoomManager {
         ...(extra || {}),
       },
       state: room.state,
-    }))
+    }
+    // S5 个性化（GAMES-88）：welcome.state=按角色裁剪视图（重连全量恢复=个性化全量，设计 §5.4）
+    if (room.sim.personalize) msg = room.sim.personalize(room, ctx, msg)
+    ctx.conn.send(JSON.stringify(msg))
   }
 
   /* ---------- feed（GET /api/matches 数据源） ---------- */

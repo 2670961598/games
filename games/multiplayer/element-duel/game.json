@@ -1,0 +1,71 @@
+{
+  "slug": "element-duel",
+  "title": "元素对决",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 360,
+  "scoring": {
+    "win": "英雄 HP 归零前保住己方（lethal）",
+    "lose": "英雄 HP≤0/超时 HP 低/连续超时/认输",
+    "s2": "反应触发数",
+    "s3": "疲劳递增数"
+  },
+  "description": "三格棋盘上的元素卡牌：水火蒸气、风雷连锁，组合胜过数值。回合全服务器裁决，随手托管牌局不断。",
+  "net": {
+    "tech": "S5",
+    "gameId": "element-duel",
+    "mode": "1v1-duel",
+    "seats": 2,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "pick":     { "ws": "op", "keys": ["hero"], "desc": "waiting 期选英雄 0..3（10s 超时 seed 定）" },
+        "mulligan": { "ws": "op", "keys": ["keep"], "desc": "换牌：keep 布尔数组与起手等长，false 者洗回重抽" },
+        "play":     { "ws": "op", "keys": ["card", "cell", "tgt"],
+                      "desc": "出牌：card=手牌序号；随从带 cell 0..8（须空格+己方<4只）；带目标效果/法术带 tgt（{s,c} 单体 c=-1 英雄 ｜ {row} 行 ｜ {from,to} 迷踪步）——扣费/入格/入场效果/反应/死亡按固定结算序，非法 {k:'reject'}" },
+        "attack":   { "ws": "op", "keys": ["from", "tgt"], "desc": "随从攻击：校验 ready/近战邻接/近敌行打脸/嘲讽强制/冻结" },
+        "heroPower":{ "ws": "op", "keys": ["tgt"], "desc": "英雄技能（2 费/回合 1 次，H0/H1/H3 带 tgt）" },
+        "endTurn":  { "ws": "op", "keys": [], "desc": "结束回合（手牌>8 烧牌 → 对方 turnStart）" },
+        "host":     { "ws": "op", "keys": ["on"], "desc": "主动托管开关（T5-A 牌局不断）；任意合法 op 即夺回" },
+        "concede":  { "ws": "op", "keys": [], "desc": "认负 → end{reason:'resign'}" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）+ reveal:{hands} + quip",
+        "winner": "'A'=席0 ｜ 'B'=席1 ｜ 'draw'",
+        "teams": { "A": [0], "B": [1] },
+        "reason": "lethal（英雄 HP≤0，含疲劳致死） ｜ timeout（48000 tick HP 高者胜） ｜ afk（连续3全超时回合） ｜ resign ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→pick→live mulligan→welcome.state（双英雄 24HP/牌组 20/起手 3 张+后手 4 张&微粒）+ room.duel 声明块",
+        "A2 能赢：burn-face 剧本 A 席 lethal 终态（炎阳抢血 vs casual 随手）",
+        "A3 能输：idle 剧本 B 席 afk 终态（3×30s 全超时回合 casual 代打后认负——超时/托管路径一并覆盖）",
+        "A4 操作注入→ruling 回执 <100ms（服务端同钟）",
+        "A5 断线重连 <10s：$disconnect 后托管续打（该回合完成）→ $reconnect welcome 全量个性化恢复（手牌牌面/场面/坟场/牌库数/托管标志）",
+        "A6 确定性双跑：同 seed 两房终态 stateHash 与输入日志（picks+ops）逐字节相等；且在线终态 hash == 回放器重放 hash（S5 红线首证）"
+      ],
+      "script": {
+        "seed": 20260929, "timeScale": 8, "startDelayMs": 600, "maxTicks": 48000,
+        "scenarios": {
+          "win":  { "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "burn-face" },
+          "lose": { "botLevels": [null, "competitive"], "expectWinner": "B", "policy": "idle" },
+          "deterministic": {
+            "runs": 2, "botLevels": [null, "balanced"], "expectWinner": "any",
+            "policy": "burn-face",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志(picks+ops 序列)逐字节相等 && stateHash == replayHash"
+          }
+        }
+      }
+    }
+  }
+}
