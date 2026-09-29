@@ -248,6 +248,76 @@ const POLICIES = {
     }
   })(),
   /**
+   * 燃脸速攻（element-duel A2/A6，设计 §6 剧本策略）：脚本侧选炎阳（H0）；换牌保留 ≤2 费；
+   * 每回合：可付费随从优先部署近敌行/邻接己方异系、法术直伤全部指英雄、技能火弹指英雄、
+   * 攻击全部打脸（嘲讽强制时解场）→ endTurn。零 rng——确定性双跑前提（§5.5）。
+   * 每次轮询至多回 1 条 op（S5 op 通道）。
+   */
+  'burn-face': (() => {
+    const nearFoeRow = (seat) => (seat === 0 ? 0 : 2)
+    return (state, seat) => {
+      if (!state || state.over) return {}
+      const S = (k) => state[k]
+      const CARDS = { F1:{mi:1},F2:{mi:1},F3:{mi:1},F4:{mi:1},W1:{mi:1},W2:{mi:1},W3:{mi:1,tgt:'freeze'},W4:{mi:1},N1:{mi:1},N2:{mi:1},N3:{mi:1},N4:{mi:1},T1:{mi:1},T2:{mi:1},T3:{mi:1},T4:{mi:1},
+        FS1:{sp:'face'},FS2:{sp:'row'},WS1:{sp:'own'},WS2:{sp:'freeze'},NS1:{sp:'none'},NS2:{sp:'move'},TS1:{sp:'tgt'},TS2:{sp:'none'},X0:{sp:'none'} }
+      const COST = { F1:1,F2:2,F3:5,F4:6,W1:1,W2:3,W3:4,W4:6,N1:1,N2:2,N3:3,N4:5,T1:1,T2:2,T3:4,T4:6,FS1:3,FS2:4,WS1:1,WS2:2,NS1:3,NS2:1,TS1:2,TS2:5,X0:0 }
+      const phase = state.phase
+      if (phase === 'pick') return state.heroes[seat].hero < 0 ? { op: { k: 'pick', hero: 0 } } : {}
+      if (phase === 'mulligan') {
+        const hand = state.hands[seat]
+        if (state.mullDone && state.mullDone[seat]) return {}
+        return { op: { k: 'mulligan', keep: hand.map((id) => COST[id] <= 2) } }
+      }
+      if (phase !== 'play' || state.turnSeat !== seat) return {}
+      const hand = state.hands[seat], me = state.heroes[seat]
+      const board = state.board, foeSeat = seat === 0 ? 1 : 0
+      const foeTaunts = []
+      for (let c = 0; c < 9; c++) if (board[c] && board[c].seat === foeSeat && board[c].taunt) foeTaunts.push(c)
+      /* 1. 直伤法术指英雄（FS1；FS2 选含敌随从最多行） */
+      for (let i = 0; i < hand.length; i++) {
+        const id = hand[i]
+        if (id === 'FS1' && me.manaCur >= 3) return { op: { k: 'play', card: i, tgt: { s: foeSeat, c: -1 } } }
+      }
+      /* 2. 部署随从：近敌行优先、邻接己方异系次之（反应伙伴） */
+      let ownN = 0
+      for (let c = 0; c < 9; c++) if (board[c] && board[c].seat === seat) ownN++
+      const sch = (id) => ({ F: 'F', W: 'W', N: 'N', T: 'T' })[id ? id[0] === 'F' ? 'F' : id[0] === 'W' ? 'W' : id[0] === 'N' ? 'N' : 'T' : '?']
+      const minions = []
+      for (let i = 0; i < hand.length; i++) { const d = CARDS[hand[i]]; if (d && d.mi && me.manaCur >= COST[hand[i]]) minions.push(i) }
+      if (minions.length && ownN < 4) {
+        const i = minions[0]
+        const id = hand[i]
+        let cell = -1
+        for (let c = 0; c < 9 && cell < 0; c++) { // ① 己方异系邻接空格（反应伙伴）
+          if (board[c]) continue
+          const row = (c / 3) | 0, col = c % 3
+          const nbr = [row > 0 ? c - 3 : -1, col < 2 ? c + 1 : -1, row < 2 ? c + 3 : -1, col > 0 ? c - 1 : -1]
+          for (const n of nbr) if (n >= 0 && board[n] && board[n].seat === seat && sch(board[n].c) !== sch(id)) { cell = c; break }
+        }
+        if (cell < 0) { for (let c = 0; c < 9; c++) { if (!board[c] && ((c / 3) | 0) === nearFoeRow(seat)) { cell = c; break } } } // ② 近敌行
+        if (cell < 0) { for (let c = 0; c < 9; c++) if (!board[c]) { cell = c; break } }                                           // ③ 任意空格
+        if (cell >= 0) {
+          if (CARDS[id].tgt === 'freeze') { const t = foeTaunts[0] != null ? foeTaunts[0] : board.findIndex((m) => m && m.seat === foeSeat); if (t >= 0) return { op: { k: 'play', card: i, cell, tgt: { s: foeSeat, c: t } } } }
+          else return { op: { k: 'play', card: i, cell } }
+        }
+      }
+      /* 3. 技能火弹指英雄 */
+      if (!me.powerUsed && me.manaCur >= 2 && me.hero === 0) return { op: { k: 'heroPower', tgt: { s: foeSeat, c: -1 } } }
+      /* 4. 攻击：嘲讽强制解场，否则打脸 */
+      for (let f = 0; f < 9; f++) {
+        const m = board[f]
+        if (!m || m.seat !== seat || !m.ready || m.frozen > 0) continue
+        const ranged = m.ranged, row = (f / 3) | 0
+        if (foeTaunts.length) {
+          const ADJ = []
+          if (row > 0) ADJ.push(f - 3); if ((f % 3) < 2) ADJ.push(f + 1); if (row < 2) ADJ.push(f + 3); if ((f % 3) > 0) ADJ.push(f - 1)
+          for (const t of foeTaunts) if (ranged || ADJ.includes(t)) return { op: { k: 'attack', from: f, tgt: { s: foeSeat, c: t } } }
+        } else if (!m.newly && (ranged || row === nearFoeRow(seat))) return { op: { k: 'attack', from: f, tgt: { s: foeSeat, c: -1 } } }
+      }
+      return { op: { k: 'endTurn' } }
+    }
+  })(),
+  /**
    * 帝国速攻（empire-sprout A2 能赢，设计书 §6 剧本策略全貌）：
    * 查表 build order（t≈150 lumber → ≈350 farm → ≈550 camp，资源就绪门控）
    * → 循环 train camp inf n=5（队列空位即补）→ tick≥1800 且 CD 好：attack lane1 全池
@@ -431,6 +501,21 @@ try {
       const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.physics)
       ok('A1', 'S4 room.physics 声明块（engine+hash）', !!wel && !!wel.msg.room.physics.engine && Number.isInteger(wel.msg.room.physics.hash),
         wel ? `${wel.msg.room.physics.engine}#${wel.msg.room.physics.hash}` : '未见声明块')
+    } else if (meta.net.tech === 'S5') {
+      /* S5 回合权威（GAMES-88）：welcome.state 牌局骨架（双英雄 24HP/9 格棋盘/牌组 20）
+         + room.duel 声明块（引擎版本护栏，设计 §5.1）——手牌迷雾：己方牌面/对方张数（§5.3） */
+      const hs = smoke.state && smoke.state.heroes
+      ok('A1', 'S5 welcome.state 牌局骨架（双英雄 24HP）', !!(hs && hs.length === 2 && hs[0].hp === 24 && hs[1].hp === 24),
+        `heroes=${hs && hs.length} hp=${hs && hs.map((h) => h.hp).join('/')}`)
+      const bd = smoke.state && smoke.state.board, dk = smoke.state && smoke.state.decks
+      ok('A1', 'S5 9 格棋盘 + 双牌组骨架（welcome 期未定型=防泄密，§5.3）',
+        !!(Array.isArray(bd) && bd.length === 9 && Array.isArray(dk) && dk.length === 2 && dk[0].length === 0),
+        `board=${bd && bd.length} decks(welcome)=${dk && dk.map((d) => d.length).join('/')}`)
+      const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.duel)
+      ok('A1', 'S5 room.duel 声明块（engine+hash）', !!wel && !!wel.msg.room.duel.engine && Number.isInteger(wel.msg.room.duel.hash),
+        wel ? `${wel.msg.room.duel.engine}#${wel.msg.room.duel.hash}` : '未见声明块')
+      /* 迷雾下发（§5.3 目录首款）：pick 期起手未发，viewFor(state, -1) 手牌双隐藏——
+         live 后由 pick/mulligan 裁决流验证（A4 ruling.state.hand 视图） */
     } else if (meta.net.tech === 'S3') {
       /* S3 混合同步（GAMES-68）：welcome.state 双层（build 资源/建筑位 + battle 空态墙/心）
          + 首张建设快照（ext.layer='build'，设计 §6 A1）——静默期无战斗帧是正常态（附决策 1） */
@@ -459,6 +544,7 @@ try {
        S4：注入 shot op → 首张球动期 snapshot（ext.physics，≤10 tick/100ms，§6 A4）。 */
     const injPayload = isS2 ? { mx: 63, my: 0, fire: 0, frame: 1 }
       : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
+      : meta.net.tech === 'S5' ? { op: { k: 'pick', hero: 0 } }
       : { mx: 63, my: 0, fire: 0 }
     const inj = await gwInput(smoke.roomId, smoke.playerSeat, 'ctrl', injPayload)
     const receivedAt = inj.json && inj.json.receivedAt
@@ -471,11 +557,30 @@ try {
         ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && Number(e.msg.ext.ack) >= 1)
         : meta.net.tech === 'S4'
           ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && e.msg.ext.physics)
-          : (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
+          : meta.net.tech === 'S5'
+            ? (r4.events || []).find((e) => e.msg.t === 'ruling' && e.ts >= receivedAt
+                && (e.msg.events || []).some((v) => (v.k === 'pick' && v.s === smoke.playerSeat) || (v.k === 'reject' && v.seat === smoke.playerSeat)))
+            : (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
       if (!refl) await sleep(30)
     }
     smokeEnd.reflMs = refl ? refl.ts - receivedAt : -1
-    ok('A4', `操作注入→${isS2 ? '快照 ack 反映' : '帧反映'} <100ms`, !!refl && smokeEnd.reflMs < 100, smokeEnd.reflMs >= 0 ? `实测 ${smokeEnd.reflMs}ms（timeScale=${smokeCfg.timeScale}x）` : '3s 内未见反映')
+    ok('A4', `操作注入→${isS2 ? '快照 ack 反映' : meta.net.tech === 'S5' ? 'ruling 回执' : '帧反映'} <100ms`, !!refl && smokeEnd.reflMs < 100, smokeEnd.reflMs >= 0 ? `实测 ${smokeEnd.reflMs}ms（timeScale=${smokeCfg.timeScale}x）` : '3s 内未见反映')
+    if (meta.net.tech === 'S5') {
+      /* S5 双席 pick 齐 → mulligan 起手发放：deckSeed 双流派生（§5.5 单据指定断言）；
+         发牌后 deck=20−3/20−4 张、起手 3/5（后手含微粒）——牌序由 deckSeed 派生 */
+      let st5 = r4.json, c5 = c4, dealt = null
+      const t5 = Date.now()
+      while (!dealt && Date.now() - t5 < 4000) {
+        const q = await gwState(smoke.roomId, c5)
+        st5 = q.json; c5 = q.json.cursor
+        const s5 = st5 && st5.state
+        if (s5 && s5.phase === 'mulligan' && s5.hands[0].length === 3) dealt = s5
+        else await sleep(60)
+      }
+      ok('A1', 'S5 pick 齐→mulligan 起手发放（先手 3/后手 4+微粒，deckSeed 派生）',
+        !!(dealt && dealt.phase === 'mulligan' && dealt.hands[0].length === 3 && dealt.hands[1].length === 5 && dealt.decks[0].length === 17 && dealt.decks[1].length === 16),
+        dealt ? `phase=${dealt.phase} hands=${dealt.hands.map((h) => h.length).join('/')} decks=${dealt.decks.map((d) => d.length).join('/')}` : '4s 内未见发牌')
+    }
     const tGet0 = Date.now()
     await gwState(smoke.roomId, 0)
     ok('A4', '状态快照 GET 往返 <100ms', Date.now() - tGet0 < 100, `${Date.now() - tGet0}ms`)
@@ -531,23 +636,31 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         runs.push(played)
       }
       if (runs.length === sc.runs) {
-        const stripFrame = (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
+        /* S5 输入日志（§5.6）：{s,k,payload}（剥 tick/tn 墙钟字段）——picks+ops 逐字节断言 */
+        const stripFrame = meta.net.tech === 'S5'
+          ? (st) => JSON.stringify((st.opsLog || []).map((o) => { const { s, k, tn, ...rest } = o; return [s, k, rest] }))
+          : (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
         const hash0 = runs[0].stateHash, log0 = stripFrame(runs[0].state)
         const hashesEq = runs.every((x) => x.stateHash === hash0)
         const logsEq = runs.every((x) => stripFrame(x.state) === log0)
         ok(aid, `${name}：同 seed 同策略两房终态 stateHash 相等`, hashesEq, `hash=${hash0}${hashesEq ? '' : ' 各房不一：' + runs.map((x) => x.stateHash).join('/')}`)
-        ok(aid, `${name}：输入日志（shot 序列）逐字节相等`, logsEq, `${JSON.parse(log0).length} 杆${logsEq ? '' : '（序列不一致）'}`)
+        ok(aid, `${name}：输入日志（${meta.net.tech === 'S5' ? 'picks+ops' : 'shot 序列'}）逐字节相等`, logsEq, `${JSON.parse(log0).length} 条${logsEq ? '' : '（序列不一致）'}`)
         let replayOk = false, replayDetail = '未找到可回放 sim'
         try {
           const req = createRequire(pathToFileURL(join(gameDir, 'sim.cjs')).href)
           const sim = req(join(gameDir, 'sim.cjs'))
-          if (sim && sim.replayShots && sim.hashRules) {
+          if (meta.net.tech === 'S5' && sim && sim.replayOps && sim.hashState) {
+            const ops = runs[0].state.opsLog.map((o) => { const { s, k, tn, ...rest } = o; void tn; return Object.assign({ s, k }, rest) })
+            const rp = sim.replayOps(script.seed, ops, script.maxTicks)
+            replayOk = sim.hashState(rp) === runs[0].stateHash
+            replayDetail = replayOk ? `replay==在线 stateHash（${sim.hashState(rp)}）` : `replay ${sim.hashState(rp)} ≠ 在线 ${runs[0].stateHash}`
+          } else if (sim && sim.replayShots && sim.hashRules) {
             const rp = sim.replayShots(script.seed, runs[0].state.shots, script.maxTicks)
             replayOk = sim.hashRules(rp) === runs[0].state.restHash
             replayDetail = replayOk ? `replay==在线 restHash（${sim.hashRules(rp)}）` : `replay ${sim.hashRules(rp)} ≠ 在线 ${runs[0].state.restHash}`
           }
         } catch (e) { replayDetail = `回放器加载失败：${e.message}` }
-        ok(aid, `${name}：在线终态 == 回放器重放（S4 确定性首证）`, replayOk, replayDetail)
+        ok(aid, `${name}：在线终态 == 回放器重放（${meta.net.tech} 确定性首证）`, replayOk, replayDetail)
       }
       continue
     }

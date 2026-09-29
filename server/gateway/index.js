@@ -24,6 +24,7 @@ import { slgBattlefieldSim } from './sims/slg-battlefield.js'
 import { mmoTownshipSim } from './sims/mmo-township.js'
 import { empireSproutSim } from './sims/empire-sprout.js'
 import { poolPhysicsSim } from './sims/pool-physics.js'
+import { elementDuelSim } from './sims/element-duel.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -51,6 +52,7 @@ rooms.register(slgBattlefieldSim)
 rooms.register(mmoTownshipSim)
 rooms.register(empireSproutSim) // S3 混合同步首证（GAMES-68）
 rooms.register(poolPhysicsSim)  // S4 服务端权威物理首证（GAMES-78）
+rooms.register(elementDuelSim)  // S5 回合权威本格首证（GAMES-88）
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
@@ -58,6 +60,7 @@ bothost.register({ gameId: 'slg-battlefield', minLive: 2, levels: ['casual', 'ba
 bothost.register({ gameId: 'mmo-township', minLive: 1, levels: ['balanced', 'casual'], maxRooms: 1, residents: true }) // 常驻镇 1 个：居民动态调节（GAMES-52 §8）
 bothost.register({ gameId: 'empire-sprout', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7）
 bothost.register({ gameId: 'pool-physics', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7/§5.5）
+bothost.register({ gameId: 'element-duel', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })

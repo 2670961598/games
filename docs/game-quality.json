@@ -1069,6 +1069,19 @@
     "chain": "GAMES-77..86 十单链完整"
    },
    "notes": "E6-W1-T4 轨 S4 服务端权威物理首证收官（100Hz 快钟/双相快照静止事件驱动+球动 10Hz/op-ruling S5 通道复用/客户端确定性重演 16k 锚 0 偏差）。STRESS 三组 PASS（6 测试槽+BotHost 并行 8min cadence 100.021Hz 漂移[-4,+5]、5min 满编 2/2 spot burst 99.65-102.43Hz+撤席 abandon@15.05s/dispose@+8.03s 闭环、五游戏混编零错误+护栏 429；四件套全过：245==245/16==16 全配对+二段 RSS 起点重置补证）；QA1/QA2 红线全过（200ms 回合制容忍论证实证/重连三档/满员旁观/feed ≤0.5s）；横切事故复盘（GAMES-84 abandon 锚点+重演伪杆号，波及五作）。合并链 6da49ae→7a11ea5→4d526d5→bf64eab→5410cf8→9180bc6→5a3125e→72ef4b0→(GAMES-85 9883b4a 待合并)→(GAMES-86)"
+  },
+  "multiplayer:element-duel": {
+   "stage": "dev",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 1,
+   "net": {
+    "tech": "S5",
+    "bot": "三档卡牌Bot(casual 随手/balanced 整数V+scratch贪心/competitive 斩杀线闭式+combo模拟)+托管三层(超时casual单回合/持续=牌组配方faceBias·comboBias/主动host op)+牌桌评语quip",
+    "chain": "GAMES-87(D)..GAMES-88(DEV) 链进行中"
+   },
+   "notes": "E6-W1-T5 轨 S5 回合权威本格首证（共享3×3棋盘位置即决策/六对元素反应确定性结算/24卡池×4预构筑/零快照纯事件驱动/迷雾个性化state目录首款/deckSeed双流派生+零隐藏随机/输入日志重放=stateHash 确定性双跑全绿 21/0；api-check 回归五作全绿）"
   }
  }
 }
