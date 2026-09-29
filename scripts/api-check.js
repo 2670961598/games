@@ -516,6 +516,30 @@ try {
         wel ? `${wel.msg.room.duel.engine}#${wel.msg.room.duel.hash}` : '未见声明块')
       /* 迷雾下发（§5.3 目录首款）：pick 期起手未发，viewFor(state, -1) 手牌双隐藏——
          live 后由 pick/mulligan 裁决流验证（A4 ruling.state.hand 视图） */
+      /* GAMES-90 F1 修复回归：①反应表键=排序序（常量表逐键断言，QA 取证法固化）；
+         ②迷雾 N+W/感电 T+W 两对死键行为触发实证（修复前永 miss）——离线直驱 sim，
+         布邻接异系对→play W 系随从，断言 reaction 事件回流 */
+      try {
+        const rsim = createRequire(pathToFileURL(join(gameDir, 'sim.cjs')).href)
+        const D = rsim(join(gameDir, 'sim.cjs'))
+        const rk = Object.keys(D.REACTIONS)
+        ok('A1', 'S5 REACTIONS 表键=系对字典序（F1 修复：W+N/W+T 死键清零）', rk.length === 6 && rk.every((k) => k === k.split('+').sort().join('+')), rk.join(','))
+        const pairFire = (seed, baseId) => {
+          const st = D.create(seed)
+          D.applyOp(st, 0, { k: 'pick', hero: 2 }); D.applyOp(st, 1, { k: 'pick', hero: 3 })
+          D.applyOp(st, 0, { k: 'mulligan', keep: [true, true, true] }); D.applyOp(st, 1, { k: 'mulligan', keep: [true, true, true, true, true] })
+          st.heroes[0].manaCur = 3
+          st.board[3] = { c: baseId, school: baseId[0], atk: 1, hp: 3, mhp: 3, seat: 0, ready: 0, newly: 1, frozen: 0, taunt: 0, ranged: 0, melee: 1 }
+          st.hands[0] = ['W1']; st.outbox.length = 0
+          D.applyOp(st, 0, { k: 'play', card: 0, cell: 4 }) // cell4 与 cell3 邻接 → W+{N|T} 触发
+          return st.outbox.flat().find((e) => e && e.k === 'reaction') || null
+        }
+        const mist = pairFire(11, 'N1'), surge = pairFire(23, 'T1')
+        ok('A1', 'S5 迷雾反应（N+W）部署触发（F1 修复前全目录死代码）', !!(mist && mist.rt === 'mist' && mist.pair === 'N+W'),
+          mist ? `rt=${mist.rt} pair=${mist.pair}` : '未见反应事件')
+        ok('A1', 'S5 感电反应（T+W）部署触发（F1 修复前全目录死代码）', !!(surge && surge.rt === 'surge' && surge.pair === 'T+W'),
+          surge ? `rt=${surge.rt} pair=${surge.pair}` : '未见反应事件')
+      } catch (e) { ok('A1', 'S5 反应表/触发断言', false, '挂具异常：' + e.message) }
     } else if (meta.net.tech === 'S3') {
       /* S3 混合同步（GAMES-68）：welcome.state 双层（build 资源/建筑位 + battle 空态墙/心）
          + 首张建设快照（ext.layer='build'，设计 §6 A1）——静默期无战斗帧是正常态（附决策 1） */
