@@ -3,6 +3,8 @@
  * state 直染（设计 §5.2 附决策 5）。紫曜夜棋盘 + 四元素双色编码（§7）。
  * HUD 字号对齐 hud-font-standard §1：P0 ≥13px/600、P1 ≥11px、P2 ≥9px；
  * __GAMES_DEBUG__.hudFonts() 当帧登记表（识图断言源，slg/mmo 先例）。
+ * GAMES-95 VIS：倒计时/回合数/资源计数/战报数字升 P0；费14·名11·攻血16 卡面层级；
+ * 场面背板/手牌带/坟场票根三区视觉分区（docs/vis/element-duel-vis.md）。
  * ===================================================================== */
 'use strict'
 ;(function () {
@@ -398,8 +400,8 @@
     /* 法力晶体（点亮=manaCur） */
     for (let i = 0; i < 8; i++) { ctx.fillStyle = i < h.mana ? '#6B8CF5' : '#2A1B4A'; ctx.beginPath(); ctx.arc(214 + i * 13, y + 33, 4.5, 0, Math.PI * 2); ctx.fill() }
     ctx.fillStyle = '#B9A8E8'; ctx.font = F0(13); ctx.textAlign = 'right'; ctx.fillText(h.mana + '/' + h.manaMax, W - 14, y + 38)
-    /* 牌库/手牌数/疲劳/托管徽标 */
-    ctx.font = F1(11); ctx.fillStyle = '#9C8CC8'
+    /* 牌库/手牌数/疲劳/托管徽标（GAMES-95：资源计数升 P0 ≥13——烧牌/疲劳决策输入） */
+    ctx.font = F0(13); ctx.fillStyle = '#9C8CC8'
     ctx.fillText(`牌库 ${h.deckN}  手牌 ${typeof v.hand[seat] === 'object' && !Array.isArray(v.hand[seat]) ? v.hand[seat].n : v.hand[seat].length}  坟场 ${h.grave.length}${h.fatigue ? '  疲劳' + h.fatigue : ''}`, W - 14, y + 18)
     if (v.host[seat]) { ctx.fillStyle = '#9D6BE8'; ctx.font = F1(11); ctx.fillText('托管', 70, y + 50) }
     if (isFoe && v.phase === 'play' && faceDamage() >= h.hp) { /* 可斩杀角标（§3.2） */
@@ -416,12 +418,12 @@
     ctx.strokeStyle = col; roundRect(x, y, w, h, 7); ctx.stroke()
     if (!mine) { ctx.lineWidth = 0.8; roundRect(x + 3, y + 3, w - 6, h - 6, 5); ctx.stroke() }
     ctx.fillStyle = SC[m.school] || '#888'; ctx.fillRect(x, y, w, 5) // 系色顶带
-    glyph(SG[m.school] || '▲', x + 13, y + h / 2 + 3, 15, SC[m.school] || '#888')
+    glyph(SG[m.school] || '▲', x + 13, y + h / 2, 13, SC[m.school] || '#888') // GAMES-95：缩至13上提，让位 16px 攻血字
     const card = CARDS[m.c] || { n: m.c }
     ctx.fillStyle = '#EDE6FF'; ctx.font = F1(11); ctx.textAlign = 'left'; ctx.fillText(card.n, x + 24, y + 21)
     if (m.taunt) { ctx.fillStyle = '#9D6BE8'; ctx.font = F1(11); ctx.fillText('嘲', x + w - 14, y + 21) }
     if (m.frozen > 0) { ctx.fillStyle = 'rgba(61,168,232,0.35)'; roundRect(x, y, w, h, 7); ctx.fill(); ctx.fillStyle = '#BFE6FF'; ctx.font = F1(11); ctx.fillText('冻', x + w - 26, y + 21) }
-    ctx.fillStyle = '#F2ECFF'; ctx.font = F0(14)
+    ctx.fillStyle = '#F2ECFF'; ctx.font = F0(16) // GAMES-95：攻/血 16 > 费 14 > 名 11（卡面识别性层级）
     ctx.fillText(String(m.atk), x + 12, y + h - 8)
     ctx.fillText(String(m.hp), x + w - 18, y + h - 8)
     ctx.strokeStyle = '#7CE8B8'; ctx.lineWidth = 1
@@ -438,7 +440,7 @@
     ctx.fillStyle = '#170D2E'; ctx.font = F0(14); ctx.textAlign = 'center'; ctx.fillText(String(d.c), x + 14, y + 19)
     glyph(SG[d.s], x + 39, y + 48, 34, afford === false ? '#6A5A9C' : SC[d.s]) // 元素字形大图标（不足=褪色）
     ctx.fillStyle = '#EDE6FF'; ctx.font = F1(11); ctx.fillText(d.n, x + 39, y + 78)
-    if (d.sp) { ctx.fillStyle = '#B9A8E8'; ctx.font = F1(11) } else ctx.font = F0(14)
+    if (d.sp) { ctx.fillStyle = '#B9A8E8'; ctx.font = F1(11) } else ctx.font = F0(16) // GAMES-95：攻/血16 > 费14 > 名11 字号层级
     ctx.fillStyle = d.sp ? '#B9A8E8' : '#F2ECFF'
     if (d.sp) { /* 法术关键词两行封顶（§7） */ const words = (d.d || '').split(''); ctx.fillText(words.slice(0, 8).join(''), x + 39, y + 92); ctx.fillText(words.slice(8, 16).join(''), x + 39, y + 104) }
     else { ctx.fillText(d.a + '/' + d.h, x + 39, y + 98); ctx.fillStyle = '#9C8CC8'; ctx.font = F1(11); ctx.fillText(d.kw || '', x + 39, y + 79) }
@@ -452,9 +454,20 @@
     const v = S.view
     /* 顶栏（对方英雄）/ 己方英雄栏（§7 布局：62+196+62+132+66） */
     heroBar(6, oppSeat(), true)
-    ctx.fillStyle = '#9C8CC8'; ctx.font = F2(9); ctx.textAlign = 'center'
+    /* 状态行（GAMES-95：倒计时秒/回合数升 P0 ≥13/600——hud-font-standard §1「计时/关卡号」档；分段混排居中） */
     const turnSec = Math.max(0, Math.ceil((S.deadlineAt - now) / 1000))
-    ctx.fillText(`${S.spectator ? '观战 · ' : ''}${v.phase === 'play' ? (S.spectator ? '玩家' + (v.turn === 0 ? 'A' : 'B') + ' 行动 · ' : v.turn === S.seat ? '你的回合 · ' : '对方回合 · ') + turnSec + 's' : v.phase === 'pick' ? '选择英雄 · ' + turnSec + 's' : v.phase === 'mulligan' ? '换牌 · ' + turnSec + 's' : '对局结束'}  ·  第 ${Math.max(1, Math.ceil((v.turnNo + 1) / 2))} 回合`, W / 2, 108)
+    const turnNo = Math.max(1, Math.ceil((v.turnNo + 1) / 2))
+    const phaseLabel = v.phase === 'play' ? (S.spectator ? '玩家' + (v.turn === 0 ? 'A' : 'B') + ' 行动' : v.turn === S.seat ? '你的回合' : '对方回合') : v.phase === 'pick' ? '选择英雄' : v.phase === 'mulligan' ? '换牌' : '对局结束'
+    const segs = [[S.spectator ? '观战 · ' : '', F2(9), '#9C8CC8'], [phaseLabel, F1(11), '#B9A8E8']]
+    if (v.phase === 'play' || v.phase === 'pick' || v.phase === 'mulligan') segs.push([' · ' + turnSec + 's', F0(14), turnSec <= 10 ? '#FF9D85' : '#F2ECFF'])
+    segs.push(['  ·  第 ', F1(11), '#9C8CC8'], [String(turnNo), F0(14), '#F2ECFF'], [' 回合', F1(11), '#9C8CC8'])
+    let segW = 0; for (const s of segs) { ctx.font = s[1]; segW += ctx.measureText(s[0]).width }
+    let segX = W / 2 - segW / 2; ctx.textAlign = 'left'
+    for (const s of segs) { ctx.font = s[1]; ctx.fillStyle = s[2]; ctx.fillText(s[0], segX, 108); segX += ctx.measureText(s[0]).width }
+    /* 场面背板（GAMES-95 三区视觉分区）：底/格/底三级明度阶梯（bg 24 → 板 31 → 格 37），纯渲染层 */
+    ctx.fillStyle = '#221643'; roundRect(12, 112, 351, 196, 10); ctx.fill()
+    ctx.strokeStyle = '#3B2B6E'; ctx.lineWidth = 1; roundRect(12, 112, 351, 196, 10); ctx.stroke()
+    ctx.fillStyle = '#6A5A9C'; ctx.font = F2(9); ctx.textAlign = 'left'; ctx.fillText('场面', 22, 306)
     /* 目标选中圈（GAMES-92）：旋转虚线环——攻击/法术/技能三类目标态共用 */
     const targetRing = (x, y, w, h, col) => {
       ctx.save()
@@ -505,6 +518,17 @@
       }
     }
     heroBar(H - 66 - 132 - 66, rs(), false)
+    /* 手牌带（GAMES-95 三区视觉分区）：底板+区名标签+坟场票根——纯渲染层，命中区（handRect）不变 */
+    ctx.fillStyle = '#221643'; roundRect(6, 479, 363, 127, 10); ctx.fill()
+    ctx.strokeStyle = '#3B2B6E'; ctx.lineWidth = 1; roundRect(6, 479, 363, 127, 10); ctx.stroke()
+    ctx.fillStyle = '#6A5A9C'; ctx.font = F2(9); ctx.textAlign = 'left'; ctx.fillText(S.spectator ? '手牌 · 观战双隐藏' : '手牌', 16, 490)
+    if (!S.spectator) { // 坟场票根：双卡背叠 + 计数（计数 P0；坟场自此有独立可视锚点）
+      const gn = (v.heroes[rs()].grave || []).length
+      ctx.fillStyle = '#2A1B4A'; roundRect(354, 480, 9, 12, 2); ctx.fill(); roundRect(358, 483, 9, 12, 2); ctx.fill()
+      ctx.strokeStyle = '#55447A'; ctx.lineWidth = 0.8; roundRect(358, 483, 9, 12, 2); ctx.stroke()
+      ctx.fillStyle = '#9C8CC8'; ctx.font = F2(9); ctx.textAlign = 'right'; ctx.fillText('坟场', 336, 490)
+      ctx.fillStyle = '#F2ECFF'; ctx.font = F0(13); ctx.fillText(String(gn), 350, 491)
+    }
     /* 手牌扇（迷雾：对方视角只见张数——此处恒为本人视图牌面；费用不足灰化=不可拖不可选） */
     const hand = myViewHand()
     for (let i = 0; i < hand.length; i++) { const r = handRect(i); if (S.drag && S.drag.card === i) continue; drawCard(hand[i], r.x, r.y, S.sel && S.sel.mode === 'card' && S.sel.card === i, v.phase === 'play' ? affordable(i) : true) }
@@ -535,7 +559,7 @@
     btn(14, 40, v.host[rs()] ? '夺回' : '托管', v.host[rs()], false)
     const hero = v.heroes[rs()]
     const canPower = myTurn && !hero.powerUsed && hero.mana >= 2
-    btn(66, 56, canPower ? '技能' : '技能·' + (hero.powerUsed ? '已用' : '2费'), canPower && !(S.sel && S.sel.mode === 'power'), false)
+    btn(66, 56, canPower ? '技能' : hero.powerUsed ? '已用' : '技能2费', canPower && !(S.sel && S.sel.mode === 'power'), false) // GAMES-95：4字≈48px 适配 56px 钮宽（原「技能·2费」5字溢出）
     btn(252, 108, '结束回合', myTurn, myTurn && secLeft < 5)
     if (S.sel && S.sel.mode === 'power') { ctx.fillStyle = '#F2ECFF'; ctx.font = F1(11); ctx.textAlign = 'center'; ctx.fillText(HEROES[hero.hero] ? HEROES[hero.hero].p : '', 130, barY + 28) }
     /* 回合节奏（GAMES-92）：对手回合思考中胶囊（动态省略号）+ 倒计时最后 5s 红脉动徽标 */
@@ -681,7 +705,7 @@
       ctx.font = F0(34); ctx.textAlign = 'center'; ctx.fillText(verdict, W / 2, 150)
       ctx.font = F1(12); ctx.fillStyle = '#9C8CC8'; ctx.fillText('reason: ' + r.reason, W / 2, 176)
       const sc = r.scores || {}
-      ctx.fillStyle = '#EDE6FF'; ctx.font = F1(12)
+      ctx.fillStyle = '#EDE6FF'; ctx.font = F0(13) // GAMES-95：结算战报数字 P0（hud-font-standard §1 例举档）
       const row = (y, k, f) => { const a = (sc.A || {})[k], b = (sc.B || {})[k]; ctx.fillText(f(a) + '  ·  ' + k, W / 2, y); void b }
       row(230, 'hp', (x) => 'HP ' + (x == null ? '-' : x)); row(254, 'reactions', (x) => '反应 ' + (x == null ? '-' : x)); row(278, 'fatigue', (x) => '疲劳 ' + (x == null ? '-' : x))
       if (r.quip) { ctx.fillStyle = '#B9A8E8'; ctx.font = F1(13); ctx.fillText('「' + r.quip + '」', W / 2, 340) }
