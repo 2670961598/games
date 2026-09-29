@@ -36,7 +36,7 @@
     "api": {
       "spec": 1,
       "ops": {
-        "pick":     { "ws": "op", "keys": ["hero"], "desc": "waiting 期选英雄 0..3（10s 超时 seed 定）" },
+        "pick":     { "ws": "op", "keys": ["hero"], "desc": "waiting 期选英雄 0..3（10s 超时 seed 定）；纯 bot 房 takeover 继承 bot 已作 pick/keep（quick-match 牌局不等人，设计 §5.4）" },
         "mulligan": { "ws": "op", "keys": ["keep"], "desc": "换牌：keep 布尔数组与起手等长，false 者洗回重抽" },
         "play":     { "ws": "op", "keys": ["card", "cell", "tgt"],
                       "desc": "出牌：card=手牌序号；随从带 cell 0..8（须空格+己方<4只）；带目标效果/法术带 tgt（{s,c} 单体 c=-1 英雄 ｜ {row} 行 ｜ {from,to} 迷踪步）——扣费/入格/入场效果/反应/死亡按固定结算序，非法 {k:'reject'}" },
