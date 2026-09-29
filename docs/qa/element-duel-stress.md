@@ -3,7 +3,7 @@
 > 单据：GAMES-96（[STRESS·E6-W1-T5] 元素对决 压测+单链收官（10/10 预算版），attempt 0）
 > 纪律：Q-007 预算版——总实测 ≤25 分钟、全程每步计时。实测构成：A 组多房 8:00 + B 组满编 spot 5:00 + C 组六游戏混编 5:00（+撤席/清扫观测窗），采样墙钟合计 **19:35**；含过渡与首跑作废段（A 组首跑 3:30 撞测试房槽 429 未回补，热修重跑，见 §6-O1）的全程作业窗 ~30:00（<25 分钟硬帽口径披露见 §5）。
 > 环境：专用网关 `127.0.0.1:4423`（影子树 `kernel/workers/GAMES-96/gw/`，gateway+lib 与 repo 逐字节一致 shasum 留档、games 走符号链接、data 随影子路径隔离——Article 183-128 影子树隔离法；生产 :4399/:4400 全程零感知，验收前后各核验一次，pid 起止未变）。零服务端代码改动：分房/满编/出牌全部经公开协议（quick join/op pick/mulligan/endTurn）与测试 API 驱动。
-> 证据：`/Volumes/BigDisk/Studio/kernel/workers/GAMES-96/`（a-rooms.json / b-full.json / c-mixed.json / gateway.stdout 全量 1,931（一段 1,720+二段 211） 行 / shasum-shadow.txt / chain-driver.log 接力时间戳）。
+> 证据：`/Volumes/BigDisk/Studio/kernel/workers/GAMES-96/`（a-rooms.json / b-full.json / c-mixed.json / rss-phase2.json / gateway.stdout 全量 2,120 行（一段 1,720+二段 400 含停机段） / shasum-shadow.txt / chain-driver.log 接力时间戳）。
 
 ## 1. A 组：多房并行（≥6 element-duel 房 · 8 分钟抽样）
 
@@ -73,8 +73,8 @@
 
 ① **RSS 有界**：A 段 71,744-86,720KB（22 建/16 终高 churn）、B 段 87,504-90,784KB（满编稳态 +1.9MB/2.5min 近平台）、C 段 83,984-100,944KB（六款全开+8 槽轮换最重面）。三段锯齿有界、终局回收即回落、无单调暴涨。**PASS**
 ② **增量收敛+二段起点重置（QA2 O-2 / 设计书 §5.8 硬判据闭环）**：一段末高水位 100,944KB → SIGTERM 优雅停机 → 二段实例（gateway-up pid 90748 @19:55:22）重启后 RSS 回落 **65,872-71,728KB ≈ 一段 A 组起点 71,744KB 量级**——高水位随进程重置、非跨生命周期累积；QA2 观察的 churn 增速（+6.3MB/4.5min）在本单三组更重负载下复核为同型有界行为（A 组 +2.9MB/4min 非单调、B 组近平台），**无泄漏证据成立**。**PASS**
-③ **房周期闭环**：一段生命周期（A+B+C+SIGTERM，1,720 行全量）room-create **321 == room-dispose 321**，dispose 归因 ended 295+test-cleanup 13+shutdown 13（优雅停机在途房全量回收）；room-end 297 与 ended/轮换自洽；C 组清扫后 healthz rooms 回落 11（BotHost 六款稳态）。二段实例仍在运行（本报告落笔时 60 create/47 dispose），不做闭环判据（其为 RSS 起点重置专用段，停机处置交还 PM 侧）。**PASS**
-④ **零错误**：两段网关日志合计 **1,931 行 uncaught=0、room-error=0**（一段 1,720+二段 211）；A/B/C 三组 feed 全量校验 **108 采样 0 错**（六游戏前缀/席位/joinable/mode 断言+测试房不泄漏）。**PASS**
+③ **房周期闭环**：一段生命周期（A+B+C+SIGTERM，1,720 行全量）room-create **321 == room-dispose 321**，dispose 归因 ended 295+test-cleanup 13+shutdown 13（优雅停机在途房全量回收）；room-end 297 与 ended/轮换自洽；C 组清扫后 healthz rooms 回落 11（BotHost 六款稳态）。二段实例（RSS 起点重置专用段）采样后亦优雅停机：**81 == 81 全配对**（shutdown 11）。**PASS**
+④ **零错误**：两段网关日志合计 **2,120 行 uncaught=0、room-error=0**（一段 1,720+二段 400 含停机 dispose 段）；A/B/C 三组 feed 全量校验 **108 采样 0 错**（六游戏前缀/席位/joinable/mode 断言+测试房不泄漏）。**PASS**
 
 ## 5. 计时与预算自查（Q-007 纪律）
 
@@ -118,4 +118,4 @@
 
 ## 8. 结论
 
-**元素对决 STRESS 三组全过（6 测试槽错峰承载 8min tick 100.144/100.046Hz 漂移 [-4,+2]、ruling 810 条/turn 95 回合全量 0 错、三单交叉引用+满编 2/2 spot 6 世代滚动 frame 99.995Hz+疲劳 4/8 参与致死在线实证、六游戏混编 30/30 全在场零错误+护栏 429 证据+mmo 镇 10.004Hz 满频），无泄漏四件套全过（一段生命周期 321==321 全配对、两段 1,931 行零错误、RSS 二段起点重置 101→66-72MB 闭环 QA2 O-2/设计书 §5.8 硬判据），采样墙钟 19:35 守住 Q-007 软线（全程窗 ~30:00 超帽归因已披露）。单链 10/10 完成（GAMES-87..96），档案转 accepted（docs/game-quality.json），知识库《元素对决开发实录》草稿留档待 PM 收割，联机作战图进展已更新（multiplayer-roadmap.md §4.3：E6 进度 6/21、W1 波 5/7）。**
+**元素对决 STRESS 三组全过（6 测试槽错峰承载 8min tick 100.144/100.046Hz 漂移 [-4,+2]、ruling 810 条/turn 95 回合全量 0 错、三单交叉引用+满编 2/2 spot 6 世代滚动 frame 99.995Hz+疲劳 4/8 参与致死在线实证、六游戏混编 30/30 全在场零错误+护栏 429 证据+mmo 镇 10.004Hz 满频），无泄漏四件套全过（一段生命周期 321==321 全配对、两段 2,120 行零错误、RSS 二段起点重置 101→66-72MB 闭环 QA2 O-2/设计书 §5.8 硬判据），采样墙钟 19:35 守住 Q-007 软线（全程窗 ~30:00 超帽归因已披露）。单链 10/10 完成（GAMES-87..96），档案转 accepted（docs/game-quality.json），知识库《元素对决开发实录》草稿留档待 PM 收割，联机作战图进展已更新（multiplayer-roadmap.md §4.3：E6 进度 6/21、W1 波 5/7）。**
