@@ -105,16 +105,17 @@ E6 战役（umbrella，SPECIAL 不派工）
 - 并发约束：core 泳道同时仅 1 worker；联机单与 E1 单据在泳道内排队，M0 优先。
 - 每款联机游戏交付时同步登记 docs/game-quality.json（复用档案骨架，新增 `net.tech`/`bot` 字段）。
 
-### 4.3 单链进展看板（2026-09-28 · GAMES-76 更新）
+### 4.3 单链进展看板（2026-09-29 · GAMES-86 更新）
 
 | 游戏 | 轨道/技术 | 状态 | 单链 |
 |---|---|---|---|
 | 净斗坦克 | M0 参考 · S1 | accepted（2026-09-26） | M0+M1 基座（api-check 14/14、net-check 25/25） |
 | 指挥官战场 | T1 · S1 | **accepted** | GAMES-42..58 十单链完整 |
 | 星海小镇 | T2 · S2+AOI | **accepted** | GAMES-50..65 十单链完整 |
-| 帝国萌芽 | T3 · S3 | **accepted（本日收官）** | GAMES-66..76 十单链完整（压测三组 PASS+四件套，docs/qa/empire-sprout-stress.md） |
+| 帝国萌芽 | T3 · S3 | **accepted** | GAMES-66..76 十单链完整（压测三组 PASS+四件套，docs/qa/empire-sprout-stress.md） |
+| 八球台球 | T4 · S4 | **accepted（本日收官）** | GAMES-77..86 十单链完整（压测三组 PASS+四件套：100Hz 快钟/满编 2/2/五游戏混编，docs/qa/pool-physics-stress.md；VIS 链位 GAMES-85 待合并 main） |
 
-W1 波（T1-T7 各首款）进度 3/7：T1/T2/T3 已收官；S1-S3 技术面各有一条完整 10 单链实证。下一批：T4 物理/T5 回合/T6 海量/T7 预测各首款。
+W1 波（T1-T7 各首款）进度 4/7：T1/T2/T3/T4 已收官；S1-S4 技术面各有一条完整 10 单链实证（S4=服务端权威物理+100Hz 快钟+回合制 op 通道）。E6 总进度 **5/21**（net-tank M0 参考+四条完整单链）。下一批：T5 回合/T6 海量/T7 预测各首款。
 
 ## 5. 联机红线（在三支柱之上追加）
 
