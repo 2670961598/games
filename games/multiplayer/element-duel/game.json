@@ -13,6 +13,14 @@
     "secondary": "tap"
   },
   "avgDurationSec": 360,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "mercy": {
+      "minFoeLose": 2,
+      "dropTiers": 1,
+      "desc": "陪玩放水：对席真人连败 ≥N → bot 降一档出手（V 权重劣化：竞技丢 combo/反应预判/法术时序/疲劳管理）；真人胜台账清零自动回档（网关 pulse，GAMES-91）"
+    }
+  },
   "scoring": {
     "win": "英雄 HP 归零前保住己方（lethal）",
     "lose": "英雄 HP≤0/超时 HP 低/连续超时/认输",

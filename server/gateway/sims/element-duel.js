@@ -12,9 +12,15 @@
  *   - 零快照流（§5.2）：卡牌无连续运动，两次事件间带宽=心跳，无 snapshot。
  * ===================================================================== */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const DUEL = require('../../../games/multiplayer/element-duel/sim.cjs')
+
+/* 陪玩放水配置（GAMES-91）：阈值入 game.json bot.mercy 可调——适配器读出经 env.mercy
+ * 注入 brain；sim 侧零配置（离线确定性/回放不读 game.json，brain 缺省阈值=2 兜底） */
+const GAME_CFG = JSON.parse(readFileSync(new URL('../../../games/multiplayer/element-duel/game.json', import.meta.url), 'utf8'))
+const MERCY_CFG = (GAME_CFG.bot && GAME_CFG.bot.mercy) || { minFoeLose: 2 }
 
 /* 引擎/常量声明块（版本护栏，§5.1：welcome.room.duel） */
 const ENGINE_HASH = DUEL.fnv1a32(JSON.stringify({ cards: { ...DUEL.MINIONS, ...DUEL.SPELLS }, heroes: DUEL.HEROES, decks: DUEL.DECKS, reactions: Object.keys(DUEL.REACTIONS).sort(), meta: DUEL.META }))
@@ -82,7 +88,7 @@ export const elementDuelSim = {
   },
   serialize: DUEL.serialize,
   deserialize: null,
-  brain: (state, seat, level, rng) => DUEL.brain(state, seat, level, rng),
+  brain: (state, seat, level, rng, env) => DUEL.brain(state, seat, level, rng, env ? Object.assign({}, env, { mercy: MERCY_CFG }) : env),
   op,
   emit,
   onSync,

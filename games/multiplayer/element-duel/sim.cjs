@@ -389,7 +389,7 @@ function applyOp(st, seat, op, fromBot) {
     logOp(st, seat, 'host', { on: st.hostOn[seat] ? 1 : 0 })
     return { ok: true }
   }
-  if (k === 'concede') { logOp(st, seat, 'concede', {}); endGame(st, foe(seat), 'resign'); return { ok: true } }
+  if (k === 'concede') { logOp(st, seat, 'concede', {}); endGame(st, seat === 0 ? 'B' : 'A', 'resign'); return { ok: true } } // GAMES-91：winner 须 'A'/'B'（原误传数字席位——pulse 台账认输局永不入账/客户端胜负文案失配）
   if (fromBot !== true && st.hostOn[seat]) { st.hostOn[seat] = false; emitRuling(st, [{ k: 'host', s: seat, on: false }]) } // 任意合法 op 即夺回（§5.1）
   if (k === 'pick') {
     if (st.phase !== 'pick') return { reject: 'not-pick' }
@@ -487,7 +487,10 @@ function validSpellTgt(st, seat, id, tgt) {
     case 'WS1': return c === -1 || !!((m && m.seat === seat))
     case 'WS2': case 'TS1': return !!(m && m.seat !== seat)
     case 'NS1': case 'TS2': case 'X0': return true
-    case 'NS2': return !!(m && m.seat === seat && Number.isInteger(t.to) && t.to >= 0 && t.to <= 8 && !st.board[t.to])
+    case 'NS2': { // 迷踪步目标是 {from,to} 而非 {c}（GAMES-91：原误读 t.c → m 恒 null → 线上永 bad-tgt 死牌；castSpell 本用 from 无恙）
+      const f = Number(t.from), fm = Number.isInteger(f) && f >= 0 ? st.board[f] : null
+      return !!(fm && fm.seat === seat && Number.isInteger(t.to) && t.to >= 0 && t.to <= 8 && !st.board[t.to])
+    }
   }
   return false
 }
@@ -586,6 +589,24 @@ function posBonus(m, seat, cell) {
   if (m.taunt) p += 2
   return p
 }
+/* 反应位潜力（GAMES-91 §4 深化：竞技反应预判）——己方每随从的每个邻接空格，
+ * 若手牌存在异系随从（后续回合可部署成对触发反应），计 1 个待触发位。
+ * 入 V 后产生双动机：贴异系邻居部署（即刻触发）/ 部署时留出邻接空格（摆位） */
+function reactPotential(st, seat) {
+  const schools = new Set()
+  for (const id of st.hands[seat]) { const d = MINIONS[id]; if (d) schools.add(d.school) }
+  if (!schools.size) return 0
+  let n = 0
+  for (let c = 0; c < 9; c++) {
+    const m = st.board[c]
+    if (!m || m.seat !== seat) continue
+    for (const a of adjCells(c)) {
+      if (st.board[a]) continue
+      for (const s of schools) if (s !== m.school) { n++; break }
+    }
+  }
+  return n
+}
 function evaluate(st, seat, opts = {}) {
   if (st.over) return st.result.winner === 'draw' ? 0 : (st.result.winner === (seat === 0 ? 'A' : 'B') ? 100000 : -100000)
   const e = foe(seat)
@@ -601,6 +622,9 @@ function evaluate(st, seat, opts = {}) {
   if (opts.boardMul) for (let c = 0; c < 9; c++) { const m = st.board[c]; if (m && m.seat === e) v -= Math.round((3 * m.atk + 2 * m.hp) * (opts.boardMul - 1)) }
   v += 3 * st.hands[seat].length - 3 * st.hands[e].length
   if (opts.combo) v += 6 * comboPairs(st, seat)
+  if (opts.reactW) v += opts.reactW * st.stats[seat].reactions // GAMES-91：反应即分——竞技主动摆反应位的直接动机
+  if (opts.reactPot) v += opts.reactPot * reactPotential(st, seat) // 邻接异系部署评分入 V（反应预判）
+  if (opts.fatigueW) v -= opts.fatigueW * Math.max(0, 4 - st.decks[seat].length) // 疲劳管理：牌库垫 <4 逐张罚（NS1/技能抽牌时序）
   return v
 }
 function comboPairs(st, seat) { // 手中反应伙伴对数（§4.3，按反应表 6 对）
@@ -670,10 +694,30 @@ function lethalReach(st, seat) {
   if (h.manaCur >= 3) for (let i = 0; i < st.hands[seat].length; i++) if (st.hands[seat][i] === 'FS1') d += 4
   return d
 }
-/* 三档出牌核（§4.4；hosted=§4.5 牌风化 balanced） */
+/* 法术时序（GAMES-91 §4 深化：竞技档）——FS1 直伤捏手：仅斩杀窗（敌血 ≤10）/
+ * 无可铺场面（费花不出去）/终局倾泻（≥20 半回合）才烧脸，其余回合优先铺场留爆发。
+ * 解场/治疗/过牌时序交给 ΔV（过疗零分自然晚放、疲劳罚挡住空库抽牌） */
+function timedSpells(st, seat, acts) {
+  const h = st.heroes[seat]
+  let deployable = false
+  for (const id of st.hands[seat]) if (MINIONS[id] && h.manaCur >= MINIONS[id].cost) { deployable = true; break }
+  const burn = st.heroes[foe(seat)].hp <= 10 || !deployable || st.turnNo >= 20
+  return acts.filter((a) => !(a.k === 'play' && st.hands[seat][a.card] === 'FS1' && a.tgt && a.tgt.c === -1 && !burn))
+}
+/* 动作费用（费用满用 tiebreak 用） */
+function actionCost(st, seat, a) {
+  if (a.k === 'play') { const d = MINIONS[st.hands[seat][a.card]] || SPELLS[st.hands[seat][a.card]]; return d ? d.cost : 0 }
+  return a.k === 'heroPower' ? 2 : 0
+}
+/* 三档出牌核（§4.4；GAMES-91 深化；hosted=§4.5 牌风化 balanced）
+ *   casual    ——casualNext（随手：可付费牌随机、目标随机、无斩杀意识）
+ *   balanced  ——整数 V：场面价值 + 解场优先（boardMul 轻压敌盘）+ 费用满用（manaW tiebreak）
+ *   competitive——斩杀线闭式 + combo 模拟 + 反应预判（reactW/reactPot：邻接异系
+ *               部署评分入 V）+ 法术时序（timedSpells）+ 疲劳管理（fatigueW 牌库垫罚） */
 function smartNext(st, seat, level) {
   const opts = {}
-  if (level === 'competitive') opts.combo = true // §4.3 comboBonus=competitive 专属项（+6/手中伙伴对；GAMES-90 F4 接线）
+  if (level === 'balanced') { opts.boardMul = 1.15; opts.manaW = 1 }
+  if (level === 'competitive') { opts.combo = true; opts.reactW = 4; opts.reactPot = 2; opts.fatigueW = 6; opts.spellTiming = true } // §4.3 comboBonus=competitive 专属项（+6/手中伙伴对；GAMES-90 F4 接线）
   if (level === 'hosted') { // 托管牌风化：按被托管者牌组配方查表（§4.5）
     const hero = st.heroes[seat].hero
     if (hero >= 0) {
@@ -691,13 +735,16 @@ function smartNext(st, seat, level) {
   }
   const base = evaluate(st, seat, opts)
   let best = null, bestD = 0 // endTurn 基线 ΔV=0；动作须严格更优才做
-  for (const a of enumerateActions(st, seat)) {
-    const d = evaluate(simulate(st, seat, a), seat, opts) - base
+  let acts = enumerateActions(st, seat)
+  if (opts.spellTiming) acts = timedSpells(st, seat, acts)
+  for (const a of acts) {
+    let d = evaluate(simulate(st, seat, a), seat, opts) - base
+    if (opts.manaW) d += opts.manaW * actionCost(st, seat, a) // 费用满用：同 ΔV 先花大件（balanced）
     if (d > bestD) { bestD = d; best = a }
   }
   return best || { k: 'endTurn' }
 }
-function casualNext(st, seat) { // 随手（§4.4）：可付费牌随机（权重=费用偏大件）/30% 打脸
+function casualNext(st, seat) { // 随手（§4.4；GAMES-91 口径）：费用不浪（只出可付费牌、偏大件）但无斩杀意识/目标随机
   const rng = botRng(st, seat, decIdx(st, seat))
   const acts = enumerateActions(st, seat).filter((a) => a.k !== 'endTurn')
   if (!acts.length) return null
@@ -729,23 +776,43 @@ function pickAction(st, seat, level) {
   if (level === 'balanced') return { k: 'pick', hero: [1, 2][(rng() * 2) | 0] } // 均衡池 H1/H2
   return { k: 'pick', hero: (rng() * 4) | 0 }
 }
-function mulliganAction(st, seat, level) {
+function mulliganAction(st, seat, level) { /* 三档换牌（GAMES-91 §4 深化）：casual 随机 / balanced 保低费 / competitive 曲线+combo */
   const hand = st.hands[seat]
-  if (level === 'casual') return { k: 'mulligan', keep: hand.map(() => true) } // 随手：全保留
   const def = (id) => MINIONS[id] || SPELLS[id]
+  if (level === 'casual') { // 随手：随机保留（每张 1/2；botRng 定桩——同 seed 同结果，确定性不变）
+    const rng = botRng(st, seat, 901 + seat)
+    return { k: 'mulligan', keep: hand.map(() => rng() < 0.5) }
+  }
   const cheap = hand.map((id) => def(id).cost <= 2)
+  if (level === 'balanced') return { k: 'mulligan', keep: cheap } // 保低费：曲线下限，不赌 combo（GAMES-91 起与竞技分化）
   const sch = hand.map((id) => def(id).school)
   const pairOf = (i) => { // 反应伙伴对成员（按反应表 6 对——F1 修复后 W+N/W+T 对亦生效）
     for (let j = 0; j < hand.length; j++) if (j !== i && sch[j] !== sch[i] && REACTIONS[[sch[i], sch[j]].sort().join('+')]) return true
     return false
   }
-  if (level === 'balanced') return { k: 'mulligan', keep: hand.map((_, i) => cheap[i] || pairOf(i)) } // ≤2 费 + 反应伙伴对（§4.4）
-  const hasCheap = cheap.some(Boolean) // competitive：同左 + 无 2 费以下重抽——起手无 ≤2 费则连伙伴对也换血找曲线（§4.4 裁量）
-  return { k: 'mulligan', keep: hand.map((_, i) => cheap[i] || (hasCheap && pairOf(i))) }
+  const keep = hand.map((_, i) => cheap[i] || pairOf(i)) // competitive：≤2 费曲线全保 + combo 伙伴对保留
+  if (keep.filter(Boolean).length < 2) { // 曲线兜底：保后不足 2 张 → 补最廉一张，防起手全高费空转
+    let bi = -1
+    for (let i = 0; i < hand.length; i++) if (!keep[i] && (bi < 0 || def(hand[i]).cost < def(hand[bi]).cost)) bi = i
+    if (bi >= 0) keep[bi] = true
+  }
+  return { k: 'mulligan', keep }
 }
-function brain(state, seat, level) {
+/* 陪玩放水降档表（GAMES-91 §4，pool §4.4 同构）：连败真人对席 bot 降一档（V 权重劣化）；
+ * hosted（断线代打席）亦适用——其对手若是连败真人，代打放水方向一致 */
+const MERCY_DOWN = { competitive: 'balanced', balanced: 'casual', casual: 'casual', hosted: 'balanced' }
+const botStats = { mercy: 0 } // 放水降档决策计数（观测面，QA 取证；不入 state/hash，确定性无扰）
+function brain(state, seat, level, rng, env) {
   const st = state
   if (st.over) return {}
+  /* 陪玩放水（GAMES-91）：env.foeLose[seat]=对席真人连败局数（网关 pulse 台账）≥ 阈值
+   * （game.json bot.mercy.minFoeLose 可调，适配器经 env.mercy 注入；缺省 2）→ 降一档出手
+   * ＝V 权重劣化（竞技丢 combo/反应预判/法术时序/疲劳管理，均衡丢解场/费用满用）；
+   * 真人胜 → 台账清零自动回原档。测试房 vctx 每房新建 → 单局连败 ≤1 < 阈值，A6 双跑无扰 */
+  if (env && env.foeLose && env.foeLose[seat] >= ((env.mercy && env.mercy.minFoeLose) || 2)) {
+    level = MERCY_DOWN[level] || level
+    botStats.mercy++
+  }
   if (gated(st, seat, level)) return {}
   if (st.phase === 'pick') return st.heroes[seat].hero >= 0 ? {} : { op: pickAction(st, seat, level) }
   if (st.phase === 'mulligan') return st.mullDone[seat] ? {} : { op: mulliganAction(st, seat, level) }
@@ -796,9 +863,16 @@ function hashState(st) { return fnv1a32(serialize(st)) }
 /* 回放器（§5.6：重放 op 日志即整局复算；Bot 决策固化在日志，回放不重跑） */
 function replayOps(seed, ops, maxTicks) {
   const st = create(seed, { maxTicks })
-  for (const o of ops) {
+  for (let i = 0; i < ops.length; i++) {
+    const o = ops[i]
     if (st.over) break
-    if (o.k === '$timeout') { timeoutTurn(st); continue }
+    if (o.k === '$timeout') {
+      timeoutTurn(st) // 代打确定性重演（内部自记日志/自收尾 auto endTurn）
+      /* GAMES-91：跳过日志中该回合代打段——timeoutTurn 已重演并落日志，再按日志逐条
+       * 应用=二次执行（auto endTurn 双触发会把回合多交一拍、多抽一张 → 终态发散） */
+      while (i + 1 < ops.length && ops[i + 1].s === o.s && ops[i + 1].tn === o.tn) i++
+      continue
+    }
     const { s, k } = o
     if (k === 'host') applyOp(st, s, { k: 'host', on: !!o.on })
     else if (k === 'pick') applyOp(st, s, { k: 'pick', hero: o.hero })
@@ -816,5 +890,6 @@ return {
   META, LEVELS, MINIONS, SPELLS, HEROES, DECKS, REACTIONS, RT_NAME, SCHOOL_COLOR, SCHOOL_GLYPH,
   fnv1a32, mulberry32, create, step, applyOp, brain, viewFor, serialize, hashState, replayOps,
   legalAttackTargets, enumerateActions, evaluate, lethalReach, quip, adjCells, nearEnemyRow,
+  botStats, reactPotential,
 }
 })
