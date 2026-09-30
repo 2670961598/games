@@ -113,9 +113,10 @@ E6 战役（umbrella，SPECIAL 不派工）
 | 指挥官战场 | T1 · S1 | **accepted** | GAMES-42..58 十单链完整 |
 | 星海小镇 | T2 · S2+AOI | **accepted** | GAMES-50..65 十单链完整 |
 | 帝国萌芽 | T3 · S3 | **accepted** | GAMES-66..76 十单链完整（压测三组 PASS+四件套，docs/qa/empire-sprout-stress.md） |
-| 八球台球 | T4 · S4 | **accepted（本日收官）** | GAMES-77..86 十单链完整（压测三组 PASS+四件套：100Hz 快钟/满编 2/2/五游戏混编，docs/qa/pool-physics-stress.md；VIS 链位 GAMES-85 待合并 main） |
+| 八球台球 | T4 · S4 | **accepted** | GAMES-77..86 十单链完整（压测三组 PASS+四件套：100Hz 快钟/满编 2/2/五游戏混编，docs/qa/pool-physics-stress.md；VIS 链位 GAMES-85 待合并 main） |
+| 元素对决 | T5 · S5 | **accepted（本日收官）** | GAMES-87..96 十单链完整（压测三组 PASS+四件套：回合权威 100Hz/满编 2/2 六世代滚动/六游戏混编，docs/qa/element-duel-stress.md；VIS 链位 GAMES-95 待合并 main） |
 
-W1 波（T1-T7 各首款）进度 4/7：T1/T2/T3/T4 已收官；S1-S4 技术面各有一条完整 10 单链实证（S4=服务端权威物理+100Hz 快钟+回合制 op 通道）。E6 总进度 **5/21**（net-tank M0 参考+四条完整单链）。下一批：T5 回合/T6 海量/T7 预测各首款。
+W1 波（T1-T7 各首款）进度 5/7：T1/T2/T3/T4/T5 已收官；S1-S5 技术面各有一条完整 10 单链实证（S5=回合权威+零快照事件流+迷雾个性化+托管三层）。E6 总进度 **6/21**（net-tank M0 参考+五条完整单链）。下一批：T6 海量/T7 预测各首款。
 
 ## 5. 联机红线（在三支柱之上追加）
 
