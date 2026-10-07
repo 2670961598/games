@@ -31,6 +31,11 @@ const sanitizeKeys = (k) => {
   if (cmd) out.cmd = cmd
   if (o) out.o = o
   if (c) out.c = c
+  // S6 连续模拟量键（GAMES-99 snake-king 先例，协议 §6 input 面扩展）：
+  // a=目标朝向整数度 [0,359]（10Hz 持续态心跳兼保活）、boost=疾跑开关 0|1——
+  // 与 mx/my/fire 同为持续态键（lastInput 宽限沿用）；不带该键的游戏零感知
+  if (k && Number.isFinite(k.a)) out.a = ((Math.trunc(k.a) % 360) + 360) % 360
+  if (k && k.boost !== undefined) out.boost = k.boost ? 1 : 0
   return out
 }
 

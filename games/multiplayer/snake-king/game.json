@@ -1,0 +1,67 @@
+{
+  "slug": "snake-king",
+  "title": "蛇王争霸",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 360,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "swarm": true,
+    "desc": "三档=生态位（设计 §4/附决策 9）：casual 饲料蛇（尸体光点供给主力）/ balanced 觅食者（AOI 价值评估）/ competitive 猎手（矿区巡逻+拦截预判+危险断尾）——首版均衡完整、其余基础实现，深化归 #5 BOT 单"
+  },
+  "scoring": {
+    "win": "轮末 score=n+kills×15 ≥120，榜首加冕蛇王",
+    "lose": "轮末 score<120（复活不限次，无惩罚面）",
+    "s2": "长度/击杀数",
+    "s3": "死亡掉光点（击杀回收率 100%）"
+  },
+  "description": "二十蛇同房巨房竞技场：吃萤火成长、围杀夺光、断尾求生。每轮 6 分钟，蛇王加冕，死了就掉光点重来",
+  "net": {
+    "tech": "S6",
+    "gameId": "snake-king",
+    "mode": "swarm-arena",
+    "seats": 24,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "turn":  { "ws": "input", "keys": ["a"], "desc": "目标朝向 a∈[0,359] 整数度，10Hz 持续上报（心跳兼保活）；服务器按 ω(n) 角速度积分逼近——非瞬跳。本地预测同式（§5.3）" },
+        "boost": { "ws": "input", "keys": ["boost"], "desc": "疾跑开关 0|1（变才上报）：×1.6 速度+每 0.5s 掉 1 节成 value-1 光点；仅 n≥16 可用，掉至 n=10 自动熄灭（§2.3）" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "轮末终态投影（仅测试房 maxTicks=3600 强制终局；生产房轮不清房、轮次入 state——见设计书 §1.1）",
+        "winner": "'A'=API 席轮末 score=n+kills×15 ≥120 ｜ 'B'=score <120",
+        "teams": { "A": [0], "B": [] },
+        "reason": "goal（score≥120） ｜ round-end（轮末未达标） ｜ timeout ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：join→live+首张全量快照（welcome.state 含 round 相位/排行榜/碰撞口径；快照 ents ≥20 蛇——秒配 20 实体）",
+        "A2 能赢：feed-grow 策略（追光点+避蛇避墙）6 分钟 score ≥120 且 n≥100（成长曲线 §2.3 实测锚）",
+        "A3 能输：idle 策略（a 恒定直行）反复撞墙死亡，轮末 score <120（实测典型 ≤30；他人撞其身的幸运击杀分计入但不破判据）",
+        "A4 操作注入→快照反映 <100ms：turn 后下一 snapSeq 头角度朝目标收敛（ω 积分首拍可断言）",
+        "A5 断线重连 <10s：$reconnect 全量快照恢复 n/score/kills/path（AOI 全量+自身状态）",
+        "A6 排行榜断言：state.leaderboard top5 score 严格非增 && 榜首==全场 argmax(score) && 轮末 king==榜首（全程任意 tick 抽样成立）",
+        "A7 击杀链路：kill-hunt 策略事件账本 {k:'kill'} ≥1 且 {k:'die'} 侧 drops==ceil(victimLen/2)（T6-B 掉落公式）"
+      ],
+      "script": {
+        "seed": 20261007, "timeScale": 4, "startDelayMs": 600, "maxTicks": 3600,
+        "scenarios": {
+          "win":   { "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow" },
+          "lose":  { "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
+          "hunt":  { "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "kill-hunt" },
+          "full20":{ "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow", "asserts": ["全场任意 tick 蛇数 ≥20", "快照账本增量均 ≤850B/全量占比 ≤8%", "排行榜 A6", "存活到轮末（API 席 death 计 ≤3）"] }
+        }
+      }
+    }
+  }
+}

@@ -1,1087 +1,1095 @@
 {
- "_meta": {
-  "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 backlog/designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail；iterations 记迭代轮数；notes 记案例库编号引用",
-  "更新人": "PM（每波交付后回填）",
-  "SOP": "docs/quality-pipeline.md v2"
- },
- "games": {
-  "block-drop:block-drop-cascade-01": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-drop:block-drop-cascade-02": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-drop:block-drop-cascade-03": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-drop:block-drop-cascade-04": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-drop:block-drop-cascade-05": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-fit:block-fit-mosaic-01": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-fit:block-fit-mosaic-02": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-fit:block-fit-mosaic-03": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-fit:block-fit-mosaic-04": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "block-fit:block-fit-mosaic-05": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-  },
-  "breakout:breakout-brick-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "breakout:breakout-brick-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "breakout:breakout-brick-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "breakout:breakout-brick-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "breakout:breakout-brick-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-dodge:bullet-dodge-weave-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-dodge:bullet-dodge-weave-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-dodge:bullet-dodge-weave-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-dodge:bullet-dodge-weave-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-dodge:bullet-dodge-weave-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-shmup:bullet-shmup-raid-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-shmup:bullet-shmup-raid-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-shmup:bullet-shmup-raid-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-shmup:bullet-shmup-raid-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "bullet-shmup:bullet-shmup-raid-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "chain-shot:chain-shot-orbit-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "chain-shot:chain-shot-orbit-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "chain-shot:chain-shot-orbit-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "chain-shot:chain-shot-orbit-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "chain-shot:chain-shot-orbit-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "color-reaction:color-reaction-stroop-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "color-reaction:color-reaction-stroop-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "color-reaction:color-reaction-stroop-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "color-reaction:color-reaction-stroop-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "color-reaction:color-reaction-stroop-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "demo:color-strike": {
-   "stage": "testing",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pass",
-   "iterations": 0,
-   "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
-  },
-  "demo:mole-grid": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "demo:number-hunt": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "demo:pop-dot": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "demo:quick-math": {
-   "stage": "testing",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pass",
-   "iterations": 2,
-   "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
-  },
-  "drop-catcher:drop-catcher-harvest-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "drop-catcher:drop-catcher-harvest-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "drop-catcher:drop-catcher-harvest-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "drop-catcher:drop-catcher-harvest-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "drop-catcher:drop-catcher-harvest-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "fruit-slice:fruit-slice-blade-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "fruit-slice:fruit-slice-blade-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "fruit-slice:fruit-slice-blade-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "fruit-slice:fruit-slice-blade-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "fruit-slice:fruit-slice-blade-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "lane-runner:lane-runner-dash-01": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "lane-runner:lane-runner-dash-02": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "lane-runner:lane-runner-dash-03": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "lane-runner:lane-runner-dash-04": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "lane-runner:lane-runner-dash-05": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "match3:match3-candy-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "match3:match3-candy-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "match3:match3-candy-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "match3:match3-candy-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "match3:match3-candy-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "maze-dash:maze-dash-hedge-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "maze-dash:maze-dash-hedge-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "maze-dash:maze-dash-hedge-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "maze-dash:maze-dash-hedge-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "maze-dash:maze-dash-hedge-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "memory-flip:memory-flip-pair-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "memory-flip:memory-flip-pair-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "memory-flip:memory-flip-pair-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "memory-flip:memory-flip-pair-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "memory-flip:memory-flip-pair-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mini-td:mini-td-guard-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mini-td:mini-td-guard-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mini-td:mini-td-guard-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mini-td:mini-td-guard-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mini-td:mini-td-guard-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mole-whack:mole-whack-garden-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mole-whack:mole-whack-garden-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mole-whack:mole-whack-garden-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mole-whack:mole-whack-garden-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "mole-whack:mole-whack-garden-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "paddle-pong:paddle-pong-rally-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "paddle-pong:paddle-pong-rally-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "paddle-pong:paddle-pong-rally-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "paddle-pong:paddle-pong-rally-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "paddle-pong:paddle-pong-rally-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "rhythm-tap:rhythm-tap-beat-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "rhythm-tap:rhythm-tap-beat-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "rhythm-tap:rhythm-tap-beat-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "rhythm-tap:rhythm-tap-beat-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "rhythm-tap:rhythm-tap-beat-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "simon-sequence:simon-sequence-echo-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "simon-sequence:simon-sequence-echo-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "simon-sequence:simon-sequence-echo-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "simon-sequence:simon-sequence-echo-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "simon-sequence:simon-sequence-echo-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "slide-merge:slide-merge-tile-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "slide-merge:slide-merge-tile-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "slide-merge:slide-merge-tile-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "slide-merge:slide-merge-tile-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "slide-merge:slide-merge-tile-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "snake:snake-meander-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "snake:snake-meander-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "snake:snake-meander-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "snake:snake-meander-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "snake:snake-meander-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "stacker:stacker-calm-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "stacker:stacker-calm-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "stacker:stacker-calm-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "stacker:stacker-calm-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "stacker:stacker-calm-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "tap-burst:tap-burst-pop-01": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "tap-burst:tap-burst-pop-02": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "tap-burst:tap-burst-pop-03": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "tap-burst:tap-burst-pop-04": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "tap-burst:tap-burst-pop-05": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-  },
-  "tap-jump:tap-jump-flap-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "tap-jump:tap-jump-flap-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "tap-jump:tap-jump-flap-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "tap-jump:tap-jump-flap-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "tap-jump:tap-jump-flap-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "water-sort:water-sort-aqua-01": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "water-sort:water-sort-aqua-02": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "water-sort:water-sort-aqua-03": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "water-sort:water-sort-aqua-04": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "water-sort:water-sort-aqua-05": {
-   "stage": "backlog",
-   "perf": "pending",
-   "play": "pending",
-   "visual": "pending",
-   "iterations": 0,
-   "notes": ""
-  },
-  "multiplayer:net-tank": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 2,
-   "net": {
-    "tech": "S1",
-    "bot": "三档(休闲/均衡/竞技)+真人让位"
-   },
-   "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
-  },
-  "multiplayer:slg-battlefield": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 10,
-   "net": {
-    "tech": "S1",
-    "bot": "三档人格(陪玩/让力/开局树)",
-    "chain": "GAMES-42..58 十单链完整"
-   },
-   "notes": "E6 首条完整 10/10 单链。STRESS 三组 PASS（PM 亲自组装五跑工件，Q-007）；QA1/QA2 红线全过；200ms 延迟无偏置；确定性与压测零泄漏。合并链 8078586→7c35b30→e8b03f7（第 6 跑收官复核：修正 2 口径+B 组实测入表+T2b 补跑）"
-  },
-  "multiplayer:mmo-township": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 10,
-   "net": {
-    "tech": "S2+AOI",
-    "bot": "三档居民人格(勤恳/游手/商人·日程/陪聚集)+常驻镇人口动态 8-12",
-    "aoi": "r=300px 滞回 15px 预算 40",
-    "chain": "GAMES-50..65 十单链完整"
-   },
-   "notes": "E6-W1-T2 轨 S2 状态同步首证（常驻世界/续镇存档/席位托管）。STRESS 三组 PASS（6 镇并行 8min tick 满频 ±0.46%、满编 12/12 spot、三游戏混编零错误；实测 18:53 守 Q-007 预算）；四单 ≈98min 长局零钉死；200ms 延迟无偏置；重连窗 10s+1 拍；feed ≤388ms；回收重建 2.3s 续镇。合并链 696babf→e2e84ac→5d74468→5d90e2f→fe7f376→05907f6→98bc0fd→539c816→c73b314"
-  },
-  "multiplayer:empire-sprout": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 10,
-   "net": {
-    "tech": "S3",
-    "bot": "三档人格(慢发展/均衡/军备竞速·建设倾向×战斗时机双轴+开局树 rng 定桩×2/档)+陪玩 carry 三态",
-    "chain": "GAMES-66..76 十单链完整"
-   },
-   "notes": "E6-W1-T3 轨 S3 混合同步首证收官（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥 T+1/静默期 tick1800 爆发）。STRESS 三组 PASS（6 test 房+BotHost 并行 8min tick 10Hz 漂移[0,1]、5min 满编 4/4 spot 9.97-10.00Hz、四游戏混编零错误；四件套全过附 RSS 高水位披露）；QA1/QA2 红线全过（200ms 延迟无偏置[房型分层判据]/重连 10s+1 拍/满员旁观/feed ≤404ms）；两轮事故复盘（影子网关缺省 PORT 静默死亡/接力器复活竞态误 SIGTERM）。合并链 f672fe0→1fd9966→66bad6f→3c2ad71→df7048a→3bd218c→1bae6ff→de4579c→41ef278→(GAMES-76)"
-  },
-  "multiplayer:pool-physics": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 10,
-   "net": {
-    "tech": "S4",
-    "bot": "三档物理Bot(casual 随手杆/balanced ghost-ball 几何+一库反射/competitive ≤16 次前瞻+犯规感知+走位·开局树 rng 定桩×2/档)+超时 casual 代打+陪玩放水",
-    "chain": "GAMES-77..86 十单链完整"
-   },
-   "notes": "E6-W1-T4 轨 S4 服务端权威物理首证收官（100Hz 快钟/双相快照静止事件驱动+球动 10Hz/op-ruling S5 通道复用/客户端确定性重演 16k 锚 0 偏差）。STRESS 三组 PASS（6 测试槽+BotHost 并行 8min cadence 100.021Hz 漂移[-4,+5]、5min 满编 2/2 spot burst 99.65-102.43Hz+撤席 abandon@15.05s/dispose@+8.03s 闭环、五游戏混编零错误+护栏 429；四件套全过：245==245/16==16 全配对+二段 RSS 起点重置补证）；QA1/QA2 红线全过（200ms 回合制容忍论证实证/重连三档/满员旁观/feed ≤0.5s）；横切事故复盘（GAMES-84 abandon 锚点+重演伪杆号，波及五作）。合并链 6da49ae→7a11ea5→4d526d5→bf64eab→5410cf8→9180bc6→5a3125e→72ef4b0→(GAMES-85 9883b4a 待合并)→(GAMES-86)"
-  },
-  "multiplayer:element-duel": {
-   "stage": "accepted",
-   "perf": "pass",
-   "play": "pass",
-   "visual": "pass",
-   "iterations": 10,
-   "net": {
-    "tech": "S5",
-    "bot": "三档卡牌Bot(casual 随手/balanced 整数V+scratch贪心/competitive 斩杀线闭式+combo模拟)+托管三层(超时casual单回合/持续=牌组配方faceBias·comboBias/主动host op)+陪玩放水+牌桌评语quip",
-    "chain": "GAMES-87..96 十单链完整"
-   },
-   "notes": "E6-W1-T5 轨 S5 回合权威本格首证收官（共享3×3棋盘位置即决策/六对元素反应确定性结算/零快照纯事件驱动=ruling即全量个性化态/迷雾个性化state目录/deckSeed双流派生+零隐藏随机/托管三层）。STRESS 三组 PASS（6测试槽错峰承载8min frame 100.144/100.046Hz漂移[-4,+2]/ruling 810条全量0错、5min满编2/2 spot 6世代滚动99.995Hz+疲劳4/8参与致死在线实证、六游戏混编30/30全在场零错误+护栏429+mmo镇10.004Hz；四件套全过：一段321==321全配对+RSS二段起点重置101→66-72MB闭环QA2 O-2）；QA1/QA2红线全过（200ms延迟容忍论/重连三档/满员旁观frame共同窗全同/feed≤1s）；F1反应表键序死代码事故复盘（排序键死码双防线+穷举断言）。VIS 链位 GAMES-95 已交付 feature/GAMES-95 待合并 main"
+  "_meta": {
+    "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 backlog/designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail；iterations 记迭代轮数；notes 记案例库编号引用",
+    "更新人": "PM（每波交付后回填）",
+    "SOP": "docs/quality-pipeline.md v2"
+  },
+  "games": {
+    "block-drop:block-drop-cascade-01": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-drop:block-drop-cascade-02": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-drop:block-drop-cascade-03": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-drop:block-drop-cascade-04": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-drop:block-drop-cascade-05": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-fit:block-fit-mosaic-01": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-fit:block-fit-mosaic-02": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-fit:block-fit-mosaic-03": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-fit:block-fit-mosaic-04": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "block-fit:block-fit-mosaic-05": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+    },
+    "breakout:breakout-brick-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "breakout:breakout-brick-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "breakout:breakout-brick-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "breakout:breakout-brick-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "breakout:breakout-brick-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-dodge:bullet-dodge-weave-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-dodge:bullet-dodge-weave-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-dodge:bullet-dodge-weave-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-dodge:bullet-dodge-weave-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-dodge:bullet-dodge-weave-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-shmup:bullet-shmup-raid-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-shmup:bullet-shmup-raid-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-shmup:bullet-shmup-raid-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-shmup:bullet-shmup-raid-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "bullet-shmup:bullet-shmup-raid-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "chain-shot:chain-shot-orbit-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "chain-shot:chain-shot-orbit-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "chain-shot:chain-shot-orbit-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "chain-shot:chain-shot-orbit-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "chain-shot:chain-shot-orbit-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "color-reaction:color-reaction-stroop-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "color-reaction:color-reaction-stroop-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "color-reaction:color-reaction-stroop-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "color-reaction:color-reaction-stroop-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "color-reaction:color-reaction-stroop-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "demo:color-strike": {
+      "stage": "testing",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pass",
+      "iterations": 0,
+      "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
+    },
+    "demo:mole-grid": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "demo:number-hunt": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "demo:pop-dot": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "demo:quick-math": {
+      "stage": "testing",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pass",
+      "iterations": 2,
+      "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
+    },
+    "drop-catcher:drop-catcher-harvest-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "drop-catcher:drop-catcher-harvest-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "drop-catcher:drop-catcher-harvest-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "drop-catcher:drop-catcher-harvest-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "drop-catcher:drop-catcher-harvest-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "fruit-slice:fruit-slice-blade-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "fruit-slice:fruit-slice-blade-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "fruit-slice:fruit-slice-blade-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "fruit-slice:fruit-slice-blade-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "fruit-slice:fruit-slice-blade-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "lane-runner:lane-runner-dash-01": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "lane-runner:lane-runner-dash-02": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "lane-runner:lane-runner-dash-03": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "lane-runner:lane-runner-dash-04": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "lane-runner:lane-runner-dash-05": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "match3:match3-candy-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "match3:match3-candy-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "match3:match3-candy-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "match3:match3-candy-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "match3:match3-candy-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "maze-dash:maze-dash-hedge-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "maze-dash:maze-dash-hedge-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "maze-dash:maze-dash-hedge-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "maze-dash:maze-dash-hedge-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "maze-dash:maze-dash-hedge-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "memory-flip:memory-flip-pair-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "memory-flip:memory-flip-pair-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "memory-flip:memory-flip-pair-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "memory-flip:memory-flip-pair-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "memory-flip:memory-flip-pair-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mini-td:mini-td-guard-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mini-td:mini-td-guard-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mini-td:mini-td-guard-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mini-td:mini-td-guard-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mini-td:mini-td-guard-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mole-whack:mole-whack-garden-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mole-whack:mole-whack-garden-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mole-whack:mole-whack-garden-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mole-whack:mole-whack-garden-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "mole-whack:mole-whack-garden-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "paddle-pong:paddle-pong-rally-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "paddle-pong:paddle-pong-rally-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "paddle-pong:paddle-pong-rally-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "paddle-pong:paddle-pong-rally-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "paddle-pong:paddle-pong-rally-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "rhythm-tap:rhythm-tap-beat-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "rhythm-tap:rhythm-tap-beat-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "rhythm-tap:rhythm-tap-beat-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "rhythm-tap:rhythm-tap-beat-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "rhythm-tap:rhythm-tap-beat-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "simon-sequence:simon-sequence-echo-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "simon-sequence:simon-sequence-echo-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "simon-sequence:simon-sequence-echo-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "simon-sequence:simon-sequence-echo-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "simon-sequence:simon-sequence-echo-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "slide-merge:slide-merge-tile-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "slide-merge:slide-merge-tile-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "slide-merge:slide-merge-tile-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "slide-merge:slide-merge-tile-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "slide-merge:slide-merge-tile-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "snake:snake-meander-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "snake:snake-meander-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "snake:snake-meander-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "snake:snake-meander-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "snake:snake-meander-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "stacker:stacker-calm-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "stacker:stacker-calm-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "stacker:stacker-calm-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "stacker:stacker-calm-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "stacker:stacker-calm-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "tap-burst:tap-burst-pop-01": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "tap-burst:tap-burst-pop-02": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "tap-burst:tap-burst-pop-03": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "tap-burst:tap-burst-pop-04": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "tap-burst:tap-burst-pop-05": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+    },
+    "tap-jump:tap-jump-flap-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "tap-jump:tap-jump-flap-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "tap-jump:tap-jump-flap-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "tap-jump:tap-jump-flap-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "tap-jump:tap-jump-flap-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "water-sort:water-sort-aqua-01": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "water-sort:water-sort-aqua-02": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "water-sort:water-sort-aqua-03": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "water-sort:water-sort-aqua-04": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "water-sort:water-sort-aqua-05": {
+      "stage": "backlog",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": ""
+    },
+    "multiplayer:net-tank": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 2,
+      "net": {
+        "tech": "S1",
+        "bot": "三档(休闲/均衡/竞技)+真人让位"
+      },
+      "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
+    },
+    "multiplayer:slg-battlefield": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 10,
+      "net": {
+        "tech": "S1",
+        "bot": "三档人格(陪玩/让力/开局树)",
+        "chain": "GAMES-42..58 十单链完整"
+      },
+      "notes": "E6 首条完整 10/10 单链。STRESS 三组 PASS（PM 亲自组装五跑工件，Q-007）；QA1/QA2 红线全过；200ms 延迟无偏置；确定性与压测零泄漏。合并链 8078586→7c35b30→e8b03f7（第 6 跑收官复核：修正 2 口径+B 组实测入表+T2b 补跑）"
+    },
+    "multiplayer:mmo-township": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 10,
+      "net": {
+        "tech": "S2+AOI",
+        "bot": "三档居民人格(勤恳/游手/商人·日程/陪聚集)+常驻镇人口动态 8-12",
+        "aoi": "r=300px 滞回 15px 预算 40",
+        "chain": "GAMES-50..65 十单链完整"
+      },
+      "notes": "E6-W1-T2 轨 S2 状态同步首证（常驻世界/续镇存档/席位托管）。STRESS 三组 PASS（6 镇并行 8min tick 满频 ±0.46%、满编 12/12 spot、三游戏混编零错误；实测 18:53 守 Q-007 预算）；四单 ≈98min 长局零钉死；200ms 延迟无偏置；重连窗 10s+1 拍；feed ≤388ms；回收重建 2.3s 续镇。合并链 696babf→e2e84ac→5d74468→5d90e2f→fe7f376→05907f6→98bc0fd→539c816→c73b314"
+    },
+    "multiplayer:empire-sprout": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 10,
+      "net": {
+        "tech": "S3",
+        "bot": "三档人格(慢发展/均衡/军备竞速·建设倾向×战斗时机双轴+开局树 rng 定桩×2/档)+陪玩 carry 三态",
+        "chain": "GAMES-66..76 十单链完整"
+      },
+      "notes": "E6-W1-T3 轨 S3 混合同步首证收官（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥 T+1/静默期 tick1800 爆发）。STRESS 三组 PASS（6 test 房+BotHost 并行 8min tick 10Hz 漂移[0,1]、5min 满编 4/4 spot 9.97-10.00Hz、四游戏混编零错误；四件套全过附 RSS 高水位披露）；QA1/QA2 红线全过（200ms 延迟无偏置[房型分层判据]/重连 10s+1 拍/满员旁观/feed ≤404ms）；两轮事故复盘（影子网关缺省 PORT 静默死亡/接力器复活竞态误 SIGTERM）。合并链 f672fe0→1fd9966→66bad6f→3c2ad71→df7048a→3bd218c→1bae6ff→de4579c→41ef278→(GAMES-76)"
+    },
+    "multiplayer:pool-physics": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 10,
+      "net": {
+        "tech": "S4",
+        "bot": "三档物理Bot(casual 随手杆/balanced ghost-ball 几何+一库反射/competitive ≤16 次前瞻+犯规感知+走位·开局树 rng 定桩×2/档)+超时 casual 代打+陪玩放水",
+        "chain": "GAMES-77..86 十单链完整"
+      },
+      "notes": "E6-W1-T4 轨 S4 服务端权威物理首证收官（100Hz 快钟/双相快照静止事件驱动+球动 10Hz/op-ruling S5 通道复用/客户端确定性重演 16k 锚 0 偏差）。STRESS 三组 PASS（6 测试槽+BotHost 并行 8min cadence 100.021Hz 漂移[-4,+5]、5min 满编 2/2 spot burst 99.65-102.43Hz+撤席 abandon@15.05s/dispose@+8.03s 闭环、五游戏混编零错误+护栏 429；四件套全过：245==245/16==16 全配对+二段 RSS 起点重置补证）；QA1/QA2 红线全过（200ms 回合制容忍论证实证/重连三档/满员旁观/feed ≤0.5s）；横切事故复盘（GAMES-84 abandon 锚点+重演伪杆号，波及五作）。合并链 6da49ae→7a11ea5→4d526d5→bf64eab→5410cf8→9180bc6→5a3125e→72ef4b0→(GAMES-85 9883b4a 待合并)→(GAMES-86)"
+    },
+    "multiplayer:element-duel": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 10,
+      "net": {
+        "tech": "S5",
+        "bot": "三档卡牌Bot(casual 随手/balanced 整数V+scratch贪心/competitive 斩杀线闭式+combo模拟)+托管三层(超时casual单回合/持续=牌组配方faceBias·comboBias/主动host op)+陪玩放水+牌桌评语quip",
+        "chain": "GAMES-87..96 十单链完整"
+      },
+      "notes": "E6-W1-T5 轨 S5 回合权威本格首证收官（共享3×3棋盘位置即决策/六对元素反应确定性结算/零快照纯事件驱动=ruling即全量个性化态/迷雾个性化state目录/deckSeed双流派生+零隐藏随机/托管三层）。STRESS 三组 PASS（6测试槽错峰承载8min frame 100.144/100.046Hz漂移[-4,+2]/ruling 810条全量0错、5min满编2/2 spot 6世代滚动99.995Hz+疲劳4/8参与致死在线实证、六游戏混编30/30全在场零错误+护栏429+mmo镇10.004Hz；四件套全过：一段321==321全配对+RSS二段起点重置101→66-72MB闭环QA2 O-2）；QA1/QA2红线全过（200ms延迟容忍论/重连三档/满员旁观frame共同窗全同/feed≤1s）；F1反应表键序死代码事故复盘（排序键死码双防线+穷举断言）。VIS 链位 GAMES-95 已交付 feature/GAMES-95 待合并 main"
+    },
+    "multiplayer:snake-king": {
+      "stage": "testing",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "E6-W1-T6 S6 海量实体首证 DEV 交付（GAMES-99，单链 2/10）：io 大房蛇 20+ 实体·AOI 个性化增量·path 回放蛇身·轮赛常驻房；api-check 含 full20 满房剧本"
+    }
   }
- }
 }

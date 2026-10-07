@@ -16,9 +16,11 @@ export class BotHost {
     this.timer = null
   }
 
-  /** 上线一款联机游戏：常驻配置 + Bot 工厂（residents: 常驻镇模式，GAMES-52） */
-  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false }) {
-    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents })
+  /** 上线一款联机游戏：常驻配置 + Bot 工厂（residents: 常驻镇模式 GAMES-52；swarm: 群房
+   * 巨房模式 GAMES-99——解构白名单漏收该字段时 cfg.swarm 恒 undefined，ensureSwarm 成死码，
+   * snake-king 静默落回通用补房路径（bots=seats 满填+名不带巨房），浏览器面才可目击） */
+  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false, swarm = 0 }) {
+    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents, swarm })
   }
 
   /** 统一接口：spawnBot(gameId, level) → Bot（输入生成闭包，由房间按帧调用） */
@@ -46,6 +48,7 @@ export class BotHost {
     for (const [gameId, cfg] of this.games) {
       const all = this.rooms.roomsFor(gameId).filter((r) => r.phase !== 'ended' && !r.test)
       if (cfg.residents) { this.ensureResidents(gameId, cfg, all); continue }
+      if (cfg.swarm) { this.ensureSwarm(gameId, cfg, all); continue }
       const pureBot = all.filter((r) => this.rooms.humanCount(r) === 0 && r.spectators.size === 0)
       if (pureBot.length >= cfg.minLive || all.length >= cfg.maxRooms) continue
       const level = cfg.levels[pureBot.length % cfg.levels.length]
@@ -62,6 +65,57 @@ export class BotHost {
       })
       this.log({ k: 'bothost-spawn', gameId, level })
     }
+  }
+
+  /* ---------- 群房模式（GAMES-99 snake-king §4.1/§5.7）：常驻巨房 2（casual 房+混编房），
+   * 实体目标 20 蛇（bots=clamp(20−humans,0,23)）——真人加入 bot 让位（座位被顶替或空位
+   * 占用后超员 bot 退场）、真人离镇 45s 防抖后补员；feed 恒 live、joinable 恒真。 */
+  ensureSwarm(gameId, cfg, all) {
+    const sim = this.rooms.sims.get(gameId)
+    const target = cfg.swarm || 20
+    const pureBot = all.filter((r) => this.rooms.humanCount(r) === 0 && r.spectators.size === 0)
+    if (pureBot.length < cfg.minLive && all.length < cfg.maxRooms) {
+      const mix = pureBot.length === 0 ? 'casual' : 'mixed' // 第 1 间休闲巨房、第 2 间混编巨房（§5.7）
+      const bots = []
+      for (let i = 0; i < sim.META.seats; i++) {
+        if (i >= target) break // 只占前 20 席（seats=24 硬顶留观战/拥挤余量，§2.1）
+        bots.push(mix === 'casual' ? { level: 'casual' } : { level: i < 3 ? 'competitive' : i < 9 ? 'balanced' : 'casual' }) // 混编 3/6/11（full20 同型，§6）
+      }
+      const room = this.rooms.create({ gameId, name: `${sim.META.title} · ${mix === 'casual' ? '休闲' : '混编'}巨房`, bots, startDelayMs: 1000 })
+      room.__swarmMix = mix
+      this.log({ k: 'bothost-swarm-spawn', gameId, mix, bots: bots.length })
+    }
+    for (const room of all) if (room.__swarmMix || room.gameId === gameId) this.calibrateSwarm(room, sim, target)
+  }
+
+  calibrateSwarm(room, sim, target) {
+    const humans = this.rooms.humanCount(room)
+    if (humans > 0) room.__lastHumanSeen = Date.now()
+    const want = Math.max(0, Math.min(room.seats.length - 1, target - humans)) // bots=clamp(20−humans,0,23)
+    let bots = 0
+    for (const s of room.seats) if (s.kind === 'bot') bots++
+    let changed = false
+    while (bots > want) { // 超员退场（真人占空位后）：高席先走
+      const s = [...room.seats].reverse().find((x) => x.kind === 'bot')
+      if (!s) break
+      s.kind = 'empty'; s.level = null; s.name = null; s.botRng = null; s.pending.clear()
+      bots--; changed = true
+      this.log({ k: 'swarm-bot-leave', roomId: room.id, seat: s.seat })
+    }
+    if (bots < want && (humans > 0 || !room.hadHuman || Date.now() - (room.__lastHumanSeen || 0) > 45_000)) {
+      const mix = room.__swarmMix || 'mixed'
+      while (bots < want) {
+        const s = room.seats.find((x) => x.kind === 'empty' && !x.conn)
+        if (!s) break
+        s.kind = 'bot'
+        s.level = mix === 'casual' ? 'casual' : bots % 19 < 3 ? 'competitive' : bots % 19 < 9 ? 'balanced' : 'casual'
+        s.name = `Bot·${LEVEL_CN[s.level]}`
+        s.botRng = sim.mulberry32(((room.state.seed ^ (s.seat * 0x9e3779b9)) >>> 0))
+        bots++; changed = true
+        this.log({ k: 'swarm-bot-join', roomId: room.id, seat: s.seat, level: s.level })
+      }
+    }
+    if (changed) this.rooms.broadcastSeat(room)
   }
 
   /* ---------- 常驻镇模式（GAMES-52 §4.1/§8）：镇=长生命周期房间，居民 bot 动态调节 ----------

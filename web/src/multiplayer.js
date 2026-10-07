@@ -26,7 +26,7 @@ const CATALOG = [
   { name: '元素对决', track: 'T5 回合', tech: 'S5', on: true, url: '/games/multiplayer/element-duel/index.html' },
   { name: '弈界棋阁', track: 'T5 回合', tech: 'S5' },
   { name: '深夜狼人', track: 'T5 回合', tech: 'S5' },
-  { name: '蛇王争霸', track: 'T6 海量', tech: 'S6' },
+  { name: '蛇王争霸', track: 'T6 海量', tech: 'S6', on: true, url: '/games/multiplayer/snake-king/index.html' },
   { name: '深海食物链', track: 'T6 海量', tech: 'S6' },
   { name: '派对大乱斗', track: 'T6 海量', tech: 'S6' },
   { name: '极速卡丁', track: 'T7 预测', tech: 'S7' },
@@ -61,7 +61,9 @@ function renderFeed(matches) {
       ? `${m.url}?room=${encodeURIComponent(m.roomId)}&gw=${encodeURIComponent(GW)}`
       : `${m.url}?room=${encodeURIComponent(m.roomId)}&gw=${encodeURIComponent(GW)}&mode=spectate`
     const slot = SLOT_BY_ID[m.gameId]
-    const tag = slot ? `${slot.track} · ${slot.tech}` : m.mode   // 目录同源措辞（21 槽一致口径）
+    // 目录同源措辞（21 槽一致口径）；巨房徽标（GAMES-99 §7）：swarm-arena 模式前缀
+    // 「巨房 20+」——feed schema 零变更，VIS 层渲染约定（T6-A 海量卖点外显）
+    const tag = slot ? `${m.mode === 'swarm-arena' ? '巨房 20+ · ' : ''}${slot.track} · ${slot.tech}` : m.mode
     return `<a class="mp-card" href="${href}">
       <div class="mp-card__name">${esc(m.name)}</div>
       <div class="mp-card__meta"><span>${esc(tag)}</span><span>真人 ${m.humans}</span><span>Bot ${m.bots}</span>${m.spectators > 0 ? `<span>观战 ${m.spectators}</span>` : ''}</div>
