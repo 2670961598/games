@@ -337,7 +337,23 @@ function step(st, inputs, room) {
     }
   }
 
-  /* 8. 轮赛推进（§1.1：轮末加冕→kills 清零、score 重锚 n→round++；房不清） */
+  /* 8. 测试房投影终局（§6 endState：生产常驻房不终局）。
+   * goal 双条件=score≥120 且 n≥100（§6 A2 实测锚成对绑定：击杀流单独到分不出果——
+   * 成长曲线锚与达标线同刻成立才算 goal；轮末投影仍按 score 单判，§6 endState 原文）。
+   * 排序红线：投影必须先于轮末 rollover（kills 清零/score 重锚）——maxTicks==ROUND_TICKS
+   * 同拍时后投影会读到重锚后的 score=n，轮末分数被抹、终局失真 */
+  let over = null
+  if (st.testRoom && st.maxTicks != null && room) {
+    const humans = room.seats.filter((s) => s.kind === 'human').map((s) => s.seat)
+    const scores = {}
+    for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake') scores[e.seat] = e.score }
+    const me0 = humans.length ? st.ents['s' + humans[0]] : null
+    const apiScore = Math.max(0, ...humans.map((s) => scores[s] || 0))
+    if (apiScore >= GOAL && me0 && me0.n >= 100) over = { winner: 'A', reason: 'goal', scores }
+    else if (st.tick >= st.maxTicks) over = { winner: 'B', reason: 'round-end', scores }
+  }
+
+  /* 9. 轮赛推进（§1.1：轮末加冕→kills 清零、score 重锚 n→round++；房不清） */
   st.round.tick++
   if (st.round.tick >= P.ROUND_TICKS) {
     let top = null
@@ -354,7 +370,7 @@ function step(st, inputs, room) {
     }
   }
 
-  /* 9. 排行榜（逐 tick 重算保证任意 tick 抽样 A6 不变量成立；下发节流在 emit ext.lb 1Hz，§5.3）
+  /* 10. 排行榜（逐 tick 重算保证任意 tick 抽样 A6 不变量成立；下发节流在 emit ext.lb 1Hz，§5.3）
    * top10：HUD 紧凑面板 top5 + tap 展开 top10（§7）；A6 断言口径=top5 非增不变量不受影响 */
   st.leaderboard = Object.values(st.ents)
     .filter((e) => e.k === 'snake')
@@ -363,20 +379,6 @@ function step(st, inputs, room) {
     .map((e) => ({ seat: e.seat, name: e.name, n: e.n, kills: e.kills, score: e.score }))
   if (st.tick % 10 === 0) { // 小地图密度点（1Hz，§7「20 蛇实时小点」HUD 数据源；ext 自由键）
     st.mm = Object.values(st.ents).filter((e) => e.k === 'snake' && !e.dead).map((e) => [e.seat, Math.round(e.x / 1000), Math.round(e.y / 1000), e.n])
-  }
-
-  /* 10. 测试房投影终局（§6 endState：生产常驻房不终局）。
-   * goal 双条件=score≥120 且 n≥100（§6 A2 实测锚成对绑定：击杀流单独到分不出果——
-   * 成长曲线锚与达标线同刻成立才算 goal；轮末投影仍按 score 单判，§6 endState 原文） */
-  let over = null
-  if (st.testRoom && st.maxTicks != null && room) {
-    const humans = room.seats.filter((s) => s.kind === 'human').map((s) => s.seat)
-    const scores = {}
-    for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake') scores[e.seat] = e.score }
-    const me0 = humans.length ? st.ents['s' + humans[0]] : null
-    const apiScore = Math.max(0, ...humans.map((s) => scores[s] || 0))
-    if (apiScore >= GOAL && me0 && me0.n >= 100) over = { winner: 'A', reason: 'goal', scores }
-    else if (st.tick >= st.maxTicks) over = { winner: 'B', reason: 'round-end', scores }
   }
 
   st.tick++
