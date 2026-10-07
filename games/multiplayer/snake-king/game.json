@@ -54,7 +54,7 @@
         "A7 击杀链路：kill-hunt 策略事件账本 {k:'kill'} ≥1 且 {k:'die'} 侧 drops==ceil(victimLen/2)（T6-B 掉落公式）"
       ],
       "script": {
-        "seed": 20261007, "timeScale": 4, "startDelayMs": 600, "maxTicks": 3600,
+        "seed": 20261007, "timeScale": 3, "startDelayMs": 600, "maxTicks": 3600,
         "scenarios": {
           "win":   { "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow" },
           "lose":  { "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
