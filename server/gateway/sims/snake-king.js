@@ -494,7 +494,7 @@ function brain(st, seat, level, rng, env) {
   } else {
     /* 蛇：头前锥探测（含对方头=头对头预警）+ 贴身半径，危险点反向逃逸；
        反向若指墙（wallM 带）折向世界心 */
-    const probeD = level === 'competitive' ? 110_000 : level === 'balanced' ? 100_000 : 80_000
+    const probeD = level === 'competitive' ? 110_000 : level === 'balanced' ? 100_000 : 100_000
     const ax = sn.x + Math.cos(sn.a * RAD) * probeD, ay = sn.y + Math.sin(sn.a * RAD) * probeD
     let danger = null, dd = 26000 * 26000
     for (const f of foes) {

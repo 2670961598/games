@@ -410,16 +410,18 @@ const POLICIES = {
     }
     const K = sk()
     const pts = foePts(state, seat)
-    const v = K.vOf(me.n), w = K.wOf(me.n)
+    /* rollout 速度含 boost 系数（boost 中实际 1.6×——不含则系统性低估危险）；
+       ω 同步 ×0.85；预测窗 22 tick、清障 23px（转向半径 30px 余量） */
+    const v = Math.round(K.vOf(me.n) * (boost ? 1.6 : 1)), w = Math.max(1, Math.round(K.wOf(me.n) * (boost ? 0.85 : 1)))
     const rollOK = (target) => {
       let x = me.x, y = me.y, a2 = me.a
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 22; i++) {
         a2 = K.stepTurn(a2, target, w)
         x += Math.cos(a2 * Math.PI / 180) * v
         y += Math.sin(a2 * Math.PI / 180) * v
         if (x < 40000 || y < 40000 || x > W - 40000 || y > H - 40000) return false
         for (let j = 0; j < pts.length; j += 2) {
-          if ((pts[j] - x) ** 2 + (pts[j + 1] - y) ** 2 < 20000 * 20000) return false
+          if ((pts[j] - x) ** 2 + (pts[j + 1] - y) ** 2 < 23000 * 23000) return false
         }
       }
       return true
