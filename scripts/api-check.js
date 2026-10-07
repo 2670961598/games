@@ -374,9 +374,11 @@ const POLICIES = {
 
 /* ---------- snake-king S6 策略工厂（设计 §6 剧本策略：feed-grow/kill-hunt） ----------
  * S6 语义：a 连续模拟量每拍重发（心跳兼保活）、boost 高价值远点才带。
- * 避障=轨迹 rollout：同式积分（shared.cjs stepTurn/vOf，两端同式纯函数）预测 16 tick
- * 扫掠点，撞墙/贴身(<20px 含对方头外推 +2/4/6 tick)即否——不通畅时 ±30..180° 扫描
- * 候选航向取首个通畅者；觅食=争抢避让（180px 内更近他蛇头的光点不凑，防矿区扎堆）；
+ * 避障=轨迹 rollout：同式积分（shared.cjs stepTurn/vOf，两端同式纯函数）预测 22 tick
+ * 扫掠点，撞墙/贴身(<23px 含对方头外推 +2/4/6 tick)即否——不通畅时 ±15..180° 扫描
+ * 候选航向取首个通畅者；觅食=争抢避让（180px 内更近他蛇头的光点不凑，防矿区扎堆）
+ * 且贴墙 300px 带光点降权 ×0.45（实测贴墙扎营是死亡主因）；无食回世界心时带 ±2°
+ * 摆动——恒定 a 连 600 tick 会触发 AFK casual 代打（sim step 0b），摆动即免疫；
  * kill-hunt=近距伏击（250px 内出现 n<60% 己方猎物才切换，闭式拦截点；其余全程觅食）。 */
 {
   let SK = null
@@ -401,8 +403,9 @@ const POLICIES = {
     const W = state.map ? state.map.w : 1800000, H = state.map ? state.map.h : 1800000
     const t = pickTarget(me, W, H)
     let a = ((deg(me.x, me.y, t.x, t.y) % 360) + 360) % 360
+    if (t.center) a += (state.tick % 40) < 20 ? 2 : -2 // 回心巡航摆动：免疫 AFK 恒签名代打
     let boost = t.far && me.n >= 16 ? 1 : 0 // 高价值远点冲刺（§2.3）
-    const margin = 200000
+    const margin = 260000 // 避墙带 260px（实测 200px 带内贴墙扎营死亡主因，诊断局 6 死中 4 死贴墙）
     const rad0 = a * Math.PI / 180
     if ((me.x < margin && Math.cos(rad0) < 0) || (me.x > W - margin && Math.cos(rad0) > 0)
       || (me.y < margin && Math.sin(rad0) < 0) || (me.y > H - margin && Math.sin(rad0) > 0)) {
@@ -428,7 +431,7 @@ const POLICIES = {
     }
     if (!rollOK(a)) {
       boost = 0 // 危险区禁 boost（ω×0.85 转向更差，§2.3）
-      for (const off of [30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180]) {
+      for (const off of [15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180]) {
         const cand = ((a + off) % 360 + 360) % 360
         if (rollOK(cand)) { a = cand; break }
       }
@@ -437,6 +440,7 @@ const POLICIES = {
   }
   const pickFood = (state, me) => {
     let best = null, bs = -1
+    const W2 = state.map ? state.map.w : 1800000, H2 = state.map ? state.map.h : 1800000
     for (const id in state.ents) {
       const e = state.ents[id]
       let v = 0
@@ -453,7 +457,8 @@ const POLICIES = {
         }
         if (crowded) continue
       }
-      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) // 尸体簇优先（§6）
+      const wall = Math.min(e.x, e.y, W2 - e.x, H2 - e.y) < 300000 ? 0.45 : 1 // 贴墙 300px 带降权（生存优先）
+      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) * wall // 尸体簇优先（§6）
       if (s > bs) { bs = s; best = e }
     }
     return best
@@ -461,33 +466,36 @@ const POLICIES = {
   POLICIES['feed-grow'] = (state, seat) => steer(state, seat, (me, W, H) => {
     const best = pickFood(state, me)
     if (best) return { x: best.x, y: best.y, far: (best.v || 0) >= 4 && Math.hypot(best.x - me.x, best.y - me.y) > 400000 }
-    return { x: W / 2, y: H / 2 }
+    return { x: W / 2, y: H / 2, center: 1 }
   })
   POLICIES['kill-hunt'] = (state, seat) => steer(state, seat, (me, W, H) => {
-    /* 近距伏击（成体 n≥20）：250px 内出现 n<60% 己方猎物 → 闭式拦截点收口（§4 同式）；
-       猎物游走使远距拦截扑空率高（实测 k=0），伏击+全程觅食底仓才是稳定击杀链路 */
+    /* 近距扑咬（成体 n≥20）：60px 内出现 n<60% 且 |Δn|>2 猎物 → 直捣头位微前导
+       （≤4 tick、不 boost 防冲过头误入体节）——头对头 |Δn|>2 短者死（§2.4 碾压位）；
+       其余全程觅食底仓。教训两则：刻意远追=永追远点不进食（实测全场饿死 55 分）；
+       贴身强冲=清障 23px<体节首点 12px 后置偏移，反复撞体送死（实测 8-15 死）——
+       击杀主链路是碰撞涌现（饲料蛇撞长蛇身，feed-grow 自然 10-23 杀） */
     let prey = null, pd = Infinity
     if (me.n >= 20) {
       for (const id in state.ents) {
         const e = state.ents[id]
         if (e.k !== 'snake' || e.seat === seat || e.dead || (e.p || 0) > 0) continue
-        if (e.n > me.n * 0.6) continue
+        if (e.n > me.n * 0.6 || e.n > me.n - 3) continue // |Δn|>2 碾压线（§2.4 头对头）
         const d = Math.hypot(e.x - me.x, e.y - me.y)
-        if (d < 250000 && d < pd) { pd = d; prey = e }
+        if (d < 60000 && d < pd) { pd = d; prey = e }
       }
     }
     if (prey) {
       const K = sk(), pv = K.vOf(prey.n)
-      const t = Math.min(60, Math.max(5, pd / Math.max(2000, K.vOf(me.n) * 1.6 - pv)))
+      const lead = Math.min(pd, pv * 4) // 微前导 ≤4 tick 且不超距离
       return {
-        x: Math.max(60000, Math.min(W - 60000, prey.x + Math.cos(prey.a * Math.PI / 180) * pv * t)),
-        y: Math.max(60000, Math.min(H - 60000, prey.y + Math.sin(prey.a * Math.PI / 180) * pv * t)),
+        x: prey.x + Math.cos(prey.a * Math.PI / 180) * lead,
+        y: prey.y + Math.sin(prey.a * Math.PI / 180) * lead,
         far: false,
       }
     }
     const best = pickFood(state, me)
     if (best) return { x: best.x, y: best.y, far: (best.v || 0) >= 4 && Math.hypot(best.x - me.x, best.y - me.y) > 400000 }
-    return { x: W / 2, y: H / 2 }
+    return { x: W / 2, y: H / 2, center: 1 }
   })
 }
 

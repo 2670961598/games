@@ -54,7 +54,7 @@
     ping: 0, seq: 0, lastSend: 0,
     target: null, boostOn: false, // 本地输入态（a 目标角/boost 锁存）
     dead: false, respawnIn: 0, killerName: '', dropN: 0, crown: null, crownUntil: 0,
-    connLost: false, err: '',
+    connLost: false, err: '', pauseViz: false,
     toasts: [], parts: [], shakes: 0, shakeT: 0, eatStreak: 0, eatT: 0,
   }
   const cam = { x: K.W / 2, y: K.H / 2, zoom: 1, zTarget: 1 }
@@ -700,6 +700,7 @@
   let fpsAcc = 0, fpsN = 0, fpsShown = 0
   function frame(t) {
     now = t
+    if (S.pauseViz) { lastT = t; requestAnimationFrame(frame); return } // 识图/墨水带采样冻结帧（仅 debug 钩子可置位，net 局不触碰）
     const dt = Math.min(100, t - lastT)
     lastT = t
     simAcc += dt
@@ -715,6 +716,7 @@
   window.__GAMES_DEBUG__ = {
     events: [],
     start(level) { S.debugLevel = level; startDebugArena(); report('start', { level }); return true },
+    pause(v) { S.pauseViz = !!v; return true }, // visual-check 识图契约（GAMES-49）：冻结帧采样墨水带
     hudFonts: () => hudFontReg,
     fps: () => fpsShown,
     state: () => ({ mode: S.mode, seat: S.seat, ents: S.ents.size, dead: S.dead, round: S.round, lb: S.lb.slice(0, 5), mm: S.mm.length, boost: S.boostOn, target: S.target }),
