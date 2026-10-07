@@ -16,9 +16,11 @@ export class BotHost {
     this.timer = null
   }
 
-  /** 上线一款联机游戏：常驻配置 + Bot 工厂（residents: 常驻镇模式，GAMES-52） */
-  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false }) {
-    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents })
+  /** 上线一款联机游戏：常驻配置 + Bot 工厂（residents: 常驻镇模式 GAMES-52；swarm: 群房
+   * 巨房模式 GAMES-99——解构白名单漏收该字段时 cfg.swarm 恒 undefined，ensureSwarm 成死码，
+   * snake-king 静默落回通用补房路径（bots=seats 满填+名不带巨房），浏览器面才可目击） */
+  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false, swarm = 0 }) {
+    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents, swarm })
   }
 
   /** 统一接口：spawnBot(gameId, level) → Bot（输入生成闭包，由房间按帧调用） */
