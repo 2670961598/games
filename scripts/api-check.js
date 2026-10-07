@@ -394,6 +394,10 @@ const POLICIES = {
       for (let i = 0; i + 1 < p.length; i += 2) pts.push(p[i], p[i + 1])
       const K = sk(), v = K.vOf(e.n), r2 = e.a * Math.PI / 180 // 对方头外推（随机转向预警位）
       for (const dt of [2, 4, 6]) pts.push(e.x + Math.cos(r2) * v * dt, e.y + Math.sin(r2) * v * dt)
+      /* 10/14 tick 宽锥扇：小蛇横穿盲区取证（凶手 11/15 例 n=11-15 小蛇突然切道——
+         轮询间隙 ≥2 tick 内体节可整体挪进清障走廊，现位置障碍图对未来交叉无预警） */
+      for (const dt of [10, 14]) for (const sp of [-35, 0, 35]) pts.push(
+        e.x + Math.cos(r2 + sp * Math.PI / 180) * v * dt, e.y + Math.sin(r2 + sp * Math.PI / 180) * v * dt)
     }
     return pts
   }
@@ -401,7 +405,23 @@ const POLICIES = {
     const me = state.ents && state.ents['s' + seat]
     if (!me || me.dead) return { a: 0, boost: 0 }
     const W = state.map ? state.map.w : 1800000, H = state.map ? state.map.h : 1800000
-    const t = pickTarget(me, W, H)
+    /* 防御气泡（n≥30）：220px 内 ≥2 威胁头 → 弃食脱离（远离威胁质心方向 400px 点）。
+       取证：死亡 11/15 集中在 n≥45 扎堆区——大蛇 R(n)≥34px 刹不住，贪食穿人群=死亡螺旋；
+       草 120 位 15s 回填，弃拥挤食不损成长上限 */
+    let t
+    if (me.n >= 30) {
+      let vx = 0, vy = 0, thr = 0
+      for (const id in state.ents) {
+        const e = state.ents[id]
+        if (e.k !== 'snake' || e.seat === seat || e.dead) continue
+        const dx = me.x - e.x, dy = me.y - e.y, d = Math.hypot(dx, dy)
+        if (d < 160000 && d > 1) { thr++; vx += dx / d; vy += dy / d }
+      }
+      if (thr >= 2 && (vx || vy)) {
+        const d2 = Math.hypot(vx, vy)
+        t = { x: me.x + vx / d2 * 400000, y: me.y + vy / d2 * 400000, far: false, flee: 1 }
+      } else t = pickTarget(me, W, H)
+    } else t = pickTarget(me, W, H)
     let a = ((deg(me.x, me.y, t.x, t.y) % 360) + 360) % 360
     if (t.center) a += (state.tick % 40) < 20 ? 2 : -2 // 回心巡航摆动：免疫 AFK 恒签名代打
     let boost = t.far && me.n >= 16 ? 1 : 0 // 高价值远点冲刺（§2.3）
@@ -414,27 +434,36 @@ const POLICIES = {
     const K = sk()
     const pts = foePts(state, seat)
     /* rollout 速度含 boost 系数（boost 中实际 1.6×——不含则系统性低估危险）；
-       ω 同步 ×0.85；预测窗 22 tick、清障 23px（转向半径 30px 余量） */
+       ω 同步 ×0.85；预测窗 22 tick、清障 26px（陈旧度余量：轮询状态年龄 ≥2 tick）。
+       原点前推 3 tick（沿当前转向积分）：GET→POST→生效有墙钟延迟，从过时原点
+       预测=系统性低估自身位置（网关满载实测 full20 崩 20 分/6 死的根因之一） */
     const v = Math.round(K.vOf(me.n) * (boost ? 1.6 : 1)), w = Math.max(1, Math.round(K.wOf(me.n) * (boost ? 0.85 : 1)))
-    const rollOK = (target) => {
+    /* rollSteps=存活视界（0-22）：被围时全候选无全通 → 取视界最长者逃离——保原向赴死
+       是坏 seed 12-14 死亡螺旋的根因（清障固定 26px；自适应清障实测更糟：可航向更少） */
+    const rollSteps = (target) => {
       let x = me.x, y = me.y, a2 = me.a
+      for (let i = 0; i < 3; i++) { a2 = K.stepTurn(a2, a, w); x += Math.cos(a2 * Math.PI / 180) * v; y += Math.sin(a2 * Math.PI / 180) * v }
       for (let i = 0; i < 22; i++) {
         a2 = K.stepTurn(a2, target, w)
         x += Math.cos(a2 * Math.PI / 180) * v
         y += Math.sin(a2 * Math.PI / 180) * v
-        if (x < 40000 || y < 40000 || x > W - 40000 || y > H - 40000) return false
+        if (x < 80000 || y < 80000 || x > W - 80000 || y > H - 80000) return i // 80px 软墙带：逃逸候选不得拐进墙角（撞墙死占 3/15）
         for (let j = 0; j < pts.length; j += 2) {
-          if ((pts[j] - x) ** 2 + (pts[j + 1] - y) ** 2 < 23000 * 23000) return false
+          if ((pts[j] - x) ** 2 + (pts[j + 1] - y) ** 2 < 26000 * 26000) return i
         }
       }
-      return true
+      return 22
     }
-    if (!rollOK(a)) {
+    if (rollSteps(a) < 22) {
       boost = 0 // 危险区禁 boost（ω×0.85 转向更差，§2.3）
+      let bestA = null, bestS = -1
       for (const off of [15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180]) {
         const cand = ((a + off) % 360 + 360) % 360
-        if (rollOK(cand)) { a = cand; break }
+        const s = rollSteps(cand)
+        if (s > bestS) { bestS = s; bestA = cand }
+        if (s >= 22) break // 全通首选（近端偏角优先）
       }
+      if (bestA != null) a = bestA
     }
     return { a: Math.round(((a % 360) + 360) % 360), boost }
   }
@@ -458,7 +487,13 @@ const POLICIES = {
         if (crowded) continue
       }
       const wall = Math.min(e.x, e.y, W2 - e.x, H2 - e.y) < 300000 ? 0.45 : 1 // 贴墙 300px 带降权（生存优先）
-      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) * wall // 尸体簇优先（§6）
+      let crowd = 1
+      for (const id2 in state.ents) { // 拥挤光点降权：150px 内有他蛇头=死亡区食（防御气泡同源取证）
+        const o = state.ents[id2]
+        if (o.k !== 'snake' || o.seat === me.seat || o.dead) continue
+        if (Math.hypot(o.x - e.x, o.y - e.y) < 150000) { crowd = 0.25; break }
+      }
+      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) * wall * crowd // 尸体簇优先（§6）
       if (s > bs) { bs = s; best = e }
     }
     return best
@@ -500,7 +535,7 @@ const POLICIES = {
 }
 
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
-async function playScript(roomId, policy, deadlineMs, isS2 = false) {
+async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POLL_MS) {
   let cursor = 0, seq = 0 // S2：input.frame=客户端输入序号 seq（单调自 0，协议 §6 S2 声明）
   /* S6 取证账本（GAMES-99 §6 A6/A7/full20 断言源）：事件流水 + 快照带宽画像 + 排行榜抽样 */
   const ledger = []
@@ -544,7 +579,7 @@ async function playScript(roomId, policy, deadlineMs, isS2 = false) {
       const i = await gwInput(roomId, r.json.playerSeat, 'ctrl', inp)
       if (!i.json || !i.json.ok) return { error: i.json && i.json.error || `注入失败 HTTP ${i.status}` }
     }
-    await sleep(POLL_MS)
+    await sleep(pollMs)
   }
 }
 
@@ -605,6 +640,10 @@ console.log('[L1] 测试面仅本机可用')
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
 const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6'   // S3（GAMES-68）/S6（GAMES-99）：注入带 seq、A4 走快照 ack 口径
+/* S6 剧本轮询节拍 60ms：设计契约 turn=10Hz 持续上报（心跳兼保活）——120ms@4× 假时钟下
+ * 状态年龄 6-9 tick（≈26-65px 位置误差），避障 rollout 从过时原点预测=系统性失效（实测
+ * 网关满载时 full20 崩至 20 分/6 死）；60ms≈8Hz 贴近契约且全量 state GET 开销可承受 */
+const scriptPollMs = meta.net.tech === 'S6' ? 60 : POLL_MS
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
@@ -853,7 +892,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         if (!rr) { ok(aid, `${name} 建房 run${ri + 1}`, false, `HTTP ${created.status}`); break }
         const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
         const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
-        const played = await playScript(rr.roomId, POLICIES[sc.policy || 'idle'] || POLICIES.idle, Date.now() + budgetMs, isS2)
+        const played = await playScript(rr.roomId, POLICIES[sc.policy || "idle"] || POLICIES.idle, Date.now() + budgetMs, isS2, scriptPollMs)
         await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
         if (!played.result) { ok(aid, `${name} run${ri + 1} 达成终态`, false, played.error || '未终局'); break }
         runs.push(played)
@@ -893,7 +932,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
     const tickMs = (room.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
     const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
     const policy = POLICIES[sc.policy || 'idle'] || POLICIES.idle
-    const r = await playScript(room.roomId, policy, Date.now() + budgetMs, isS2)
+    const r = await playScript(room.roomId, policy, Date.now() + budgetMs, isS2, scriptPollMs)
     const durMs = Date.now() - t0
     if (!r.result) {
       ok(aid, `${name} 达成终态`, false, r.error || '未终局')
