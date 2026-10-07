@@ -493,7 +493,18 @@ const POLICIES = {
         if (o.k !== 'snake' || o.seat === me.seat || o.dead) continue
         if (Math.hypot(o.x - e.x, o.y - e.y) < 150000) { crowd = 0.25; break }
       }
-      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) * wall * crowd // 尸体簇优先（§6）
+      /* 密度回避（attempt2 根因修复）：450px 内 n≥20 大蛇环绕的光点降权 ÷(1+0.7×条数)——
+         60ms 轮询 vs 25ms tick（timeScale=4）输入每 ~3 tick 冻结一拍，中心蛇堆里 300ms
+         不可反应窗=必死（bot 避障锥逐拍跑，API 席 3 tick 一拍）；离线复演对照：基线
+         3tick 节奏 7 死 peak73 轮末 20 分，加密度回避 0 死 255 tick goal（205 分）——
+         空旷区吃草从源头消除碰撞暴露，觅食效率反升（不与 20 蛇抢 180 位） */
+      let dens = 0
+      for (const id2 in state.ents) {
+        const o = state.ents[id2]
+        if (o.k !== 'snake' || o.seat === me.seat || o.dead || o.n < 20) continue
+        if (Math.hypot(o.x - e.x, o.y - e.y) < 450000) dens++
+      }
+      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) * wall * crowd / (1 + dens * 0.7) // 尸体簇优先（§6）+密度回避
       if (s > bs) { bs = s; best = e }
     }
     return best
