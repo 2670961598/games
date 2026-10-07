@@ -651,10 +651,13 @@ console.log('[L1] 测试面仅本机可用')
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
 const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6'   // S3（GAMES-68）/S6（GAMES-99）：注入带 seq、A4 走快照 ack 口径
-/* S6 剧本轮询节拍 60ms：设计契约 turn=10Hz 持续上报（心跳兼保活）——120ms@4× 假时钟下
- * 状态年龄 6-9 tick（≈26-65px 位置误差），避障 rollout 从过时原点预测=系统性失效（实测
- * 网关满载时 full20 崩至 20 分/6 死）；60ms≈8Hz 贴近契约且全量 state GET 开销可承受 */
-const scriptPollMs = meta.net.tech === 'S6' ? 60 : POLL_MS
+/* S6 剧本轮询节拍 15ms（attempt2 根因修复）：tick 墙钟=100ms/timeScale4=25ms，轮询一拍
+ * =输入冻结窗——60ms 时窗长 ~3.1 tick（尾部 4-5），转向响应 300ms 不可反应窗=中段蛇
+ * （n 27-50）反复被杀（bot 避障锥逐拍跑，API 席多拍一拍）；真跑取证：60ms 节奏 7 死、
+ * 吃速 1 节/s 达标但净长势全被死亡重置吃掉（score 222 而 n 峰 50，goal 双条件卡 n≥100）。
+ * 15ms+密度回避实测：381 tick goal、0 死、10s 墙钟；tick 推进仅拖慢 ~2.4%（budgetMs
+ * 有 +25s 缓冲）。60→15 不是越快越好——同 tick 重复注入约半数（幂等无害），再快只耗网关 */
+const scriptPollMs = meta.net.tech === 'S6' ? 15 : POLL_MS
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
