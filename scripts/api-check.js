@@ -419,23 +419,37 @@ const POLICIES = {
     const me = state.ents && state.ents['s' + seat]
     if (!me || me.dead) return { a: 0, boost: 0 }
     const W = state.map ? state.map.w : 1800000, H = state.map ? state.map.h : 1800000
-    /* 防御气泡（n≥30）：220px 内 ≥2 威胁头 → 弃食脱离（远离威胁质心方向 400px 点）。
+    /* 防御气泡（GAMES-100 硬化：全长度段+半径 160→200px）：
+       原门槛 n≥30 才防——新生/小蛇期（n 10-29）贪食被撞是 full20 绞肉相位主死源
+       （严格模式 9 死局 API 席全程 n≤14 暴毙、score=10；6 死局亦有小蛇段贡献）。
        取证：死亡 11/15 集中在 n≥45 扎堆区——大蛇 R(n)≥34px 刹不住，贪食穿人群=死亡螺旋；
-       草 120 位 15s 回填，弃拥挤食不损成长上限 */
+       草 120 位 15s 回填，弃拥挤食不损成长上限。新生期（n≤14）再加脱离矢量：
+       出生保护 30 tick 一过即遭围剿，先向低密度方向拉开再觅食（绞肉相位出生点反复送死） */
     let t
-    if (me.n >= 30) {
+    if (me.n <= 14) {
       let vx = 0, vy = 0, thr = 0
       for (const id in state.ents) {
         const e = state.ents[id]
         if (e.k !== 'snake' || e.seat === seat || e.dead) continue
         const dx = me.x - e.x, dy = me.y - e.y, d = Math.hypot(dx, dy)
-        if (d < 160000 && d > 1) { thr++; vx += dx / d; vy += dy / d }
+        if (d < 320000 && d > 1) { vx += dx / d; vy += dy / d; thr++ }
+      }
+      t = (vx || vy)
+        ? { x: me.x + vx / Math.hypot(vx, vy) * 500000, y: me.y + vy / Math.hypot(vx, vy) * 500000, far: false, flee: 1 }
+        : pickTarget(me, W, H)
+    } else {
+      let vx = 0, vy = 0, thr = 0
+      for (const id in state.ents) {
+        const e = state.ents[id]
+        if (e.k !== 'snake' || e.seat === seat || e.dead) continue
+        const dx = me.x - e.x, dy = me.y - e.y, d = Math.hypot(dx, dy)
+        if (d < 200000 && d > 1) { thr++; vx += dx / d; vy += dy / d }
       }
       if (thr >= 2 && (vx || vy)) {
         const d2 = Math.hypot(vx, vy)
         t = { x: me.x + vx / d2 * 400000, y: me.y + vy / d2 * 400000, far: false, flee: 1 }
       } else t = pickTarget(me, W, H)
-    } else t = pickTarget(me, W, H)
+    }
     let a = ((deg(me.x, me.y, t.x, t.y) % 360) + 360) % 360
     if (t.center) a += (state.tick % 40) < 20 ? 2 : -2 // 回心巡航摆动：免疫 AFK 恒签名代打
     let boost = t.far && me.n >= 16 ? 1 : 0 // 高价值远点冲刺（§2.3）
