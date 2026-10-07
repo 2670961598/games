@@ -135,7 +135,7 @@ function spawnSnake(st, seat, name, dead) {
     score: P.N0 + (old ? old.kills * 15 : 0), kills: old ? old.kills : 0, deaths: old ? old.deaths : 0,
     maxLen: old ? Math.max(old.maxLen, old.n) : P.N0,
     boosting: false, dead: 0, respawnAt: 0, prot: P.SPAWN_PROT, ms: 0,
-    path, mem: { dt: 0, wp: null, tg: null, hunt: null, boost: 0, ta: a },
+    path, mem: { dt: 0, wp: null, tg: null, hunt: null, boost: 0, ta: a, wall: 0, huntCd: 200 },
   }
   st.ents['s' + seat] = sn
   return sn
@@ -354,23 +354,28 @@ function step(st, inputs, room) {
     }
   }
 
-  /* 9. 排行榜（10 tick 节流重算；A6：top5 非增 && 榜首=argmax，任意 tick 成立） */
-  if (st.tick % 10 === 0 || !st.leaderboard.length) {
-    st.leaderboard = Object.values(st.ents)
-      .filter((e) => e.k === 'snake')
-      .sort((a, b) => b.score - a.score || a.seat - b.seat)
-      .slice(0, 5)
-      .map((e) => ({ seat: e.seat, name: e.name, n: e.n, kills: e.kills, score: e.score }))
+  /* 9. 排行榜（逐 tick 重算保证任意 tick 抽样 A6 不变量成立；下发节流在 emit ext.lb 1Hz，§5.3）
+   * top10：HUD 紧凑面板 top5 + tap 展开 top10（§7）；A6 断言口径=top5 非增不变量不受影响 */
+  st.leaderboard = Object.values(st.ents)
+    .filter((e) => e.k === 'snake')
+    .sort((a, b) => b.score - a.score || a.seat - b.seat)
+    .slice(0, 10)
+    .map((e) => ({ seat: e.seat, name: e.name, n: e.n, kills: e.kills, score: e.score }))
+  if (st.tick % 10 === 0) { // 小地图密度点（1Hz，§7「20 蛇实时小点」HUD 数据源；ext 自由键）
+    st.mm = Object.values(st.ents).filter((e) => e.k === 'snake' && !e.dead).map((e) => [e.seat, Math.round(e.x / 1000), Math.round(e.y / 1000), e.n])
   }
 
-  /* 10. 测试房投影终局（§6 endState：生产常驻房不终局） */
+  /* 10. 测试房投影终局（§6 endState：生产常驻房不终局）。
+   * goal 双条件=score≥120 且 n≥100（§6 A2 实测锚成对绑定：击杀流单独到分不出果——
+   * 成长曲线锚与达标线同刻成立才算 goal；轮末投影仍按 score 单判，§6 endState 原文） */
   let over = null
   if (st.testRoom && st.maxTicks != null && room) {
     const humans = room.seats.filter((s) => s.kind === 'human').map((s) => s.seat)
     const scores = {}
     for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake') scores[e.seat] = e.score }
+    const me0 = humans.length ? st.ents['s' + humans[0]] : null
     const apiScore = Math.max(0, ...humans.map((s) => scores[s] || 0))
-    if (apiScore >= GOAL) over = { winner: 'A', reason: 'goal', scores }
+    if (apiScore >= GOAL && me0 && me0.n >= 100) over = { winner: 'A', reason: 'goal', scores }
     else if (st.tick >= st.maxTicks) over = { winner: 'B', reason: 'round-end', scores }
   }
 
@@ -378,8 +383,8 @@ function step(st, inputs, room) {
   return { events, dirty, over: !!over, result: over || null }
 }
 function growSnake(st, sn, v, id, events) {
-  if (sn.n < P.N_CAP) sn.n++ // 封顶后只加 score 不加节（§2.3/附决策 11）
-  sn.score += v
+  if (sn.n < P.N_CAP) sn.n = Math.min(P.N_CAP, sn.n + v) // value=+节数（草1/果2/矿4，§2.2）
+  sn.score += v // 封顶后只加 score 不加节（§2.3/附决策 11；未封顶时恒 score=n+kills×15）
   events.push({ k: 'eat', seat: sn.seat, id, v })
 }
 
@@ -389,6 +394,16 @@ function growSnake(st, sn, v, id, events) {
  * 尸体簇×1.6、避蛇锥）；competitive=矿区巡逻+拦截预判+危险断尾（基础版，深化归 BOT 单）。
  * ===================================================================== */
 const BOT_EVERY = { casual: 30, balanced: 12, competitive: 8 }
+/** 争抢避让：光点 90px 内有更近的他蛇头 → 不凑（防扎堆对撞；生态击杀流锚设计口径） */
+function crowded(st, sn, dot) {
+  const dme = dist2(sn.x, sn.y, dot.x, dot.y)
+  for (const id in st.ents) {
+    const e = st.ents[id]
+    if (e.k !== 'snake' || e.seat === sn.seat || e.dead) continue
+    if (dist2(e.x, e.y, dot.x, dot.y) < dme) return true
+  }
+  return false
+}
 function brain(st, seat, level, rng, env) {
   const sn = st.ents['s' + seat]
   if (!sn || sn.dead) return { a: 0, boost: 0 }
@@ -404,20 +419,6 @@ function brain(st, seat, level, rng, env) {
   const foes = []
   for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake' && e.seat !== seat && !e.dead) foes.push(e) }
   const v = P.vOf(sn.n)
-  /* 前瞻危险（§4 避障表：撞墙前 60/120/160px + 头前锥形蛇身危险区） */
-  const wallAhead = (d) => {
-    const ax = sn.x + Math.cos(sn.a * RAD) * d, ay = sn.y + Math.sin(sn.a * RAD) * d
-    return ax < 60000 || ay < 60000 || ax > P.W - 60000 || ay > P.H - 60000
-  }
-  const dangerAhead = (d, r) => {
-    const ax = sn.x + Math.cos(sn.a * RAD) * d, ay = sn.y + Math.sin(sn.a * RAD) * d
-    for (const f of foes) {
-      if (f.prot > 0) continue
-      const sg = P.segsFromPath(f.path, f.n)
-      for (let i = 0; i + 1 < sg.length; i += 2) if (dist2(ax, ay, sg[i], sg[i + 1]) < r * r) return f
-    }
-    return null
-  }
   const toCenter = () => deg(P.W / 2, P.H / 2)
 
   if (mem.dt <= 0) {
@@ -435,21 +436,26 @@ function brain(st, seat, level, rng, env) {
       // 觅食者：AOI 内 v/(dist+60px) 贪心；尸体簇×1.6；避蛇锥 100px（§4）
       let best = null, bs = -1
       for (const d of dots) {
+        if (d.k !== 'drop' && crowded(st, sn, d)) continue // 争抢避让（尸体簇=公共宴席不避）
         const dd = Math.sqrt(near(d.x, d.y))
-        let s = (d.v || SITE_V[d.k] || 1) * 60000 / (dd + 60000)
+        let s = (d.v || SITE_V[d.k] || 1) * 60000 / (dd + 60000) * (0.7 + rng() * 0.6) // 抖动散伙（mmo pickSite 同式）
         if (d.k === 'drop') s *= 1.6
         if (s > bs) { bs = s; best = d }
       }
       mem.ta = best ? deg(best.x, best.y) : mem.ta
       if (best && (best.v || 0) >= 4 && near(best.x, best.y) > 360_000 * 360_000 && sn.n >= 16) mem.boost = 1 // 偶尔冲刺
     } else {
-      // 猎手：矿区巡逻偏好 + 拦截预判（长度<60% 己方）+ 危险断尾（§4 三技基础版）
+      // 猎手：矿区巡逻偏好 + 拦截预判（长度<60% 己方）+ 危险断尾（§4 三技基础版）。
+      // 成体门槛：己方 n≥25 才开猎（幼蛇先吃成体——房内击杀流锚回 §1.4 设计口径）
       let prey = null, pd = Infinity
-      for (const f of foes) {
-        if (f.n > sn.n * 0.6 || f.prot > 0) continue
-        const d2 = near(f.x, f.y)
-        if (d2 < 600_000 * 600_000 && d2 < pd) { pd = d2; prey = f }
+      if (sn.n >= 25 && !(mem.huntCd > 0)) {
+        for (const f of foes) {
+          if (f.n > sn.n * 0.6 || f.prot > 0) continue
+          const d2 = near(f.x, f.y)
+          if (d2 < 400_000 * 400_000 && d2 < pd) { pd = d2; prey = f }
+        }
       }
+      if (mem.huntCd > 0) mem.huntCd--
       if (prey) {
         const pv = P.vOf(prey.n)
         const d = Math.sqrt(pd)
@@ -462,7 +468,11 @@ function brain(st, seat, level, rng, env) {
         const a2 = rng() * Math.PI * 2, r = rng() * 300000 // 中央王座环巡逻（引力井蹲守）
         mem.wp = { x: 900000 + Math.trunc(Math.cos(a2) * r), y: 900000 + Math.trunc(Math.sin(a2) * r) }
         let best = null, bs = -1
-        for (const d of dots) { const s = (d.v || SITE_V[d.k] || 1) * 60000 / (Math.sqrt(near(d.x, d.y)) + 60000); if (s > bs) { bs = s; best = d } }
+        for (const d of dots) {
+          if (crowded(st, sn, d)) continue // 争抢避让：更近他蛇头的光点不凑（防扎堆对撞）
+          const s = (d.v || SITE_V[d.k] || 1) * 60000 / (Math.sqrt(near(d.x, d.y)) + 60000) * (0.8 + rng() * 0.4)
+          if (s > bs) { bs = s; best = d }
+        }
         if (best) mem.wp = { x: best.x, y: best.y }
       }
       if (!prey) mem.ta = deg(mem.wp.x, mem.wp.y)
@@ -472,22 +482,37 @@ function brain(st, seat, level, rng, env) {
   let ta = mem.ta == null ? sn.a : mem.ta
   let boost = mem.boost ? 1 : 0
 
-  /* 逐拍避障（决策间隔外的连续护栏，§4 前瞻避障） */
-  const wallM = level === 'competitive' ? 160_000 : level === 'balanced' ? 120_000 : 60_000
-  if (wallAhead(wallM)) ta = toCenter()
-  if (level !== 'casual') {
-    const coneR = level === 'competitive' ? 30000 : 26000
-    const dAhead = level === 'competitive' ? 100_000 : 100_000
-    if (dangerAhead(dAhead, coneR)) {
-      // 避蛇转向：垂直于当前朝向、朝世界心侧（确定性侧选）
-      const left = (sn.a - 90 + 360) % 360, right = (sn.a + 90) % 360
-      const c = toCenter()
-      ta = Math.abs(P.angDiff(left, c)) < Math.abs(P.angDiff(right, c)) ? left : right
-      if (level === 'competitive' && sn.n >= 16 && dangerAhead(60_000, 20000)) boost = 1 // 危险断尾（§4 三技之三）
+  /* 逐拍避障（决策间隔外的连续护栏，§4 前瞻避障；基础版=位置带+逃逸保持拍） */
+  const wallM = level === 'competitive' ? 160_000 : level === 'balanced' ? 120_000 : 100_000
+  /* 墙：头进入 wallBand+60px 位置带 → 连续 12 拍向心逃逸（防出带即回摆振荡撞墙）；
+   * 带内墙逃逸优先于避蛇（被"逼撞"进墙是围杀博弈，bot 不主动赴死——§2.4 撞墙死） */
+  const inWallBand = sn.x < wallM + 60000 || sn.y < wallM + 60000 || sn.x > P.W - wallM - 60000 || sn.y > P.H - wallM - 60000
+  if (inWallBand) mem.wall = 12
+  if (mem.wall > 0) {
+    mem.wall--
+    ta = toCenter()
+  } else {
+    /* 蛇：头前锥探测（含对方头=头对头预警）+ 贴身半径，危险点反向逃逸；
+       反向若指墙（wallM 带）折向世界心 */
+    const probeD = level === 'competitive' ? 110_000 : level === 'balanced' ? 100_000 : 80_000
+    const ax = sn.x + Math.cos(sn.a * RAD) * probeD, ay = sn.y + Math.sin(sn.a * RAD) * probeD
+    let danger = null, dd = 26000 * 26000
+    for (const f of foes) {
+      let d = dist2(f.x, f.y, ax, ay); if (d < dd) { dd = d; danger = f } // 对方头（头对头预警）
+      d = dist2(f.x, f.y, sn.x, sn.y); if (d < 20000 * 20000 && d < dd) { dd = d; danger = f }
+      const sg = P.segsFromPath(f.path, f.n)
+      for (let i = 2; i + 1 < sg.length; i += 2) {
+        d = dist2(sg[i], sg[i + 1], ax, ay); if (d < dd) { dd = d; danger = { x: sg[i], y: sg[i + 1] } }
+        d = dist2(sg[i], sg[i + 1], sn.x, sn.y); if (d < 18000 * 18000 && d < dd) { dd = d; danger = { x: sg[i], y: sg[i + 1] } }
+      }
     }
-  } else if (dangerAhead(60_000, 22000)) {
-    const left = (sn.a - 90 + 360) % 360, right = (sn.a + 90) % 360
-    ta = Math.abs(P.angDiff(left, toCenter())) < Math.abs(P.angDiff(right, toCenter())) ? left : right
+    if (danger) {
+      const dx = danger.x, dy = danger.y
+      ta = ((Math.atan2(sn.y - dy, sn.x - dx) / Math.PI * 180) % 360 + 360) % 360 // 危险点反向
+      const t2 = ta * RAD, px2 = sn.x + Math.cos(t2) * wallM, py2 = sn.y + Math.sin(t2) * wallM
+      if (px2 < 40000 || py2 < 40000 || px2 > P.W - 40000 || py2 > P.H - 40000) ta = toCenter()
+      if (level === 'competitive' && sn.n >= 16 && dd < 20000 * 20000) boost = 1 // 危险断尾（§4 三技之三）
+    }
   }
   return { a: Math.round(ta), boost }
 }
@@ -588,7 +613,8 @@ function emitOne(room, ctxRec, r, opt = {}) {
       ack: seat >= 0 && room.seats[seat] ? (room.seats[seat].lastSeq ?? -1) : -1,
       me: own ? { seat, n: own.n, sc: own.score, k2: own.kills, d: own.dead, rs: own.dead ? Math.max(0, own.respawnAt - st.tick) : 0, max: own.maxLen } : undefined,
       rd: { n: st.round.n, t: st.round.tick, k: st.round.king, rem: Math.max(0, P.ROUND_TICKS - st.round.tick) },
-      lb: st.tick % 10 === 0 ? st.leaderboard : undefined, // 1Hz 节流（§5.3）
+      lb: st.tick % 10 === 0 ? st.leaderboard.slice(0, 5).map((r) => [r.seat, r.score, r.n]) : undefined, // 1Hz 紧凑 [seat,score,n]≈75B（§5.5 预算 ~120B/s；名字客户端 roster 映射）
+      mm: st.tick % 10 === 0 ? (st.mm || []) : undefined,  // 全房密度点 1Hz（§7 小地图）
     },
     ents: entsArr, leave: full ? [] : leave,
   }
@@ -626,5 +652,8 @@ export const snakeKingSim = {
   LEVELS: ['casual', 'balanced', 'competitive'],
   url: '/games/multiplayer/snake-king/index.html',
   create, step, brain, emit, onSync,
+  welcomeExtra: () => ({ // S6 声明块（协议 §6 向后兼容自由键；S4 physics/S5 duel 同范式）
+    snake: { engine: 'snake-king-sim', v: 1, hitR: 14, eatR: 14, sweep: 1, aoiR: [420, 600], cap: { snake: 24, site: 180, drop: 240, len: 140 } },
+  }),
   fnv1a32, mulberry32,
 }

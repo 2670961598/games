@@ -6,7 +6,7 @@
  *   - 转向积分 stepTurn（§3.1 两端同式，指哪转哪的核）；
  *   - 蛇身=path 回放派生 segsFromPath（§5.1 增量只发头的技术支点）。
  * 整数纪律（沿用目录 milli-px 习惯）：位置 milli-px（int），角度整数度 [0,359]，
- * 运算只有 +-*/ 与 Math.*，无 Date/random 入判定路径。
+ * 运算只有四则与 Math.*，无 Date/random 入判定路径。
  * ===================================================================== */
 ;(function (root) {
   'use strict'
@@ -30,8 +30,9 @@
   var BOT_TARGET = 20            // 房实体目标 20 蛇（§2.1）
   var EAT_DOTS = { grass: 1, berry: 2, ore: 4, drop: 2, tail: 1 } // 三档+瞬态（§2.2）
 
-  /* ---------- 成长四权衡曲线（§2.3 表逐档；v 单位 mpx/tick） ---------- */
-  function vOf(n) { return Math.max(110000, 130000 - 2000 * Math.floor((n - 10) / 10)) }
+  /* ---------- 成长四权衡曲线（§2.3 表逐档；v 单位 mpx/tick=px/s×100） ----------
+   * v(n)=max(110,130−2·floor((n−10)/10)) px/s → mpx/tick 再 ÷10（10 tick/s） */
+  function vOf(n) { return Math.max(11000, 13000 - 200 * Math.floor((n - 10) / 10)) }
   function wOf(n) { return Math.max(12, 26 - Math.floor(n / 10)) }       // °/tick
   function zoomOf(n) { return Math.max(0.70, 1.00 - (n - 10) * 0.0025) }
   function aoiRpx(n) { return Math.round(420 / zoomOf(n)) }              // 订阅半径 px（§5.2）
