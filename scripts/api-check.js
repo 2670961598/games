@@ -372,16 +372,163 @@ const POLICIES = {
   })(),
 }
 
+/* ---------- snake-king S6 策略工厂（设计 §6 剧本策略：feed-grow/kill-hunt） ----------
+ * S6 语义：a 连续模拟量每拍重发（心跳兼保活）、boost 高价值远点才带。
+ * 避障=轨迹 rollout：同式积分（shared.cjs stepTurn/vOf，两端同式纯函数）预测 16 tick
+ * 扫掠点，撞墙/贴身(<20px 含对方头外推 +2/4/6 tick)即否——不通畅时 ±30..180° 扫描
+ * 候选航向取首个通畅者；觅食=争抢避让（180px 内更近他蛇头的光点不凑，防矿区扎堆）；
+ * kill-hunt=近距伏击（250px 内出现 n<60% 己方猎物才切换，闭式拦截点；其余全程觅食）。 */
+{
+  let SK = null
+  const sk = () => (SK || (SK = createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/snake-king/shared.cjs'))))
+  const deg = (x1, y1, x2, y2) => Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI
+  const foePts = (state, seat) => {
+    const pts = []
+    for (const id in state.ents) {
+      const e = state.ents[id]
+      if (e.k !== 'snake' || e.seat === seat || e.dead) continue
+      pts.push(e.x, e.y)
+      const p = e.path || []
+      for (let i = 0; i + 1 < p.length; i += 2) pts.push(p[i], p[i + 1])
+      const K = sk(), v = K.vOf(e.n), r2 = e.a * Math.PI / 180 // 对方头外推（随机转向预警位）
+      for (const dt of [2, 4, 6]) pts.push(e.x + Math.cos(r2) * v * dt, e.y + Math.sin(r2) * v * dt)
+    }
+    return pts
+  }
+  const steer = (state, seat, pickTarget) => {
+    const me = state.ents && state.ents['s' + seat]
+    if (!me || me.dead) return { a: 0, boost: 0 }
+    const W = state.map ? state.map.w : 1800000, H = state.map ? state.map.h : 1800000
+    const t = pickTarget(me, W, H)
+    let a = ((deg(me.x, me.y, t.x, t.y) % 360) + 360) % 360
+    let boost = t.far && me.n >= 16 ? 1 : 0 // 高价值远点冲刺（§2.3）
+    const margin = 200000
+    const rad0 = a * Math.PI / 180
+    if ((me.x < margin && Math.cos(rad0) < 0) || (me.x > W - margin && Math.cos(rad0) > 0)
+      || (me.y < margin && Math.sin(rad0) < 0) || (me.y > H - margin && Math.sin(rad0) > 0)) {
+      a = ((deg(me.x, me.y, W / 2, H / 2) % 360) + 360) % 360 // 避墙：转向心
+    }
+    const K = sk()
+    const pts = foePts(state, seat)
+    const v = K.vOf(me.n), w = K.wOf(me.n)
+    const rollOK = (target) => {
+      let x = me.x, y = me.y, a2 = me.a
+      for (let i = 0; i < 16; i++) {
+        a2 = K.stepTurn(a2, target, w)
+        x += Math.cos(a2 * Math.PI / 180) * v
+        y += Math.sin(a2 * Math.PI / 180) * v
+        if (x < 40000 || y < 40000 || x > W - 40000 || y > H - 40000) return false
+        for (let j = 0; j < pts.length; j += 2) {
+          if ((pts[j] - x) ** 2 + (pts[j + 1] - y) ** 2 < 20000 * 20000) return false
+        }
+      }
+      return true
+    }
+    if (!rollOK(a)) {
+      boost = 0 // 危险区禁 boost（ω×0.85 转向更差，§2.3）
+      for (const off of [30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180]) {
+        const cand = ((a + off) % 360 + 360) % 360
+        if (rollOK(cand)) { a = cand; break }
+      }
+    }
+    return { a: Math.round(((a % 360) + 360) % 360), boost }
+  }
+  const pickFood = (state, me) => {
+    let best = null, bs = -1
+    for (const id in state.ents) {
+      const e = state.ents[id]
+      let v = 0
+      if ((e.k === 'grass' || e.k === 'berry' || e.k === 'ore') && e.on) v = { grass: 1, berry: 2, ore: 4 }[e.k]
+      else if (e.k === 'drop') v = e.v || 2
+      if (!v) continue
+      const d = Math.hypot(e.x - me.x, e.y - me.y)
+      if (e.k !== 'drop') { // 争抢避让：180px 内更近他蛇头的光点不凑（防扎堆对撞）
+        let crowded = false
+        for (const id2 in state.ents) {
+          const o = state.ents[id2]
+          if (o.k !== 'snake' || o.seat === me.seat || o.dead) continue
+          if (Math.hypot(o.x - e.x, o.y - e.y) < Math.min(d, 180000)) { crowded = true; break }
+        }
+        if (crowded) continue
+      }
+      const s = v * 60000 / (d + 60000) * (e.k === 'drop' ? 1.6 : 1) // 尸体簇优先（§6）
+      if (s > bs) { bs = s; best = e }
+    }
+    return best
+  }
+  POLICIES['feed-grow'] = (state, seat) => steer(state, seat, (me, W, H) => {
+    const best = pickFood(state, me)
+    if (best) return { x: best.x, y: best.y, far: (best.v || 0) >= 4 && Math.hypot(best.x - me.x, best.y - me.y) > 400000 }
+    return { x: W / 2, y: H / 2 }
+  })
+  POLICIES['kill-hunt'] = (state, seat) => steer(state, seat, (me, W, H) => {
+    /* 近距伏击（成体 n≥20）：250px 内出现 n<60% 己方猎物 → 闭式拦截点收口（§4 同式）；
+       猎物游走使远距拦截扑空率高（实测 k=0），伏击+全程觅食底仓才是稳定击杀链路 */
+    let prey = null, pd = Infinity
+    if (me.n >= 20) {
+      for (const id in state.ents) {
+        const e = state.ents[id]
+        if (e.k !== 'snake' || e.seat === seat || e.dead || (e.p || 0) > 0) continue
+        if (e.n > me.n * 0.6) continue
+        const d = Math.hypot(e.x - me.x, e.y - me.y)
+        if (d < 250000 && d < pd) { pd = d; prey = e }
+      }
+    }
+    if (prey) {
+      const K = sk(), pv = K.vOf(prey.n)
+      const t = Math.min(60, Math.max(5, pd / Math.max(2000, K.vOf(me.n) * 1.6 - pv)))
+      return {
+        x: Math.max(60000, Math.min(W - 60000, prey.x + Math.cos(prey.a * Math.PI / 180) * pv * t)),
+        y: Math.max(60000, Math.min(H - 60000, prey.y + Math.sin(prey.a * Math.PI / 180) * pv * t)),
+        far: false,
+      }
+    }
+    const best = pickFood(state, me)
+    if (best) return { x: best.x, y: best.y, far: (best.v || 0) >= 4 && Math.hypot(best.x - me.x, best.y - me.y) > 400000 }
+    return { x: W / 2, y: H / 2 }
+  })
+}
+
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
 async function playScript(roomId, policy, deadlineMs, isS2 = false) {
   let cursor = 0, seq = 0 // S2：input.frame=客户端输入序号 seq（单调自 0，协议 §6 S2 声明）
+  /* S6 取证账本（GAMES-99 §6 A6/A7/full20 断言源）：事件流水 + 快照带宽画像 + 排行榜抽样 */
+  const ledger = []
+  const snaps = { n: 0, full: 0, incrBytes: [], fullBytes: [] }
+  let a6samples = 0, a6bad = 0, minSnakes = Infinity
+  const collect = (st) => {
+    const lb = st && st.leaderboard
+    if (lb && lb.length) { // A6：top5 非增 && 榜首=全场 argmax（任意 tick 抽样）
+      a6samples++
+      let mono = true
+      for (let i = 1; i < lb.length; i++) if (lb[i].score > lb[i - 1].score) mono = false
+      let amax = -Infinity
+      let snakes = 0
+      for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake') { snakes++; if (e.score > amax) amax = e.score } }
+      if (snakes < minSnakes) minSnakes = snakes
+      if (!mono || lb[0].score < amax) a6bad++
+    }
+  }
   for (;;) {
     const r = await gwState(roomId, cursor)
     if (!r.json || !r.json.ok) return { error: r.json && r.json.error || `HTTP ${r.status}` }
     cursor = r.json.cursor
-    if (r.json.phase === 'ended') return { result: r.json.result, tick: r.json.tick, state: r.json.state, stateHash: r.json.stateHash }
+    for (const e of r.json.events || []) {
+      const m = e.msg
+      if (m && m.t === 'snapshot') {
+        snaps.n++
+        if (m.full) { snaps.full++; snaps.fullBytes.push(JSON.stringify(m).length) }
+        else snaps.incrBytes.push(JSON.stringify(m).length)
+        if (m.events) ledger.push(...m.events)
+      }
+    }
+    if (r.json.phase === 'ended') {
+      collect(r.json.state)
+      return { result: r.json.result, tick: r.json.tick, state: r.json.state, stateHash: r.json.stateHash, ledger, snaps, a6samples, a6bad, minSnakes }
+    }
     if (Date.now() > deadlineMs) return { error: '剧本超时未终局' }
     if (r.json.phase === 'live') {
+      collect(r.json.state)
       const inp = policy(r.json.state, r.json.playerSeat)
       if (isS2) inp.frame = seq++
       const i = await gwInput(roomId, r.json.playerSeat, 'ctrl', inp)
@@ -447,7 +594,7 @@ console.log('[L1] 测试面仅本机可用')
 
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
-const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3'   // S3（GAMES-68）：注入带 seq、A4 走快照 ack 口径
+const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6'   // S3（GAMES-68）/S6（GAMES-99）：注入带 seq、A4 走快照 ack 口径
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
@@ -562,11 +709,53 @@ try {
         })()
       ok('A1', 'S3 首张建设快照（layer=build, full=1）', !!firstBuild,
         firstBuild ? `snapSeq=${firstBuild.msg.snapSeq} frame=${firstBuild.msg.frame} ents=${firstBuild.msg.ents.length}` : '未见建设快照')
+    } else if (meta.net.tech === 'S6') {
+      /* S6 海量实体（GAMES-99）：welcome.state 竞技场骨架（round 相位/排行榜/资源位）
+         + room.snake 声明块（碰撞口径护栏，S4 physics/S5 duel 同范式）；
+         live 后秒配 20 实体（bot 19+API 1）——「快照 ents ≥20 蛇」按全量 state 口径
+         断言（AOI 快照按 r(n) 过滤，同屏本就 <20，§5.2），首张全量快照另证。 */
+      const rd = smoke.state && smoke.state.round, lb = smoke.state && smoke.state.leaderboard
+      let siteN = 0
+      for (const id in (smoke.state && smoke.state.ents || {})) { const k = smoke.state.ents[id].k; if (k === 'grass' || k === 'berry' || k === 'ore') siteN++ }
+      ok('A1', 'S6 welcome.state 竞技场骨架（round 相位/排行榜/180 资源位）',
+        !!(rd && rd.n >= 1 && Array.isArray(lb) && siteN === 180),
+        `round=${rd && rd.n}-${rd && rd.tick} lb=${lb && lb.length} sites=${siteN}`)
+      const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.snake)
+      ok('A1', 'S6 room.snake 声明块（engine+碰撞口径+实体三顶）',
+        !!wel && !!wel.msg.room.snake.engine && wel.msg.room.snake.hitR === 14 && wel.msg.room.snake.cap.snake === 24,
+        wel ? `${wel.msg.room.snake.engine}#${wel.msg.room.snake.v} hitR=${wel.msg.room.snake.hitR} cap=${JSON.stringify(wel.msg.room.snake.cap)}` : '未见声明块')
+      let snakeN = 0, s6 = s, c6 = cursor
+      const t6 = Date.now()
+      while (snakeN < 20 && Date.now() - t6 < 2000) { // live→首 tick 席位自愈有 1 tick 竞态：短轮询补看
+        for (const id in (s6.state && s6.state.ents || {})) if (s6.state.ents[id].k === 'snake') snakeN++
+        if (snakeN >= 20) break
+        await sleep(50)
+        const q = await gwState(smoke.roomId, c6)
+        if (!q.json) break
+        s6 = q.json; c6 = q.json.cursor
+      }
+      ok('A1', 'S6 秒配 20 实体（live 后全场蛇数 ≥20）', snakeN >= 20, `snakes=${snakeN}`)
+      const firstFull6 = (s6.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+        || await (async () => {
+          let r = s6, c = c6, hit = null
+          const tt = Date.now()
+          while (!hit && Date.now() - tt < 2000) {
+            await sleep(40)
+            const q = await gwState(smoke.roomId, c)
+            if (!q.json) break
+            r = q.json; c = r.json.cursor
+            hit = (r.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+          }
+          return hit
+        })()
+      ok('A1', 'S6 首张全量快照（full=1，AOI 过滤）', !!firstFull6,
+        firstFull6 ? `snapSeq=${firstFull6.msg.snapSeq} ents=${firstFull6.msg.ents.length} aoi.r=${firstFull6.msg.ext && firstFull6.msg.ext.aoi && firstFull6.msg.ext.aoi.r}` : '未见快照')
     }
     /* A4 注入 → 帧反映（服务端同钟：receivedAt → 帧广播 ts）。
        S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。
        S4：注入 shot op → 首张球动期 snapshot（ext.physics，≤10 tick/100ms，§6 A4）。 */
-    const injPayload = isS2 ? { mx: 63, my: 0, fire: 0, frame: 1 }
+    const injPayload = isS2 && meta.net.tech !== 'S6' ? { mx: 63, my: 0, fire: 0, frame: 1 }
+      : meta.net.tech === 'S6' ? { a: 90, boost: 0, frame: 1 }
       : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
       : meta.net.tech === 'S5' ? { op: { k: 'pick', hero: 0 } }
       : { mx: 63, my: 0, fire: 0 }
@@ -706,6 +895,28 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       if (aid === 'A2') ok('A2', '能赢：剧本胜方达成终态（' + r.result.reason + '）', winnerOk, detail)
       else if (aid === 'A3') ok('A3', '能输：剧本败方终态达成（' + r.result.reason + '）', winnerOk, detail)
       else ok(aid, `${name}：期望胜方达成终态`, winnerOk, detail)
+      /* S6 专项断言（GAMES-99 §6）：A2 n≥100 实测锚 / A6 排行榜 / A7 击杀链路 / full20 四断言 */
+      if (meta.net.tech === 'S6') {
+        const meEnd = r.state && r.state.ents && r.state.ents['s' + room.playerSeat]
+        if (name === 'win') ok('A2', 'S6 成长曲线实测锚（轮末 n≥100）', !!(meEnd && meEnd.n >= 100), meEnd ? `n=${meEnd.n} score=${meEnd.score} kills=${meEnd.kills}` : '未见 API 蛇')
+        ok(aid, 'S6 A6 排行榜一致（top5 非增+榜首=argmax，全程抽样）', r.a6bad === 0 && r.a6samples > 50, `${r.a6samples} 次抽样 ${r.a6bad} 违例`)
+        if (name === 'hunt') {
+          const kills = r.ledger.filter((e) => e.k === 'kill')
+          const dies = r.ledger.filter((e) => e.k === 'die')
+          ok('A7', 'S6 击杀链路：事件账本 {k:kill} ≥1', kills.length >= 1, `kill×${kills.length} die×${dies.length}`)
+          const bad = dies.filter((e) => e.drops !== Math.ceil(e.len / 2))
+          ok('A7', 'S6 die.drops==ceil(victimLen/2)（T6-B 掉落公式）', dies.length > 0 && bad.length === 0,
+            `${dies.length} 例全对（首例 len=${dies[0] && dies[0].len} drops=${dies[0] && dies[0].drops}）`)
+        }
+        if (name === 'full20') {
+          const avgIncr = r.snaps.incrBytes.length ? Math.round(r.snaps.incrBytes.reduce((a, x) => a + x, 0) / r.snaps.incrBytes.length) : 0
+          const fullRatio = r.snaps.n ? +(r.snaps.full / r.snaps.n * 100).toFixed(1) : 100
+          const myDies = r.ledger.filter((e) => e.k === 'die' && e.seat === room.playerSeat).length
+          ok(aid, 'S6 full20：全场任意 tick 蛇数 ≥20', r.minSnakes >= 20, `min=${r.minSnakes}`)
+          ok(aid, 'S6 full20：快照账本增量均 ≤850B/全量占比 ≤8%', avgIncr <= 850 && fullRatio <= 8, `增量均 ${avgIncr}B（n=${r.snaps.incrBytes.length}）/全量 ${fullRatio}%`)
+          ok(aid, 'S6 full20：存活到轮末（API 席 death ≤3）', myDies <= 3, `deaths=${myDies}`)
+        }
+      }
     }
   } finally {
     if (room) await gw('DELETE', '/api/test/room', { roomId: room.roomId }).catch(() => {})
