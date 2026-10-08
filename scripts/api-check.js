@@ -39,20 +39,6 @@ const ok = (id, name, cond, detail = '') => {
   checks.push({ id, name, pass, detail: String(detail) })
   return pass
 }
-/* GAMES-99 断路收官（设计 §风险#2 预授权"剧本波动→调参不改判据、QA 单硬化"）：
-   hunt 胜负 / full20 存活两项"剧本结局"断言方差未收敛（同提交 6 样本绿1红5，双峰分布：
-   雪球局 API 席 281 分碾压 / 螺旋局 9 死；S6 硬红线[20实体稳定/带宽/排行榜/A7]六样本全绿不受影响）。
-   S6_DEV_TOLERANT=1 → 本二项转报告项：保留真值与 tolerated 标记、不计失败、控制台 ⚠ 披露；
-   QA1 单 DoD 硬化（三连跑全绿）后移除本开关。 */
-/* 追加（04:1x）：A2 能赢/成长锚同入 DEV 容忍——同提交今晚 A2 五连绿后两连红（03:57/04:10），
-   网关重启后 swarm 常驻巨房×2（98b5ebe 真修激活）负载抬高 tick 时滞→脚本输入冻结窗放大；
-   "能赢"能力本身已实证（多次 A2 绿），红=剧本对负载敏感，与 hunt/full20 同类。
-   QA1 单 DoD：三剧本全部硬化至三连跑全绿（严格模式）后删 S6_DEV_TOLERANT。 */
-const okT = (id, name, cond, detail = '') => process.env.S6_DEV_TOLERANT
-  ? (checks.push({ id, name, pass: true, tolerated: !cond, detail: String(detail) }),
-     cond ? passed++ : console.error(`  ⚠ ${id} ${name}（DEV容忍·真值红：${detail}）`),
-     true)
-  : ok(id, name, cond, detail)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /* ---------- 网关 HTTP 小客户端 ---------- */
@@ -969,13 +955,13 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       const teams = (api.endState && api.endState.teams) || meta.net.teams
       const myTeam = teams && Object.entries(teams).find(([, seats]) => seats.includes(room.playerSeat))
       const detail = `winner=${r.result.winner}（期望 ${sc.expectWinner}） reason=${r.result.reason} scores=${JSON.stringify(r.result.scores)} tick=${r.tick}${myTeam ? ` API 席属 ${myTeam[0]} 队` : ''} ${durMs}ms`
-      if (aid === 'A2') okT('A2', '能赢：剧本胜方达成终态（' + r.result.reason + '）', winnerOk, detail)  /* DEV 容忍（见 okT 注释） */
+      if (aid === 'A2') ok('A2', '能赢：剧本胜方达成终态（' + r.result.reason + '）', winnerOk, detail)
       else if (aid === 'A3') ok('A3', '能输：剧本败方终态达成（' + r.result.reason + '）', winnerOk, detail)
-      else okT(aid, `${name}：期望胜方达成终态`, winnerOk, detail)  /* hunt/full20 剧本结局：DEV 容忍（见 okT 注释） */
+      else ok(aid, `${name}：期望胜方达成终态`, winnerOk, detail)
       /* S6 专项断言（GAMES-99 §6）：A2 n≥100 实测锚 / A6 排行榜 / A7 击杀链路 / full20 四断言 */
       if (meta.net.tech === 'S6') {
         const meEnd = r.state && r.state.ents && r.state.ents['s' + room.playerSeat]
-        if (name === 'win') okT('A2', 'S6 成长曲线实测锚（轮末 n≥100）', !!(meEnd && meEnd.n >= 100), meEnd ? `n=${meEnd.n} score=${meEnd.score} kills=${meEnd.kills}` : '未见 API 蛇')  /* DEV 容忍（见 okT 注释） */
+        if (name === 'win') ok('A2', 'S6 成长曲线实测锚（轮末 n≥100）', !!(meEnd && meEnd.n >= 100), meEnd ? `n=${meEnd.n} score=${meEnd.score} kills=${meEnd.kills}` : '未见 API 蛇')
         ok(aid, 'S6 A6 排行榜一致（top5 非增+榜首=argmax，全程抽样）', r.a6bad === 0 && r.a6samples > 50, `${r.a6samples} 次抽样 ${r.a6bad} 违例`)
         if (name === 'hunt') {
           const kills = r.ledger.filter((e) => e.k === 'kill')
@@ -991,7 +977,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           const myDies = r.ledger.filter((e) => e.k === 'die' && e.seat === room.playerSeat).length
           ok(aid, 'S6 full20：全场任意 tick 蛇数 ≥20', r.minSnakes >= 20, `min=${r.minSnakes}`)
           ok(aid, 'S6 full20：快照账本增量均 ≤850B/全量占比 ≤8%', avgIncr <= 850 && fullRatio <= 8, `增量均 ${avgIncr}B（n=${r.snaps.incrBytes.length}）/全量 ${fullRatio}%`)
-          okT(aid, 'S6 full20：存活到轮末（API 席 death ≤3）', myDies <= 3, `deaths=${myDies}`)  /* DEV 容忍（见 okT 注释） */
+          ok(aid, 'S6 full20：存活到轮末（API 席 death ≤3）', myDies <= 3, `deaths=${myDies}`)
         }
       }
     }
