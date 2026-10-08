@@ -18,6 +18,7 @@
  * 深化归 #5 BOT 单。确定性：无 Date/random 入判定路径（seed 纪律同 mmo）。
  * ===================================================================== */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 const require = createRequire(import.meta.url)
 const P = require('../../../games/multiplayer/snake-king/shared.cjs')
 
@@ -206,7 +207,7 @@ function step(st, inputs, room) {
     if (st.afk[sn.seat] && st.afk[sn.seat].sig === sig) st.afk[sn.seat].t++
     else st.afk[sn.seat] = { sig, t: 0 }
     if (st.afk[sn.seat].t >= AFK_TICKS) {
-      const bot = brain(st, sn.seat, 'casual', mulberry32((st.seed ^ Math.imul(sn.seat + 7, 0x85ebca6b)) >>> 0), null)
+      const bot = brainImpl(st, sn.seat, 'casual', mulberry32((st.seed ^ Math.imul(sn.seat + 7, 0x85ebca6b)) >>> 0), null)
       inputs[sn.seat] = bot
     }
   }
@@ -392,10 +393,29 @@ function growSnake(st, sn, v, id, events) {
 
 /* =====================================================================
  * Bot brain（§4 三档生态位；决策间隔 30/12/8 tick，决策拍内闭式解 <2ms）
- * casual=随机巡游路过顺路吃（饲料蛇·供给）；balanced=AOI 价值评估贪心（v/(d+60px)，
- * 尸体簇×1.6、避蛇锥）；competitive=矿区巡逻+拦截预判+危险断尾（基础版，深化归 BOT 单）。
+ * casual=随机巡游+航向漂移+弱避障（饲料蛇·尸体供给主力=自然死亡源）；
+ * balanced=AOI 光点价值评估（v/(d+60px)、尸体簇×1.6、避蛇锥）+机会击杀（嘴边咬）；
+ * competitive=三技完整（拦截预判闭式解/围杀弧线走位/危险断尾，GAMES-102 深化）。
+ * 人格参数表（可观测梯度断言源，scripts/snake-king-bot2-check.mjs N1）：
+ *   drift=决策拍航向随机漂移度数（casual 漫游观感）；eatR=觅食半径（顺路→AOI→全图）；
+ *   hunt=猎物搜索半径（0=不猎）；avoid=避障强度（危险半径缩放——casual 0.55=贴脸才避，
+ *   碰撞死亡=自然死亡源；墙逃逸不缩放：供给是碰撞流不是撞墙流）；wallM/probeD 同前。
  * ===================================================================== */
 const BOT_EVERY = { casual: 30, balanced: 12, competitive: 8 }
+const PERSONA = {
+  casual:      { drift: 7, eatR: 150_000, hunt: 0,       avoid: 0.55, wallM: 100_000, probeD: 100_000 },
+  balanced:    { drift: 0, eatR: 420_000, hunt: 60_000,  avoid: 0.85, wallM: 120_000, probeD: 100_000 },
+  competitive: { drift: 0, eatR: 460_000, hunt: 400_000, avoid: 1.0,  wallM: 160_000, probeD: 110_000 },
+}
+/* 陪玩放水（GAMES-102，参照 GAMES-81 pool/GAMES-91 element 先例）：snake-king 常驻房
+ * 无终局 → rooms pulse.lose 恒 0，连败代理改用房内可观测面：真人蛇 state.deaths/kills
+ * （dropCorpse 逐 tick 累计）。梯度（env.kinds 标 human 席才适用，bot 对 bot 全力）：
+ *   L1 连败（deaths≥minFoeLose 且 kills==0）→ 免猎 + 头对头礼让（近碾压位侧偏）；
+ *   L2 重败（deaths≥hardFoeLose 且 kills==0）→ 再让食（真人 eatR*0.3 内光点不凑）。
+ * 生态位让位（swarm 房真人立足期）：human 席 n<majorN 成长保护窗不列猎物。
+ * 阈值入 game.json bot.mercy 可调；适配器出口包装注入 env.mercy（离线确定性不读文件，
+ * brain 缺省兜底 minFoeLose=2/hardFoeLose=4/majorN=40，element-duel 同式）。 */
+const MERCY_DFT = { minFoeLose: 2, hardFoeLose: 4, majorN: 40 }
 /** 争抢避让：光点 90px 内有更近的他蛇头 → 不凑（防扎堆对撞；生态击杀流锚设计口径） */
 function crowded(st, sn, dot) {
   const dme = dist2(sn.x, sn.y, dot.x, dot.y)
@@ -406,10 +426,20 @@ function crowded(st, sn, dot) {
   }
   return false
 }
-function brain(st, seat, level, rng, env) {
+/** 放水 L2 让食：重败真人（mercyOf 档 2）r 内的光点不凑 */
+function mercyFoeNear(foes, mercyOf, dot, r) {
+  for (const f of foes) {
+    if ((mercyOf.get(f.seat) || 0) < 2) continue
+    if (dist2(f.x, f.y, dot.x, dot.y) < r * r) return true
+  }
+  return false
+}
+function brainImpl(st, seat, level, rng, env) {
   const sn = st.ents['s' + seat]
   if (!sn || sn.dead) return { a: 0, boost: 0 }
   const mem = sn.mem
+  const per = PERSONA[level] || PERSONA.balanced
+  const mercy = (env && env.mercy) || MERCY_DFT
   const deg = (x, y) => ((Math.atan2(y - sn.y, x - sn.x) / Math.PI * 180) % 360 + 360) % 360
   const near = (x, y) => dist2(sn.x, sn.y, x, y)
   const dots = []
@@ -419,42 +449,77 @@ function brain(st, seat, level, rng, env) {
     else if (e.k === 'drop') dots.push(e)
   }
   const foes = []
-  for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake' && e.seat !== seat && !e.dead) foes.push(e) }
+  const mercyOf = new Map() // 席位 → 放水档（1=免猎+头对头礼让 / 2=再让食；仅 human 席）
+  const isHuman = env && env.kinds ? (s) => env.kinds[s] === 'human' : () => false
+  for (const id in st.ents) {
+    const e = st.ents[id]
+    if (e.k !== 'snake' || e.seat === seat || e.dead) continue
+    foes.push(e)
+    if (isHuman(e.seat) && e.kills === 0) {
+      if (e.deaths >= mercy.hardFoeLose) mercyOf.set(e.seat, 2)
+      else if (e.deaths >= mercy.minFoeLose) mercyOf.set(e.seat, 1)
+    }
+  }
   const v = P.vOf(sn.n)
   const toCenter = () => deg(P.W / 2, P.H / 2)
 
   if (mem.dt <= 0) {
     mem.dt = BOT_EVERY[level] || 12
     mem.boost = 0
+    /* 猎物过滤（放水链+生态位让位）：连败真人（L1）免猎；human 席 majorN 成长保护
+       窗内不猎——真人进 swarm 房立足期 bot 生态位让位（击杀压力全档豁免） */
+    const huntable = (f) => !mercyOf.has(f.seat) && !(isHuman(f.seat) && f.n < mercy.majorN)
     if (level === 'casual') {
-      // 漫游者：分区随机 waypoint 慢逛，路过光点顺路吃（不追，§4）
+      // 漫游者：分区随机 waypoint 慢逛+航向随机漂移（drift），路过光点顺路吃（不追，§4）
       if (!mem.wp || near(mem.wp.x, mem.wp.y) < 160_000) {
         mem.wp = { x: 150000 + ((rng() * (P.W - 300000)) | 0), y: 150000 + ((rng() * (P.H - 300000)) | 0) }
       }
-      let pass = null, pd = 150_000 * 150_000
+      let pass = null, pd = per.eatR * per.eatR
       for (const d of dots) { const d2 = near(d.x, d.y); if (d2 < pd) { pd = d2; pass = d } }
-      mem.ta = pass ? deg(pass.x, pass.y) : deg(mem.wp.x, mem.wp.y)
+      let ta = pass ? deg(pass.x, pass.y) : deg(mem.wp.x, mem.wp.y)
+      ta += (rng() * 2 - 1) * per.drift * 10 // 漂移 ±drift×10°（巡游观感+蛇形路径）
+      mem.ta = ((ta % 360) + 360) % 360
     } else if (level === 'balanced') {
       // 觅食者：AOI 内 v/(dist+60px) 贪心；尸体簇×1.6；避蛇锥 100px（§4）
-      let best = null, bs = -1
-      for (const d of dots) {
-        if (d.k !== 'drop' && crowded(st, sn, d)) continue // 争抢避让（尸体簇=公共宴席不避）
-        const dd = Math.sqrt(near(d.x, d.y))
-        let s = (d.v || SITE_V[d.k] || 1) * 60000 / (dd + 60000) * (0.7 + rng() * 0.6) // 抖动散伙（mmo pickSite 同式）
-        if (d.k === 'drop') s *= 1.6
-        if (s > bs) { bs = s; best = d }
+      // +机会击杀（hunt 半径内嘴边碾压位直捣头位微前导 ≤4 tick 不 boost——
+      //   剧本 kill-hunt 招式移植：不刻意远追、击杀是碰撞涌现）
+      let snap = null, sd = Infinity
+      if (per.hunt > 0 && sn.n >= 20) {
+        for (const f of foes) {
+          if (!huntable(f) || f.n > sn.n * 0.6 || f.prot > 0 || sn.n - f.n <= 2) continue
+          const d2 = near(f.x, f.y)
+          if (d2 < per.hunt * per.hunt && d2 < sd) { sd = d2; snap = f }
+        }
       }
-      mem.ta = best ? deg(best.x, best.y) : mem.ta
-      if (best && (best.v || 0) >= 4 && near(best.x, best.y) > 360_000 * 360_000 && sn.n >= 16) mem.boost = 1 // 偶尔冲刺
+      if (snap) {
+        const pv = P.vOf(snap.n), d = Math.sqrt(sd)
+        const lead = Math.min(d, pv * 4)
+        mem.ta = deg(snap.x + Math.cos(snap.a * RAD) * lead, snap.y + Math.sin(snap.a * RAD) * lead)
+        mem.wp = null
+      } else {
+        let best = null, bs = -1
+        for (const d of dots) {
+          const dd2 = near(d.x, d.y)
+          if (dd2 > per.eatR * per.eatR) continue            // AOI 半径截断（PERSONA.eatR）
+          if (d.k !== 'drop' && crowded(st, sn, d)) continue // 争抢避让（尸体簇=公共宴席不避）
+          if (mercyFoeNear(foes, mercyOf, d, 120_000)) continue // 放水 L2：重败真人 120px 内光点不凑
+          const dd = Math.sqrt(dd2)
+          let s = (d.v || SITE_V[d.k] || 1) * 60000 / (dd + 60000) * (0.7 + rng() * 0.6) // 抖动散伙（mmo pickSite 同式）
+          if (d.k === 'drop') s *= 1.6
+          if (s > bs) { bs = s; best = d }
+        }
+        mem.ta = best ? deg(best.x, best.y) : mem.ta
+        if (best && (best.v || 0) >= 4 && near(best.x, best.y) > 360_000 * 360_000 && sn.n >= 16) mem.boost = 1 // 偶尔冲刺
+      }
     } else {
-      // 猎手：矿区巡逻偏好 + 拦截预判（长度<60% 己方）+ 危险断尾（§4 三技基础版）。
+      // 猎手：矿区巡逻偏好 + 拦截预判闭式解 + 围杀弧线走位 + 危险断尾（§4 三技完整）。
       // 成体门槛：己方 n≥25 才开猎（幼蛇先吃成体——房内击杀流锚回 §1.4 设计口径）
       let prey = null, pd = Infinity
       if (sn.n >= 25 && !(mem.huntCd > 0)) {
         for (const f of foes) {
-          if (f.n > sn.n * 0.6 || f.prot > 0) continue
+          if (!huntable(f) || f.n > sn.n * 0.6 || f.prot > 0) continue
           const d2 = near(f.x, f.y)
-          if (d2 < 400_000 * 400_000 && d2 < pd) { pd = d2; prey = f }
+          if (d2 < per.hunt * per.hunt && d2 < pd) { pd = d2; prey = f }
         }
       }
       if (mem.huntCd > 0) mem.huntCd--
@@ -463,29 +528,54 @@ function brain(st, seat, level, rng, env) {
         const d = Math.sqrt(pd)
         const t = clamp(d / Math.max(20000, v * 1.6 - pv), 5, 60) // 追击几何闭式近似（§4 拦截）
         const ix = prey.x + Math.cos(prey.a * RAD) * pv * t, iy = prey.y + Math.sin(prey.a * RAD) * pv * t
-        mem.ta = deg(clamp(ix, 60000, P.W - 60000), clamp(iy, 60000, P.H - 60000))
+        /* 围杀弧线走位（三技之二，GAMES-102）：拦截点沿 prey 航向法向偏 min(80px, d×35%)
+           到远离己方的一侧——逼近轨迹先横切前缘再收口成弧线：猎物直逃撞拦截点、
+           回转撞己身（闭式无随机）；侧向叉积定远离侧 */
+        const nx = -Math.sin(prey.a * RAD), ny = Math.cos(prey.a * RAD)
+        const side = (prey.x - sn.x) * ny - (prey.y - sn.y) * nx > 0 ? -1 : 1
+        const off = Math.min(80_000, d * 0.35)
+        mem.ta = deg(clamp(ix + nx * side * off, 60000, P.W - 60000), clamp(iy + ny * side * off, 60000, P.H - 60000))
         if (d > 200_000 && sn.n >= 16) mem.boost = 1
         mem.wp = null
-      } else if (!mem.wp || near(mem.wp.x, mem.wp.y) < 200_000) {
-        const a2 = rng() * Math.PI * 2, r = rng() * 300000 // 中央王座环巡逻（引力井蹲守）
-        mem.wp = { x: 900000 + Math.trunc(Math.cos(a2) * r), y: 900000 + Math.trunc(Math.sin(a2) * r) }
+      } else {
+        /* 觅食（每拍重选，GAMES-102：原 waypoint 到达才重选——饲料生态里吃速垫底、
+           成体开猎窗（n≥25）推迟，猎手也要吃饭；矿区引力=王座环 300px 内光点 ×1.5
+           （蹲守偏好），无可选光点回落巡逻点） */
         let best = null, bs = -1
         for (const d of dots) {
+          if (near(d.x, d.y) > per.eatR * per.eatR) continue
           if (crowded(st, sn, d)) continue // 争抢避让：更近他蛇头的光点不凑（防扎堆对撞）
-          const s = (d.v || SITE_V[d.k] || 1) * 60000 / (Math.sqrt(near(d.x, d.y)) + 60000) * (0.8 + rng() * 0.4)
+          if (mercyFoeNear(foes, mercyOf, d, 120_000)) continue // 放水 L2 让食
+          let s = (d.v || SITE_V[d.k] || 1) * 60000 / (Math.sqrt(near(d.x, d.y)) + 60000) * (0.8 + rng() * 0.4)
+          if (dist2(d.x, d.y, 900000, 900000) < 300_000 * 300_000) s *= 1.5
           if (s > bs) { bs = s; best = d }
         }
-        if (best) mem.wp = { x: best.x, y: best.y }
+        if (best) { mem.wp = { x: best.x, y: best.y }; mem.ta = deg(best.x, best.y) }
+        else if (!mem.wp || near(mem.wp.x, mem.wp.y) < 200_000) {
+          const a2 = rng() * Math.PI * 2, r = rng() * 300000 // 中央王座环巡逻（引力井蹲守）
+          mem.wp = { x: 900000 + Math.trunc(Math.cos(a2) * r), y: 900000 + Math.trunc(Math.sin(a2) * r) }
+          mem.ta = deg(mem.wp.x, mem.wp.y)
+        } else mem.ta = deg(mem.wp.x, mem.wp.y)
       }
-      if (!prey) mem.ta = deg(mem.wp.x, mem.wp.y)
+    }
+    /* 放水 L1 头对头礼让：连败真人进入碾压位（<90px 且 |Δn|>2）→ 航向侧偏 25° 让头
+       （追击/觅食向保留，仅避开正面撞杀线——避障护栏兜底不会冲墙） */
+    for (const f of foes) {
+      if ((mercyOf.get(f.seat) || 0) < 1) continue
+      if (near(f.x, f.y) < 90_000 * 90_000 && Math.abs(sn.n - f.n) > 2) {
+        const away = deg(f.x, f.y) + 90 // 垂直于指向真人的方向侧偏
+        mem.ta = (((mem.ta + 25 * (P.angDiff(mem.ta, away) >= 0 ? 1 : -1)) % 360) + 360) % 360
+        break
+      }
     }
   }
   mem.dt--
   let ta = mem.ta == null ? sn.a : mem.ta
   let boost = mem.boost ? 1 : 0
 
-  /* 逐拍避障（决策间隔外的连续护栏，§4 前瞻避障；基础版=位置带+逃逸保持拍） */
-  const wallM = level === 'competitive' ? 160_000 : level === 'balanced' ? 120_000 : 100_000
+  /* 逐拍避障（决策间隔外的连续护栏，§4 前瞻避障；PERSONA.avoid=危险半径缩放：
+   * casual 0.55 贴脸才避=碰撞流自然死亡源；墙逃逸不缩放（供给是碰撞流不是撞墙流） */
+  const wallM = per.wallM
   /* 墙：头进入 wallBand+60px 位置带 → 连续 12 拍向心逃逸（防出带即回摆振荡撞墙）；
    * 带内墙逃逸优先于避蛇（被"逼撞"进墙是围杀博弈，bot 不主动赴死——§2.4 撞墙死） */
   const inWallBand = sn.x < wallM + 60000 || sn.y < wallM + 60000 || sn.x > P.W - wallM - 60000 || sn.y > P.H - wallM - 60000
@@ -494,18 +584,19 @@ function brain(st, seat, level, rng, env) {
     mem.wall--
     ta = toCenter()
   } else {
-    /* 蛇：头前锥探测（含对方头=头对头预警）+ 贴身半径，危险点反向逃逸；
+    /* 蛇：头前锥探测（含对方头=头对头预警）+ 贴身半径（×avoid），危险点反向逃逸；
        反向若指墙（wallM 带）折向世界心 */
-    const probeD = level === 'competitive' ? 110_000 : level === 'balanced' ? 100_000 : 100_000
+    const probeD = per.probeD
+    const hr = Math.round(20000 * per.avoid), br = Math.round(18000 * per.avoid) // 贴身头/体半径×avoid
     const ax = sn.x + Math.cos(sn.a * RAD) * probeD, ay = sn.y + Math.sin(sn.a * RAD) * probeD
-    let danger = null, dd = 26000 * 26000
+    let danger = null, dd = (26000 * per.avoid) * (26000 * per.avoid)
     for (const f of foes) {
       let d = dist2(f.x, f.y, ax, ay); if (d < dd) { dd = d; danger = f } // 对方头（头对头预警）
-      d = dist2(f.x, f.y, sn.x, sn.y); if (d < 20000 * 20000 && d < dd) { dd = d; danger = f }
+      d = dist2(f.x, f.y, sn.x, sn.y); if (d < hr * hr && d < dd) { dd = d; danger = f }
       const sg = P.segsFromPath(f.path, f.n)
       for (let i = 2; i + 1 < sg.length; i += 2) {
         d = dist2(sg[i], sg[i + 1], ax, ay); if (d < dd) { dd = d; danger = { x: sg[i], y: sg[i + 1] } }
-        d = dist2(sg[i], sg[i + 1], sn.x, sn.y); if (d < 18000 * 18000 && d < dd) { dd = d; danger = { x: sg[i], y: sg[i + 1] } }
+        d = dist2(sg[i], sg[i + 1], sn.x, sn.y); if (d < br * br && d < dd) { dd = d; danger = { x: sg[i], y: sg[i + 1] } }
       }
     }
     if (danger) {
@@ -643,6 +734,16 @@ function onSync(room, ctx) {
 /* =====================================================================
  * 适配器出口（rooms.js 注册表形状 + S2 扩展 emit/onSync）
  * ===================================================================== */
+/* 放水阈值配置（game.json bot.mercy 可调；读失败/缺省 → MERCY_DFT 兜底，启动读一次缓存） */
+let _mercyCfg = null
+function mercyCfg() {
+  if (_mercyCfg) return _mercyCfg
+  try {
+    const cfg = JSON.parse(readFileSync(new URL('../../../games/multiplayer/snake-king/game.json', import.meta.url), 'utf8'))
+    _mercyCfg = Object.assign({}, MERCY_DFT, (cfg.bot && cfg.bot.mercy) || {})
+  } catch { _mercyCfg = MERCY_DFT }
+  return _mercyCfg
+}
 export const snakeKingSim = {
   META: {
     gameId: 'snake-king', title: '蛇王争霸', mode: 'swarm-arena',
@@ -653,7 +754,11 @@ export const snakeKingSim = {
   },
   LEVELS: ['casual', 'balanced', 'competitive'],
   url: '/games/multiplayer/snake-king/index.html',
-  create, step, brain, emit, onSync,
+  create, step, emit, onSync,
+  /* brain 出口包装（GAMES-102 放水链）：game.json bot.mercy 阈值读出经 env.mercy 注入
+   * （element-duel 适配器同式）；无 env（AFK 托管/离线直调）→ brainImpl 缺省兜底 */
+  brain: (st, seat, level, rng, env) =>
+    brainImpl(st, seat, level, rng, env ? Object.assign({}, env, { mercy: mercyCfg() }) : env),
   welcomeExtra: () => ({ // S6 声明块（协议 §6 向后兼容自由键；S4 physics/S5 duel 同范式）
     snake: { engine: 'snake-king-sim', v: 1, hitR: 14, eatR: 14, sweep: 1, aoiR: [420, 600], cap: { snake: 24, site: 180, drop: 240, len: 140 } },
   }),

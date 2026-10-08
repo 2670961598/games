@@ -16,7 +16,8 @@
   "bot": {
     "levels": ["casual", "balanced", "competitive"],
     "swarm": true,
-    "desc": "三档=生态位（设计 §4/附决策 9）：casual 饲料蛇（尸体光点供给主力）/ balanced 觅食者（AOI 价值评估）/ competitive 猎手（矿区巡逻+拦截预判+危险断尾）——首版均衡完整、其余基础实现，深化归 #5 BOT 单"
+    "mercy": { "minFoeLose": 2, "hardFoeLose": 4, "majorN": 40 },
+    "desc": "三档=生态位（设计 §4/附决策 9）：casual 饲料蛇（巡游漂移+弱避障=自然死亡源·尸体光点供给主力）/ balanced 觅食者（AOI 价值评估+机会击杀）/ competitive 猎手三技完整（拦截预判闭式解/围杀弧线走位/危险断尾）。放水链（GAMES-102）：真人连败（deaths≥minFoeLose 且 0 击杀）→ bot 免猎+头对头礼让，重败再让食；真人 majorN 成长保护窗不猎（swarm 房生态位让位）"
   },
   "scoring": {
     "win": "轮末 score=n+kills×15 ≥120，榜首加冕蛇王",
