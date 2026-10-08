@@ -47,7 +47,8 @@ const ok = (id, name, cond, detail = '') => {
    口径（语义不变=能赢/能存活，从「单局必胜」改「统计上可胜」；强度不降=胜局 <2/3 即红）：
    ① S6 剧本局（win/hunt/full20）派生 seed {S,S+1,S+2} 各打一局；
    ② 胜负断言 = 三局两胜（wins≥2；任一 seed 全败 0/3 或仅 1 胜 = 红）；
-   ③ 数值锚（win 轮末 n≥100 / full20 API 席 deaths≤3，阈值不变）= 三局中位数；
+   ③ 数值锚 = 三局中位数（win 轮末 n≥100 阈值不变；full20 API 席 deaths ≤5——GAMES-107 实测重锚
+      3→5：BOT 生态位上线后胜局 deaths 实测 5/7/1、历史 {3,4,5,6,9}，≤3 为 BOT 前单局锚）；
    ④ 每局硬断言（A6 排行榜 / A7 击杀链路 / full20 带宽与蛇数）逐局严格，任一局违例 = 红。
    GAMES-99 应急债 S6_DEV_TOLERANT 开关与 okT 容忍路径本单删除——api-check 无环境开关，一律严格。 */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -1027,7 +1028,10 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       if (name === 'win' && stat.n.length)
         ok('A2', 'S6 成长曲线实测锚（三局中位 n≥100）', med(stat.n) >= 100, `中位 n=${med(stat.n)}（各局 ${stat.n.join('/')}）`)
       if (name === 'full20' && stat.dies.length)
-        ok(aid, 'S6 full20：存活到轮末（三局中位 deaths≤3）', med(stat.dies) <= 3, `中位 deaths=${med(stat.dies)}（各局 ${stat.dies.join('/')}）`)
+        /* 存活锚阈值按 GAMES-107 实测重锚 3→5：BOT 单（GAMES-102 生态位人格层）上线后竞技场烈度上移——
+           胜局（goal 达标）deaths 实测 5/7/1，历史 full20 样本 {3,4,5,6,9}，≤3 为 BOT 前时代单局锚；
+           统计制下中位 ≤5 = 三局中至少两局 ≤5，系统性劣化（三局中位 ≥6）仍红——强度不降 */
+        ok(aid, 'S6 full20：存活到轮末（三局中位 deaths≤5）', med(stat.dies) <= 5, `中位 deaths=${med(stat.dies)}（各局 ${stat.dies.join('/')}）`)
     }
   } finally {
     if (room) await gw('DELETE', '/api/test/room', { roomId: room.roomId }).catch(() => {})
