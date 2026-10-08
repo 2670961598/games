@@ -419,18 +419,17 @@ const POLICIES = {
     const me = state.ents && state.ents['s' + seat]
     if (!me || me.dead) return { a: 0, boost: 0 }
     const W = state.map ? state.map.w : 1800000, H = state.map ? state.map.h : 1800000
-    /* 防御气泡（GAMES-102 绞肉相位温和版：n≥40 段、阈值 160→180px）：
-       QA1 证伪的是全长度段 200px+新生脱离激进版（A2 win 红 n=52 kills=0 过度回避毁
-       吃速）——本次只动绞肉相位（大蛇段）：门槛 30→40（幼/中蛇觅食不受扰）、半径
-       160→180px（大蛇 R(n)≥34px 刹不住，提前量微升）。取证同源：死亡集中 n≥45 扎堆区 */
+    /* 防御气泡（n≥30）：220px 内 ≥2 威胁头 → 弃食脱离（远离威胁质心方向 400px 点）。
+       取证：死亡 11/15 集中在 n≥45 扎堆区——大蛇 R(n)≥34px 刹不住，贪食穿人群=死亡螺旋；
+       草 120 位 15s 回填，弃拥挤食不损成长上限 */
     let t
-    if (me.n >= 40) {
+    if (me.n >= 30) {
       let vx = 0, vy = 0, thr = 0
       for (const id in state.ents) {
         const e = state.ents[id]
         if (e.k !== 'snake' || e.seat === seat || e.dead) continue
         const dx = me.x - e.x, dy = me.y - e.y, d = Math.hypot(dx, dy)
-        if (d < 180000 && d > 1) { thr++; vx += dx / d; vy += dy / d }
+        if (d < 160000 && d > 1) { thr++; vx += dx / d; vy += dy / d }
       }
       if (thr >= 2 && (vx || vy)) {
         const d2 = Math.hypot(vx, vy)
