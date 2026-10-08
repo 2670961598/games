@@ -1084,12 +1084,17 @@
       "notes": "E6-W1-T5 轨 S5 回合权威本格首证收官（共享3×3棋盘位置即决策/六对元素反应确定性结算/零快照纯事件驱动=ruling即全量个性化态/迷雾个性化state目录/deckSeed双流派生+零隐藏随机/托管三层）。STRESS 三组 PASS（6测试槽错峰承载8min frame 100.144/100.046Hz漂移[-4,+2]/ruling 810条全量0错、5min满编2/2 spot 6世代滚动99.995Hz+疲劳4/8参与致死在线实证、六游戏混编30/30全在场零错误+护栏429+mmo镇10.004Hz；四件套全过：一段321==321全配对+RSS二段起点重置101→66-72MB闭环QA2 O-2）；QA1/QA2红线全过（200ms延迟容忍论/重连三档/满员旁观frame共同窗全同/feed≤1s）；F1反应表键序死代码事故复盘（排序键死码双防线+穷举断言）。VIS 链位 GAMES-95 已交付 feature/GAMES-95 待合并 main"
     },
     "multiplayer:snake-king": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "E6-W1-T6 S6 海量实体首证 DEV 交付（GAMES-99，单链 2/10）：io 大房蛇 20+ 实体·AOI 个性化增量·path 回放蛇身·轮赛常驻房；api-check 含 full20 满房剧本"
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 9,
+      "notes": "E6-W1-T6 轨 S6 海量实体首证收官（20+蛇同房巨房竞技场/AOI 个性化增量快照/path 回放蛇身/轮赛常驻房 persistent 跳过 abandon）。STRESS 三组 PASS（6 测试槽 churn 8min 漂移[-1,+1]+swarm 双锚 9.99Hz/生态 kill 6557·die 7045/18 代 round-end、满编 20/20 spot 18/18 采样+10.001Hz+撤席托管转移@10-20s、七游戏混编全在场零错误+RSS 二段起点重置）；QA2 五面退回 0（200ms 延迟 ack=RTT 零放大/重连三档/满员 24 席第 25 旁观/长局 5min 3002 快照零帧隙）；QA1/FIX1/BOT 剧本方差三单攻坚（负载三档对照证伪→随机相位方差定级→开关保留）；bothost swarm 白名单死码事故（浏览器目击反推）；VIS 色盲双编码+识图 v2 20 断言 4 连绿。实录=知识库草稿 GAMES-106/蛇王争霸开发实录",
+      "net": {
+        "tech": "S6",
+        "bot": "生态位三档 PERSONA（casual 饲料蛇·碰撞流死亡源/balanced 觅食者 AOI 价值评估+机会击杀/competitive 猎手三技：拦截闭式解+围杀弧线+危险断尾）+放水链（连败代理=房内 deaths/kills，常驻房无终局脉冲）+swarm 让位/45s 防抖补员",
+        "chain": "GAMES-98..106 九单链完整+FIX2 跳过（QA2 退回 0 全低危观察项，无修复对象——PM 裁量不派单）"
+      }
     }
   }
 }

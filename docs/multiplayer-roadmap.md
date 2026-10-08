@@ -105,7 +105,7 @@ E6 战役（umbrella，SPECIAL 不派工）
 - 并发约束：core 泳道同时仅 1 worker；联机单与 E1 单据在泳道内排队，M0 优先。
 - 每款联机游戏交付时同步登记 docs/game-quality.json（复用档案骨架，新增 `net.tech`/`bot` 字段）。
 
-### 4.3 单链进展看板（2026-09-29 · GAMES-86 更新）
+### 4.3 单链进展看板（2026-10-08 · GAMES-106 更新）
 
 | 游戏 | 轨道/技术 | 状态 | 单链 |
 |---|---|---|---|
@@ -114,9 +114,10 @@ E6 战役（umbrella，SPECIAL 不派工）
 | 星海小镇 | T2 · S2+AOI | **accepted** | GAMES-50..65 十单链完整 |
 | 帝国萌芽 | T3 · S3 | **accepted** | GAMES-66..76 十单链完整（压测三组 PASS+四件套，docs/qa/empire-sprout-stress.md） |
 | 八球台球 | T4 · S4 | **accepted** | GAMES-77..86 十单链完整（压测三组 PASS+四件套：100Hz 快钟/满编 2/2/五游戏混编，docs/qa/pool-physics-stress.md；VIS 链位 GAMES-85 待合并 main） |
-| 元素对决 | T5 · S5 | **accepted（本日收官）** | GAMES-87..96 十单链完整（压测三组 PASS+四件套：回合权威 100Hz/满编 2/2 六世代滚动/六游戏混编，docs/qa/element-duel-stress.md；VIS 链位 GAMES-95 待合并 main） |
+| 元素对决 | T5 · S5 | **accepted** | GAMES-87..96 十单链完整（压测三组 PASS+四件套：回合权威 100Hz/满编 2/2 六世代滚动/六游戏混编，docs/qa/element-duel-stress.md） |
+| 蛇王争霸 | T6 · S6 | **accepted（本日收官）** | GAMES-98..106 九单链+FIX2 跳过（QA2 退回 0 全低危；压测三组 PASS+四件套：巨房 6 槽 churn/满编 20/20 spot/七游戏混编，docs/qa/snake-king-stress.md） |
 
-W1 波（T1-T7 各首款）进度 5/7：T1/T2/T3/T4/T5 已收官；S1-S5 技术面各有一条完整 10 单链实证（S5=回合权威+零快照事件流+迷雾个性化+托管三层）。E6 总进度 **6/21**（net-tank M0 参考+五条完整单链）。下一批：T6 海量/T7 预测各首款。
+W1 波（T1-T7 各首款）进度 6/7：T1/T2/T3/T4/T5/T6 已收官；S1-S6 技术面各有一条完整单链实证（S6=海量实体 20+ 蛇巨房/AOI 个性化增量/path 回放蛇身/轮赛常驻房；单链 9 单+FIX2 按 QA2 退回 0 裁量跳过）。E6 总进度 **7/21**（net-tank M0 参考+六条完整单链）。下一批：T7 预测首款。
 
 ## 5. 联机红线（在三支柱之上追加）
 
