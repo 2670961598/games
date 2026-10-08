@@ -14,6 +14,7 @@
  *   A3 能输：剧本败方终态（对称局）
  *   A4 操作注入→帧反映 <100ms（服务端同钟计时：receivedAt → 帧广播 ts）
  *   A5 断线重连：$disconnect → 席位保留 → $reconnect 凭 token 复席，<10s 状态恢复续玩
+ * S6 口径（GAMES-107）：混沌类剧本断言=多 seed 统计制（胜负三局两胜/数值锚中位，无环境开关一律严格）
  * 报告：JSON 落盘 kernel 证据路径（默认 /Volumes/BigDisk/Studio/kernel/workers/GAMES-41）。
  * 退出码：0=全绿，1=有失败（可挂闸门）；2=用法/环境错误。
  * 与 net-check 分工：本工具管 API 面（逻辑可玩性），net-check 管浏览器面
@@ -39,20 +40,16 @@ const ok = (id, name, cond, detail = '') => {
   checks.push({ id, name, pass, detail: String(detail) })
   return pass
 }
-/* GAMES-99 断路收官（设计 §风险#2 预授权"剧本波动→调参不改判据、QA 单硬化"）：
-   hunt 胜负 / full20 存活两项"剧本结局"断言方差未收敛（同提交 6 样本绿1红5，双峰分布：
-   雪球局 API 席 281 分碾压 / 螺旋局 9 死；S6 硬红线[20实体稳定/带宽/排行榜/A7]六样本全绿不受影响）。
-   S6_DEV_TOLERANT=1 → 本二项转报告项：保留真值与 tolerated 标记、不计失败、控制台 ⚠ 披露；
-   QA1 单 DoD 硬化（三连跑全绿）后移除本开关。 */
-/* 追加（04:1x）：A2 能赢/成长锚同入 DEV 容忍——同提交今晚 A2 五连绿后两连红（03:57/04:10），
-   网关重启后 swarm 常驻巨房×2（98b5ebe 真修激活）负载抬高 tick 时滞→脚本输入冻结窗放大；
-   "能赢"能力本身已实证（多次 A2 绿），红=剧本对负载敏感，与 hunt/full20 同类。
-   QA1 单 DoD：三剧本全部硬化至三连跑全绿（严格模式）后删 S6_DEV_TOLERANT。 */
-const okT = (id, name, cond, detail = '') => process.env.S6_DEV_TOLERANT
-  ? (checks.push({ id, name, pass: true, tolerated: !cond, detail: String(detail) }),
-     cond ? passed++ : console.error(`  ⚠ ${id} ${name}（DEV容忍·真值红：${detail}）`),
-     true)
-  : ok(id, name, cond, detail)
+/* GAMES-107 判据口径校准（PM 裁决；DEV GAMES-99→QA1→FIX1 GAMES-101→BOT GAMES-102 四单攻坚收官，
+   攻坚数据表与口径语义详见 docs/designs/snake-king.md §6.1 注记）：
+   20 蛇混沌相位分岔（双峰：雪球局 API 席碾压 vs 绞肉局全场低分团灭）——数量说/负载说均证伪，
+   同 seed 同提交复跑也双峰取样 → 剧本结局单局断言（winner=A / deaths≤3）与混沌本质不匹配。
+   口径（语义不变=能赢/能存活，从「单局必胜」改「统计上可胜」；强度不降=胜局 <2/3 即红）：
+   ① S6 剧本局（win/hunt/full20）派生 seed {S,S+1,S+2} 各打一局；
+   ② 胜负断言 = 三局两胜（wins≥2；任一 seed 全败 0/3 或仅 1 胜 = 红）；
+   ③ 数值锚（win 轮末 n≥100 / full20 API 席 deaths≤3，阈值不变）= 三局中位数；
+   ④ 每局硬断言（A6 排行榜 / A7 击杀链路 / full20 带宽与蛇数）逐局严格，任一局违例 = 红。
+   GAMES-99 应急债 S6_DEV_TOLERANT 开关与 okT 容忍路径本单删除——api-check 无环境开关，一律严格。 */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /* ---------- 网关 HTTP 小客户端 ---------- */
@@ -954,46 +951,83 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       }
       continue
     }
-    const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
-    room = created.json && created.json.ok ? created.json : null
-    if (!room) { ok(aid, `${name} 建房`, false, `HTTP ${created.status} ${created.json && created.json.error}`); continue }
-    const tickMs = (room.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
-    const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
-    const policy = POLICIES[sc.policy || 'idle'] || POLICIES.idle
-    const r = await playScript(room.roomId, policy, Date.now() + budgetMs, isS2, scriptPollMs)
-    const durMs = Date.now() - t0
-    if (!r.result) {
-      ok(aid, `${name} 达成终态`, false, r.error || '未终局')
-    } else {
-      const winnerOk = r.result.winner === sc.expectWinner
-      const teams = (api.endState && api.endState.teams) || meta.net.teams
-      const myTeam = teams && Object.entries(teams).find(([, seats]) => seats.includes(room.playerSeat))
-      const detail = `winner=${r.result.winner}（期望 ${sc.expectWinner}） reason=${r.result.reason} scores=${JSON.stringify(r.result.scores)} tick=${r.tick}${myTeam ? ` API 席属 ${myTeam[0]} 队` : ''} ${durMs}ms`
-      if (aid === 'A2') okT('A2', '能赢：剧本胜方达成终态（' + r.result.reason + '）', winnerOk, detail)  /* DEV 容忍（见 okT 注释） */
-      else if (aid === 'A3') ok('A3', '能输：剧本败方终态达成（' + r.result.reason + '）', winnerOk, detail)
-      else okT(aid, `${name}：期望胜方达成终态`, winnerOk, detail)  /* hunt/full20 剧本结局：DEV 容忍（见 okT 注释） */
-      /* S6 专项断言（GAMES-99 §6）：A2 n≥100 实测锚 / A6 排行榜 / A7 击杀链路 / full20 四断言 */
-      if (meta.net.tech === 'S6') {
-        const meEnd = r.state && r.state.ents && r.state.ents['s' + room.playerSeat]
-        if (name === 'win') okT('A2', 'S6 成长曲线实测锚（轮末 n≥100）', !!(meEnd && meEnd.n >= 100), meEnd ? `n=${meEnd.n} score=${meEnd.score} kills=${meEnd.kills}` : '未见 API 蛇')  /* DEV 容忍（见 okT 注释） */
-        ok(aid, 'S6 A6 排行榜一致（top5 非增+榜首=argmax，全程抽样）', r.a6bad === 0 && r.a6samples > 50, `${r.a6samples} 次抽样 ${r.a6bad} 违例`)
-        if (name === 'hunt') {
-          const kills = r.ledger.filter((e) => e.k === 'kill')
-          const dies = r.ledger.filter((e) => e.k === 'die')
-          ok('A7', 'S6 击杀链路：事件账本 {k:kill} ≥1', kills.length >= 1, `kill×${kills.length} die×${dies.length}`)
-          const bad = dies.filter((e) => e.drops !== Math.ceil(e.len / 2))
-          ok('A7', 'S6 die.drops==ceil(victimLen/2)（T6-B 掉落公式）', dies.length > 0 && bad.length === 0,
-            `${dies.length} 例全对（首例 len=${dies[0] && dies[0].len} drops=${dies[0] && dies[0].drops}）`)
+    /* GAMES-107 统计口径（见文件头注记）：S6 剧本局（win/hunt/full20）派生 seed {S,S+1,S+2} 各一局，
+       胜负=三局两胜、数值锚=三局中位；lose 与非 S6 游戏维持单局严格口径（行为不变） */
+    const statSeeds = (meta.net.tech === 'S6' && name !== 'lose') ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
+    const stat = { win: [], n: [], dies: [], notes: [] }
+    for (let si = 0; si < statSeeds.length; si++) {
+      const seed = statSeeds[si]
+      const s0 = Date.now()
+      try {
+        const created = await gw('POST', '/api/test/room', { gameId, seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
+        room = created.json && created.json.ok ? created.json : null
+        if (!room) { ok(aid, `${name} 建房`, false, `HTTP ${created.status} ${created.json && created.json.error}`); break }
+        const tickMs = (room.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
+        const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
+        const policy = POLICIES[sc.policy || 'idle'] || POLICIES.idle
+        const r = await playScript(room.roomId, policy, Date.now() + budgetMs, isS2, scriptPollMs)
+        const durMs = Date.now() - s0
+        if (!r.result) {
+          ok(aid, `${name} 达成终态`, false, r.error || '未终局')
+          stat.win.push(false)
+          if (name === 'win') stat.n.push(0)
+          if (name === 'full20') stat.dies.push(99)
+          break
         }
-        if (name === 'full20') {
-          const avgIncr = r.snaps.incrBytes.length ? Math.round(r.snaps.incrBytes.reduce((a, x) => a + x, 0) / r.snaps.incrBytes.length) : 0
-          const fullRatio = r.snaps.n ? +(r.snaps.full / r.snaps.n * 100).toFixed(1) : 100
-          const myDies = r.ledger.filter((e) => e.k === 'die' && e.seat === room.playerSeat).length
-          ok(aid, 'S6 full20：全场任意 tick 蛇数 ≥20', r.minSnakes >= 20, `min=${r.minSnakes}`)
-          ok(aid, 'S6 full20：快照账本增量均 ≤850B/全量占比 ≤8%', avgIncr <= 850 && fullRatio <= 8, `增量均 ${avgIncr}B（n=${r.snaps.incrBytes.length}）/全量 ${fullRatio}%`)
-          okT(aid, 'S6 full20：存活到轮末（API 席 death ≤3）', myDies <= 3, `deaths=${myDies}`)  /* DEV 容忍（见 okT 注释） */
+        const winnerOk = r.result.winner === sc.expectWinner
+        const teams = (api.endState && api.endState.teams) || meta.net.teams
+        const myTeam = teams && Object.entries(teams).find(([, seats]) => seats.includes(room.playerSeat))
+        const detail = `winner=${r.result.winner}（期望 ${sc.expectWinner}） reason=${r.result.reason} scores=${JSON.stringify(r.result.scores)} tick=${r.tick}${myTeam ? ` API 席属 ${myTeam[0]} 队` : ''} ${durMs}ms`
+        stat.win.push(winnerOk)
+        stat.notes.push(`seed=${seed} ${winnerOk ? '胜' : '负'}(${r.result.reason})`)
+        if (statSeeds.length === 1) {
+          /* 单局口径（lose / 非 S6 游戏）：胜负断言原样逐局严格，行为与 GAMES-107 前一致 */
+          if (aid === 'A2') ok('A2', '能赢：剧本胜方达成终态（' + r.result.reason + '）', winnerOk, detail)
+          else if (aid === 'A3') ok('A3', '能输：剧本败方终态达成（' + r.result.reason + '）', winnerOk, detail)
+          else ok(aid, `${name}：期望胜方达成终态`, winnerOk, detail)
+        } else {
+          /* 统计口径：单局真值入台账（报告 JSON stat 条目+控制台披露），胜负断言局后聚合 */
+          checks.push({ id: aid, name: `${name} 局 ${si + 1}/${statSeeds.length} 终态（seed=${seed}）`, pass: true, stat: true, detail })
+          console.log(`  · ${aid} ${name} 局 ${si + 1}/${statSeeds.length} seed=${seed} ${winnerOk ? '胜' : '负'}（${r.result.reason}）${durMs}ms`)
         }
+        /* S6 专项断言（GAMES-99 §6）：A6 排行榜 / A7 击杀链路 / full20 带宽与蛇数——逐局严格；
+           数值锚（win 轮末 n / full20 deaths）只采样，局后中位聚合断言 */
+        if (meta.net.tech === 'S6') {
+          const meEnd = r.state && r.state.ents && r.state.ents['s' + room.playerSeat]
+          if (name === 'win') stat.n.push(meEnd ? meEnd.n : 0)
+          ok(aid, 'S6 A6 排行榜一致（top5 非增+榜首=argmax，全程抽样）', r.a6bad === 0 && r.a6samples > 50, `${r.a6samples} 次抽样 ${r.a6bad} 违例`)
+          if (name === 'hunt') {
+            const kills = r.ledger.filter((e) => e.k === 'kill')
+            const dies = r.ledger.filter((e) => e.k === 'die')
+            ok('A7', 'S6 击杀链路：事件账本 {k:kill} ≥1', kills.length >= 1, `kill×${kills.length} die×${dies.length}`)
+            const bad = dies.filter((e) => e.drops !== Math.ceil(e.len / 2))
+            ok('A7', 'S6 die.drops==ceil(victimLen/2)（T6-B 掉落公式）', dies.length > 0 && bad.length === 0,
+              `${dies.length} 例全对（首例 len=${dies[0] && dies[0].len} drops=${dies[0] && dies[0].drops}）`)
+          }
+          if (name === 'full20') {
+            const avgIncr = r.snaps.incrBytes.length ? Math.round(r.snaps.incrBytes.reduce((a, x) => a + x, 0) / r.snaps.incrBytes.length) : 0
+            const fullRatio = r.snaps.n ? +(r.snaps.full / r.snaps.n * 100).toFixed(1) : 100
+            const myDies = r.ledger.filter((e) => e.k === 'die' && e.seat === room.playerSeat).length
+            stat.dies.push(myDies)
+            ok(aid, 'S6 full20：全场任意 tick 蛇数 ≥20', r.minSnakes >= 20, `min=${r.minSnakes}`)
+            ok(aid, 'S6 full20：快照账本增量均 ≤850B/全量占比 ≤8%', avgIncr <= 850 && fullRatio <= 8, `增量均 ${avgIncr}B（n=${r.snaps.incrBytes.length}）/全量 ${fullRatio}%`)
+          }
+        }
+      } finally {
+        if (room) { await gw('DELETE', '/api/test/room', { roomId: room.roomId }).catch(() => {}); room = null }
       }
+    }
+    if (statSeeds.length > 1) {
+      /* 聚合断言（三局两胜/中位）：胜局 <2 或局数不足即红——任一 seed 全败（0/3）与仅 1 胜同判红，强度不降 */
+      const wins = stat.win.filter(Boolean).length
+      const med = (arr) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)]
+      ok(aid, aid === 'A2' ? '能赢：剧本胜方达成终态（三局两胜）' : `${name}：期望胜方达成终态（三局两胜）`,
+        stat.win.length === statSeeds.length && wins >= 2,
+        `胜 ${wins}/${stat.win.length}（${stat.notes.join('，')}）共 ${Math.round((Date.now() - t0) / 1000)}s`)
+      if (name === 'win' && stat.n.length)
+        ok('A2', 'S6 成长曲线实测锚（三局中位 n≥100）', med(stat.n) >= 100, `中位 n=${med(stat.n)}（各局 ${stat.n.join('/')}）`)
+      if (name === 'full20' && stat.dies.length)
+        ok(aid, 'S6 full20：存活到轮末（三局中位 deaths≤3）', med(stat.dies) <= 3, `中位 deaths=${med(stat.dies)}（各局 ${stat.dies.join('/')}）`)
     }
   } finally {
     if (room) await gw('DELETE', '/api/test/room', { roomId: room.roomId }).catch(() => {})
