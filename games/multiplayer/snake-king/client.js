@@ -131,7 +131,9 @@
   const cv = document.getElementById('cv')
   const g = cv.getContext('2d')
 
-  /* ---------- 光点 sprite 预烘焙（径向渐变离屏，两批合批，§5.3） ---------- */
+  /* ---------- 光点 sprite 预烘焙（径向渐变离屏，两批合批，§5.3） ----------
+   * VIS 双编码：核心形通道（草=素圆 / 果=菱形轮廓 / 矿=十字芒）——草/矿色 luma 仅差
+   * ~4（BT.601 198.8 vs 202.4，灰度不可分），crisp 形签名为唯一可靠第二通道（docs/vis §2）。 */
   const SPRITES = {}
   for (const k in RES_COL) {
     const c = document.createElement('canvas')
@@ -143,7 +145,21 @@
     grd.addColorStop(1, 'rgba(0,0,0,0)')
     cg.fillStyle = grd
     cg.beginPath(); cg.arc(14, 14, 13, 0, Math.PI * 2); cg.fill()
+    if (k === 'berry') { // 果：菱形轮廓（果核切面——灰度码位 dg）
+      cg.strokeStyle = '#fff'; cg.lineWidth = 2
+      cg.beginPath(); cg.moveTo(14, 3); cg.lineTo(25, 14); cg.lineTo(14, 25); cg.lineTo(3, 14); cg.closePath(); cg.stroke()
+    } else if (k === 'ore') { // 矿：十字芒（矿晶劈面——灰度码位 a5/a7）
+      cg.strokeStyle = '#fff'; cg.lineWidth = 2
+      cg.beginPath(); cg.moveTo(14, 14 - 8); cg.lineTo(14, 14 + 8); cg.moveTo(14 - 8, 14); cg.lineTo(14 + 8, 14); cg.stroke()
+    }
     SPRITES[k] = c
+  }
+  /* 形签名（VIS 断言源：a5/a7=轴向采样，dg=对角采样；BT.601 luma → 草(0,0)/果(0,1)/矿(1,0)） */
+  const SPR_SIG = {}
+  for (const k in SPRITES) {
+    const d = SPRITES[k].getContext('2d').getImageData(0, 0, 28, 28).data
+    const L = (x, y) => { const i = (y * 28 + x) * 4; return Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) }
+    SPR_SIG[k] = { a5: L(19, 14), a7: L(21, 14), dg: L(20, 19) }
   }
 
   /* ---------- 事件上报（boot/start 等，perf-smoke 契约） ---------- */
@@ -460,6 +476,8 @@
    * 渲染（§5.6 预算：8-16 蛇 LOD 后 ~300-400 圆 + ~31-40 sprite ≈2.8-4.2ms/帧）
    * ===================================================================== */
   function w2s(x, y) { return { x: (x / 1000 - cam.x / 1000) * cam.zoom + W / 2, y: (y / 1000 - cam.y / 1000) * cam.zoom + H / 2 } }
+  /* 远端蛇淡化档位（VIS 巨房降噪，纯函数=断言源）：<600px 全彩 / 600-900px 0.78 / >900px 0.6 */
+  function crowdFadeOf(d) { return d < 600000 ? 1 : d < 900000 ? 0.78 : 0.6 }
   function render(dt) {
     const meRec = S.ents.get('s' + S.seat)
     /* F11 危险预警：大蛇（n≥60）头距我 <260px → 屏缘红辉（200ms 扫描节拍） */
@@ -546,8 +564,11 @@
       if (a2.x < -40 || a1.x > W + 40 || a2.y < -40 || a1.y > H + 40) continue // 视口 AABB 裁剪
       const skin = SKIN[rec.skin] || SKIN[0]
       const isKing = S.round.k === rec.seat
+      /* 巨房可读性（VIS）：远端蛇淡化——头距我 >600px α0.78 / >900px α0.6（我/王不淡），
+       * 同屏 20+ 蛇降噪：近场全彩、远场退层；纹样细节随淡化跳过（降噪+省绘） */
+      const crowdFade = (meRec && rec !== meRec && !isKing) ? crowdFadeOf(Math.hypot(sg[0] - meRec.x, sg[1] - meRec.y)) : 1
       const flicker = rec.p > 0 && Math.floor(now / 100) % 2 === 0
-      g.globalAlpha = (rec.fade === undefined ? 1 : rec.fade) * (flicker ? 0.45 : 1)
+      g.globalAlpha = (rec.fade === undefined ? 1 : rec.fade) * (flicker ? 0.45 : 1) * crowdFade
       /* 身体复合描边：暗底粗描 + 皮肤色芯 */
       g.lineCap = 'round'; g.lineJoin = 'round'
       g.beginPath()
@@ -566,12 +587,43 @@
         g.lineWidth = 12.5 * cam.zoom
         g.stroke()
       }
-      /* 节圆明暗环纹（LOD 隔节） */
+      /* 节纹样（LOD 隔节）——皮肤 pat 形通道落地（VIS 双编码：色弱下 hue 不可分时
+       * 靠纹样几何辨蛇；绿/紫/蓝三色 BT.601 luma 162.4/160.0/160.9 同带，形通道必需） */
       const nodeR = 4.6 * cam.zoom
-      g.fillStyle = 'rgba(255,255,255,.16)'
-      for (let i = 2 * lodSkip; i + 1 < sg.length; i += 2 * lodSkip) {
-        const s = w2s(sg[i], sg[i + 1])
-        g.beginPath(); g.arc(s.x, s.y, nodeR, 0, Math.PI * 2); g.fill()
+      if (crowdFade === 1) {
+        const segN = Math.max(1, (sg.length >> 1) - 1)
+        if (skin.pat === 'stripe') { // 横带纹：隔节宽扁带
+          g.fillStyle = 'rgba(255,255,255,.24)'
+          for (let i = 2 * lodSkip, j = 0; i + 1 < sg.length; i += 2 * lodSkip, j++) {
+            if (j & 1) continue
+            const s = w2s(sg[i], sg[i + 1])
+            g.fillRect(s.x - nodeR * 1.4, s.y - nodeR * 0.5, nodeR * 2.8, nodeR)
+          }
+        } else if (skin.pat === 'dia') { // 菱形纹
+          g.fillStyle = 'rgba(255,255,255,.22)'
+          for (let i = 2 * lodSkip; i + 1 < sg.length; i += 2 * lodSkip) {
+            const s = w2s(sg[i], sg[i + 1])
+            g.beginPath(); g.moveTo(s.x, s.y - nodeR); g.lineTo(s.x + nodeR, s.y); g.lineTo(s.x, s.y + nodeR); g.lineTo(s.x - nodeR, s.y); g.closePath(); g.fill()
+          }
+        } else if (skin.pat === 'grad') { // 渐变纹：头亮尾暗
+          for (let i = 2 * lodSkip, j = 0; i + 1 < sg.length; i += 2 * lodSkip, j++) {
+            const s = w2s(sg[i], sg[i + 1])
+            g.fillStyle = 'rgba(255,255,255,' + (0.3 * (1 - j / segN)).toFixed(3) + ')'
+            g.beginPath(); g.arc(s.x, s.y, nodeR, 0, Math.PI * 2); g.fill()
+          }
+        } else { // ring 环纹（原款：均匀节圆）
+          g.fillStyle = 'rgba(255,255,255,.16)'
+          for (let i = 2 * lodSkip; i + 1 < sg.length; i += 2 * lodSkip) {
+            const s = w2s(sg[i], sg[i + 1])
+            g.beginPath(); g.arc(s.x, s.y, nodeR, 0, Math.PI * 2); g.fill()
+          }
+        }
+      } else { // 远场退化：均匀节圆（降噪档）
+        g.fillStyle = 'rgba(255,255,255,.16)'
+        for (let i = 2 * lodSkip; i + 1 < sg.length; i += 2 * lodSkip) {
+          const s = w2s(sg[i], sg[i + 1])
+          g.beginPath(); g.arc(s.x, s.y, nodeR, 0, Math.PI * 2); g.fill()
+        }
       }
       /* 头 Ø18 + 朝向眼 + 头饰/金冠（F14 吃食弹跳：140ms 半径 1→1.35→1） */
       const hd = w2s(sg[0], sg[1])
@@ -655,11 +707,17 @@
       g.fillRect(0, 0, W, H)
       if (meRec) {
         const hp = w2s(meRec.x, meRec.y)
+        /* 色弱可辨（VIS）：字位夹紧屏内（镜头阻尼滞后时头可近屏缘，警示字不随出屏）+
+         * 3px 深底描边=对比度通道，红字不依赖红绿轴独自成立 */
+        const tx = Math.max(34, Math.min(W - 34, hp.x)), ty = Math.max(40, Math.min(H - 60, hp.y - 22))
         g.font = HF('P1', 'danger', 11, 600)
         g.textAlign = 'center'
+        g.lineWidth = 3; g.strokeStyle = 'rgba(4,9,6,.85)'
+        g.strokeText('巨蟒逼近', tx, ty)
         g.fillStyle = '#FF6B5C'
-        g.fillText('巨蟒逼近', hp.x, hp.y - 22)
+        g.fillText('巨蟒逼近', tx, ty)
         g.textAlign = 'left'
+        S.dangerPos = { tx, ty } // 落笔位登记（VIS 探针地面真值——帧际冻结零漂移）
       }
     }
     drawHUD(meRec, anchor)
@@ -785,7 +843,7 @@
     /* 页脚 slug·version（P2，§7） */
     g.fillStyle = 'rgba(139,147,167,.55)'
     g.font = HF('P2', 'foot', 9)
-    g.fillText('snake-king · v1.0.0 · S6', 12, H - 8)
+    g.fillText('snake-king · v1.1.0 · S6', 12, H - 8)
     /* toast（里程碑/击杀/连杀，§2.6/§3.3）——big 款弹入放大 1.35→1（F04/F13 配套） */
     S.toasts = S.toasts.filter((t) => now - t.t0 < t.dur)
     let ty = TOP_H + 96
@@ -993,12 +1051,30 @@
     },
     fxScene,
     fxLedger: () => fxLedgerArr.map((e) => ({ id: e.id, n: e.n, lat: e.drawn ? Math.round(e.drawn - e.t0) : null })),
+    visInfo() { // VIS 断言源（GAMES-105）：双编码表 + 淡化档位 + 巨房在场分布
+      const me = S.ents.get('s' + S.seat)
+      let near = 0, mid = 0, far = 0
+      if (me) for (const rec of S.ents.values()) {
+        if (rec.k !== 'snake' || rec.gone || rec.d) continue
+        const d = Math.hypot(rec.x - me.x, rec.y - me.y)
+        if (d < 600000) near++; else if (d < 900000) mid++; else far++
+      }
+      return {
+        skins: SKIN.map((s) => ({ c: s.c, pat: s.pat, hat: s.hat })),
+        sprSig: SPR_SIG,
+        fadeTable: [crowdFadeOf(0), crowdFadeOf(650000), crowdFadeOf(950000)],
+        crowd: { near, mid, far },
+        mePos: me ? { x: me.x, y: me.y } : null,
+        dangerPos: S.dangerPos || null,
+        version: '1.1.0',
+      }
+    },
     fxState: () => ({ slow: S.slowUntil > now, flash: +S.flash.toFixed(2), danger: !!S.danger, settle: !!S.settle, rings: S.rings.length, enter: S.enterT0 ? Math.max(0, 420 - (now - S.enterT0)) : 0 }),
     cam: () => ({ x: cam.x, y: cam.y, zoom: +cam.zoom.toFixed(3) }),
   }
 
   /* ---------- 启动 ---------- */
-  report('boot', { slug: 'snake-king', version: '1.0.0', mode: 'net' })
+  report('boot', { slug: 'snake-king', version: '1.1.0', mode: 'net' })
   const q = new URLSearchParams(location.search)
   requestAnimationFrame(frame)
   if (q.get('debug') === '1') { window.__GAMES_DEBUG__.start(1) }
