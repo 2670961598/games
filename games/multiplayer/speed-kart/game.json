@@ -150,7 +150,7 @@
               "balanced"
             ],
             "policy": "racer-line",
-            "assert": "双臂 finish && 圈速中位差 ≤1.5% && armB carriedInputs ≥ arm0（§5.6 表）",
+            "assert": "双臂 finish && 圈速中位差 ≤25%（api 臂补偿口径；≤1.5% 精确公平性归 QA2 浏览器臂双臂——附决策 12 分工）&& 双臂 carriedInputs>0（§5.6 宽限兜底在场，ts=2 供给率口径）",
             "timeScale": 2
           }
         }
