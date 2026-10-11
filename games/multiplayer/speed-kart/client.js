@@ -142,7 +142,7 @@
       const rtt = performance.now() - m.c
       S.pings.push(rtt); if (S.pings.length > 12) S.pings.shift()
       const s = S.pings.slice().sort((a, b) => a - b)
-      S.ping = Math.round(s[Math.floor(s.length / 2)])
+      S.ping = Math.max(1, Math.round(s[Math.floor(s.length / 2)]))   // LAN 亚毫秒也显示 1ms（徽标语义）
     }
   }
   /* welcome/started/sync 全量：预测基点重锚（断线重连=全量+预测续跑，§5.1） */
@@ -185,13 +185,16 @@
   function authMerge(m) {
     const k = m.karts.find((x) => x.seat === S.seat)
     if (!k) return null
+    const mExt = m.ext || {}
     const sh = S.pred.kart() || {}
     const auth = {
       seat: S.seat, car: k.car !== undefined ? k.car : (sh.car || 0),
-      x: k.x, y: k.y, a: k.a, d: k.d !== undefined ? k.d : (sh.d !== undefined ? sh.d : k.a), v: k.v,
-      s: k.s !== undefined ? k.s : (sh.s || 0), lat: k.lat !== undefined ? k.lat : (sh.lat || 0),
+      x: k.x, y: k.y, a: k.a,
+      d: k.d !== undefined ? k.d : (mExt.pd && mExt.pd.d !== undefined ? mExt.pd.d : (sh.d !== undefined ? sh.d : k.a)), v: k.v,
+      s: k.s !== undefined ? k.s : (mExt.pd && mExt.pd.s !== undefined ? mExt.pd.s : (sh.s || 0)),
+      lat: k.lat !== undefined ? k.lat : (sh.lat || 0),
       idx: sh.idx || 0, cross: sh.cross || 0, laps: k.laps !== undefined ? k.laps : (sh.laps || 0),
-      cp: sh.cp || 1, pOff: sh.pOff || 0, lapT0: sh.lapT0 || 0, lastLapTick: sh.lastLapTick || 0,
+      cp: (mExt.pd && mExt.pd.cp !== undefined ? mExt.pd.cp : (sh.cp || 1)), pOff: sh.pOff || 0, lapT0: sh.lapT0 || 0, lastLapTick: sh.lastLapTick || 0,
       lapTimes: sh.lapTimes, best: k.best !== undefined ? k.best : (sh.best || 0), fin: k.fin !== undefined ? k.fin : (sh.fin || 0),
       dr: k.dr !== undefined ? k.dr : (sh.dr || 0), ch: k.ch !== undefined ? k.ch : (sh.ch || 0),
       tier: sh.tier || 0, bo: k.bo !== undefined ? k.bo : (sh.bo || 0), boMul: sh.boMul || 65536,
@@ -223,6 +226,7 @@
     if (auth) {
       syncFlightAck(ack, m.frame)
       S.pred.setPhase(S.phase)
+      /* 帧对齐锚（§5.1 ④）：hash 在权威帧拍上比（合并态完整性校验），再快进到本地拍 */
       S.pred.anchor(auth, m.frame)
       if (S.simTick < m.frame) S.simTick = m.frame   // 本地时钟不得落后权威帧
       const before = S.pred.advanceTo(S.simTick)
@@ -235,7 +239,9 @@
       if (dPx > 6) { S.blend = { x0: S.vis ? S.vis.x : after.x, y0: S.vis ? S.vis.y : after.y, t0: performance.now() } }
       /* ④ hash 哨兵（每 10 张）：分歧→sync 全量；连续 3 次上报告警 */
       if (m.ext && m.ext.hash) {
-        const mine = K.hashKart(after, m.frame)
+        /* 帧拍合并态 vs 服务器权威 hash（§5.1 ④：版本/合并哨兵——分歧→sync 全量重锚；
+           ext.pd 补齐 d/s/cp 后合并态完整，常态应零分歧） */
+        const mine = K.hashKart(S.pred.kart() || auth, m.frame)
         if (mine !== m.ext.hash) {
           S.hashBad++
           if (S.conn && S.conn.readyState === 1) S.conn.send(JSON.stringify({ t: 'sync' }))

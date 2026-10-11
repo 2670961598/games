@@ -52,6 +52,9 @@ function emitOne(room, ctxRec, r, opt = {}) {
     events: r && r.events || [], // 事件流顶层（§5.4；snake 同形，账本/客户端零分叉）
     ext: {
       ack: seat >= 0 && room.seats[seat] ? (room.seats[seat].lastSeq ?? -1) : -1,
+      // S7 预测支持（GAMES-109 §5.1）：己车增量快照缺的权威 d/s/cp（和解回滚与 hash
+      // 校验的完整态需求）随 per-connection ext 通道下发——12B/张，§6 ext 自由键
+      pd: seat >= 0 && st.karts[seat] ? { d: st.karts[seat].d, s: st.karts[seat].s, cp: st.karts[seat].cp } : undefined,
     },
   }
   if (seat >= 0 && st.karts[seat]) {

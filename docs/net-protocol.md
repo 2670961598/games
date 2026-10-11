@@ -135,7 +135,7 @@ waiting ──(满最低人数或倒计时到)──▶ live ──(胜负判定
 Bot 输入由服务端 Bot 宿主逐帧生成（`spawnBot(gameId, level)` 接口），走与真人完全相同的输入通道下发——
 客户端无感知、无需复现 Bot 随机源。三档 `level`（casual/balanced/competitive）参数见各游戏 sim 文件头。
 
-## 6. S2-S7 预留扩展位（S2/S3/S4/S5 已实证；S6/S7 仍为预留）
+## 6. S2-S7 预留扩展位（S2/S3/S4/S5/S7 已实证；S6 仍为预留）
 
 | 扩展 | 预留位 | 状态 |
 |---|---|---|
@@ -144,7 +144,7 @@ Bot 输入由服务端 Bot 宿主逐帧生成（`spawnBot(gameId, level)` 接口
 | S4 物理权威 | `welcome.room.physics:{engine,hash}` 声明块；`snapshot.ext.physics` | **已实证**（pool-physics，GAMES-78；payload：`physics={engine:'pool-int-v1', hash:fnv1a32(TRIG16+ATAN8+常量表)}`；`snapshot.ext.physics={engine,hash,sub}`——球动期 10Hz，`balls:[[id,x,y,pot],…]` 全量/`[id,x,y]` 增量二式、`snapSeq` 每 300 张强制全量；静止期事件驱动零快照。hash 不符 → 客户端回退插值渲染模式（版本护栏）） |
 | S5 回合权威 | 消息 `t:'op'`（玩家操作上行）/ `t:'ruling'`（裁决下行）；`frame.ext.turn` | **上行 `t:'op'` 与下行 `t:'ruling'` 已实证**（pool-physics 复用承载，GAMES-78；`op{shot\|place\|concede}` 一次性指令经 sim 权威校验（非法 `{k:'reject'}` 事件回流）；`ruling={t,frame,turn,phase:'aim'\|'motion',timerMs,openTable,groups,ballInHand,shot?,events,state}`——`shot` 携带确定性重演全部输入（客户端本地 60fps 重演同款 sim，快照逐字节校验锚））；**S5 本格实证**（element-duel，GAMES-88：回合状态机 pick→mulligan→play 全事件化 ruling、每 op 附**全量个性化 state**（迷雾下发：己方牌面/对方张数/观战双隐藏，sim 可声明 `personalize(room,ctx,msg)` 钩子由 rooms 广播层逐连接换视图——目录首款按角色裁剪）、零快照纯事件驱动（无 snapshot 消息）、`welcome.room.duel={engine,hash}` 版本护栏、超时托管（casual 单回合/牌组风格持续/`op{host}` 主动托管）、断线重连 welcome 全量个性化恢复、回放器=重放 `{seed,picks,ops}` 输入日志==在线终态 stateHash——确定性红线首证）；`frame.ext.turn` 未用（回合态在 ruling 内） |
 | S6 海量实体 | `snapshot.ext.aoi:{x,y,r}` 兴趣域声明 | 预留 |
-| S7 预测+和解 | `frame.ack`（服务端确认的输入序号）+ `t:'reconcile'`；预留 client prediction 与 `frame.hash` 校验位 | 预留 |
+| S7 预测+和解 | `frame.ack`（服务端确认的输入序号）+ `t:'reconcile'`；预留 client prediction 与 `frame.hash` 校验位 | **已实证**（speed-kart，GAMES-109；payload：`snapshot.ext.ack`=本连接已消费输入 seq（per-connection）+`snapshot.ext.hash`=每 10 张己车权威态 `fnv1a32(tick:x,y,a,d,v,s,laps,cp)` 帧拍校验哨兵+`snapshot.ext.pd={d,s,cp}` 己车增量补全（12B/张，和解回滚完整态）+`welcome.room.prediction={engine:'kart-int-v1',tickMs:50,hash}` 声明块（不符→客户端回退纯插值）；客户端本地预测=单源 sim 同式 integrate 20Hz+输入环形缓冲（上行 `input.frame=seq` 20Hz 心跳兼保活），和解=ack 锚定回滚+重放未确认（Δ≤6px 软收敛/硬回滚 120ms 混合带）；`t:'reconcile'` 未用（sync 消息+全量快照覆盖同语义）；`t:'sync'` 复用 §4 全量通道） |
 
 规则：新增消息类型一律先在本文登记；`ext` 对象向后兼容（未知键客户端必须忽略）。game.json 侧以
 `net.tech`（S1-S7）声明本款采用的同步技术，QA 按此核验。
