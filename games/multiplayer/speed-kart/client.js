@@ -5,8 +5,9 @@
  *
  * S7 三策略（设计 §5.1/附决策 7）：
  *   自车=本地预测 0ms 起步（drag 即转向，20Hz 采样+输入环形缓冲+上行 seq）+
- *   快照 ack 和解（权威锚点回滚重放未确认输入；Δpos≤6px 软收敛 20%/帧、
- *   >6px 硬回滚 120ms 混合带，撕裂预算 ≤2.5px/帧 §5.3）；
+ *   快照 ack 和解（权威锚点回滚重放未确认输入；Δpos≤6px 软收敛 35%/帧、
+ *   >6px 硬回滚 120ms 混合带，撕裂预算 ≤2.5px/帧 §5.3——O-6 口径对齐：软收敛
+ *   实值 0.35/帧，混合带帧位移封顶 F1 激活后落地）；
  *   他人车=100ms 插值缓冲（迟到外推 1 张 100ms，mmo §5.3 同式）——只回滚自己；
  *   本地圈账=预测器 progress 同跑（T7-A 结算对照条的"本地感知圈时"源，§3.4）。
  *
@@ -106,28 +107,60 @@
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
     return scheme + '://' + location.hostname + ':4400'
   }
+  /* ?room= 参数维护（F9）：null=摘除（room-gone 兜底）；值=写入（quick 入房回写）。
+   * replaceState 不留历史记录——回退/刷新拿到的是当前局，不经中间态 */
+  function setRoomParam(rid) {
+    try {
+      const q = new URLSearchParams(location.search)
+      if (rid == null) { if (!q.get('room')) return; q.delete('room') }
+      else { if (q.get('room') === rid) return; q.set('room', rid) }
+      const s = q.toString()
+      history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash)
+    } catch { /* file:// 等无 replaceState 环境不阻塞对局 */ }
+  }
   function connect() {
     const ws = new WebSocket(gwOrigin())
     S.conn = ws
     ws.onopen = () => {
       const q = new URLSearchParams(location.search)
       const rid = q.get('room')
-      let resume = null
-      try { resume = JSON.parse(sessionStorage.getItem('spk-' + rid) || 'null') } catch { resume = null }
-      ws.send(JSON.stringify({ t: 'join', roomId: rid || undefined, mode: q.get('mode') === 'spectate' ? 'spectate' : 'play', resume: resume ? { seat: resume.seat, token: resume.token } : undefined, name: '玩家' }))
-      if (!rid) ws.send(JSON.stringify({ t: 'quick', gameId: 'speed-kart' }))
+      if (rid) {
+        let resume = null
+        try { resume = JSON.parse(sessionStorage.getItem('spk-' + rid) || 'null') } catch { resume = null }
+        ws.send(JSON.stringify({ t: 'join', roomId: rid, mode: q.get('mode') === 'spectate' ? 'spectate' : 'play', resume: resume ? { seat: resume.seat, token: resume.token } : undefined, name: '玩家' }))
+      } else {
+        /* F9（GAMES-111 同批）：join 恒带 roomId（WS 面契约）——原式无 rid 也发 join 必吃
+           bad-msg 错误帧；quick 路径单独发 */
+        ws.send(JSON.stringify({ t: 'quick', gameId: 'speed-kart' }))
+      }
     }
     ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data) } catch { return } onMsg(m) }
     ws.onclose = () => { if (S.mode === 'playing' || S.mode === 'spectate') S.connLost = true }
     ws.onerror = () => { if (S.mode === 'playing' || S.mode === 'spectate') S.connLost = true }
   }
   function onMsg(m) {
-    if (m.t === 'error') { S.err = m.code || m.message; setTimeout(() => { S.err = '' }, 2500); return }
+    if (m.t === 'error') {
+      /* F9（GAMES-111）：?room= 指向的房已终局/回收（再来一局、断线后刷新的常态路径）→
+         摘参自动 quick 重开——reload 兜底闭环，横幅承诺可兑现 */
+      if (m.code === 'room-gone' && S.mode === 'connecting' && !S.roomId) {
+        setRoomParam(null)
+        if (S.conn && S.conn.readyState === 1) S.conn.send(JSON.stringify({ t: 'quick', gameId: 'speed-kart' }))
+        return
+      }
+      S.err = m.code || m.message; setTimeout(() => { S.err = '' }, 2500); return
+    }
     if (m.t === 'welcome') {
       S.roomId = m.roomId; S.seat = m.role === 'player' ? m.seat : -1
       S.token = m.token; S.roster = (m.room && m.room.seats) || []
       S.tickMs = m.tickMs || 50
       if (m.token != null) { try { sessionStorage.setItem('spk-' + S.roomId, JSON.stringify({ seat: S.seat, token: S.token })) } catch {} }
+      /* F9（GAMES-111）：quick 入房回写 ?room= —— reload 后 resume 凭真实 roomId 可达
+         （原式读 spk-null 落空必进新房，断线横幅「10s 内重连可夺回席位」不可兑现） */
+      if (m.token != null && S.seat >= 0) setRoomParam(S.roomId)
+      /* O-5（GAMES-111）：welcome.prediction 声明块版本护栏（原零消费）——引擎指纹不符
+         即常驻提示（CDN/缓存旧 shared.cjs 只能靠 hash 哨兵事后撞出，此处入房即拦） */
+      const pd = m.room && m.room.prediction
+      if (pd && pd.hash != null && pd.hash !== K.ENGINE_HASH) S.err = '引擎版本不一致，请刷新重试'
       S.mode = S.seat >= 0 ? 'playing' : 'spectate'
       if (m.state) applyFullState(m.state, m.frame)
       document.getElementById('boot').style.display = 'none'
@@ -226,22 +259,28 @@
     if (auth) {
       syncFlightAck(ack, m.frame)
       S.pred.setPhase(S.phase)
-      /* 帧对齐锚（§5.1 ④）：hash 在权威帧拍上比（合并态完整性校验），再快进到本地拍 */
+      if (S.simTick < m.frame) S.simTick = m.frame   // 本地时钟不得落后权威帧（先抬钟：修正前后同拍对照）
+      /* F1（GAMES-111）：修正前预测态必须在 anchor 覆盖影子之前捕获——原式 before/after
+         同为「锚点+重放」终态（第二次 advanceTo 空转），dPx 结构性 ≡0，recon 台账/软硬
+         分流/混合带/撕裂预算全死码（QA1 §2.2）。pre 段事件弃置：重放段确定性同式再生
+         （m.frame<simTick 时覆盖同拍），防圈点双记 */
+      const pre = S.pred.advanceTo(S.simTick)
+      S.pred.drainEvents()
+      const preX = pre ? pre.x : auth.x, preY = pre ? pre.y : auth.y
       S.pred.anchor(auth, m.frame)
-      if (S.simTick < m.frame) S.simTick = m.frame   // 本地时钟不得落后权威帧
-      const before = S.pred.advanceTo(S.simTick)
-      const beforeX = before ? before.x : auth.x, beforeY = before ? before.y : auth.y
       const after = S.pred.advanceTo(S.simTick) || auth
-      const dx = Math.abs(after.x - beforeX), dy = Math.abs(after.y - beforeY)
+      const dx = Math.abs(after.x - preX), dy = Math.abs(after.y - preY)
       const dPx = Math.max(dx, dy) / 1000
       if (dPx > 0.5) { S.recon.push({ t: performance.now(), px: dPx }); if (S.recon.length > 200) S.recon.shift() }
       /* ③ 软收敛/硬回滚（撕裂预算 §5.3） */
       if (dPx > 6) { S.blend = { x0: S.vis ? S.vis.x : after.x, y0: S.vis ? S.vis.y : after.y, t0: performance.now() } }
       /* ④ hash 哨兵（每 10 张）：分歧→sync 全量；连续 3 次上报告警 */
       if (m.ext && m.ext.hash) {
-        /* 帧拍合并态 vs 服务器权威 hash（§5.1 ④：版本/合并哨兵——分歧→sync 全量重锚；
-           ext.pd 补齐 d/s/cp 后合并态完整，常态应零分歧） */
-        const mine = K.hashKart(S.pred.kart() || auth, m.frame)
+        /* F2（GAMES-111）：对合并权威态@F 取 hash（服务器同式 hashKart(karts[seat], F)）——
+           原式哈影子@本地 simTick 配 F 帧前缀，simTick>F 即必分歧（健康领先态假告警：
+           200ms 臂 hashWarn 闩锁=常驻降级横幅+sync 洪泛，QA1 §2.4）。增量快照 x/y/a/v+
+           ext.pd 的 d/s/cp 凑齐 hashKart 八字段，合并完整性校验成立 */
+        const mine = K.hashKart(auth, m.frame)
         if (mine !== m.ext.hash) {
           S.hashBad++
           if (S.conn && S.conn.readyState === 1) S.conn.send(JSON.stringify({ t: 'sync' }))
@@ -354,9 +393,14 @@
       S.sentLog.push({ q: S.seq, tick: S.simTick })
       if (S.sentLog.length > 96) S.sentLog.shift()
     }
-    /* 本地预测：push 于预计生效拍（simTick+flight），影子和服务器同序消费 */
+    /* 本地预测：push 于预计生效拍（simTick+flight），影子和服务器同序消费。
+     * F4（GAMES-111 低危同批）：at 单调不回退——flight EMA 单步可降 ≥2 或快照断流恢复
+     * 下钳 simTick 时，估算拍会倒序；环消费按 at 升序 shift（makePredictor §5.1），
+     * 倒序条目迟消费且污染粘性 lastInp，强制 ≥ 前推+1 保到达序（服务器本就按到达序消费） */
     S.pred.setPhase(S.phase)
-    S.pred.push(S.simTick + S.flight, up)
+    const pushAt = Math.max(S.simTick + S.flight, (S.lastPushAt || 0) + 1)
+    S.lastPushAt = pushAt
+    S.pred.push(pushAt, up)
     S.pred.advanceTo(S.simTick)
     for (const ev of S.pred.drainEvents()) {
       if (ev.k === 'lap') {
@@ -454,15 +498,19 @@
     buildEdges()
     const sh = S.pred ? S.pred.kart() : null
     const me = S.mode === 'debug' ? debugKart() : (S.seat >= 0 ? sh : remoteHead())
-    /* 视觉自车：混合带/软收敛（§5.1 ③——状态采重放值，视觉 20%/帧 逼近） */
+    /* 视觉自车：混合带/软收敛（§5.1 ③——状态采重放值，视觉 35%/帧 逼近） */
     if (S.seat >= 0 && sh) {
       if (!S.vis) S.vis = { x: sh.x, y: sh.y, a: sh.a }
       if (S.blend) {
-        /* 硬回滚混合带：120ms 从当前视觉位向重放态收敛，每帧 ≤2.5px（§5.3 撕裂预算） */
+        /* 硬回滚混合带：120ms 从当前视觉位向重放态收敛，每帧位移封顶 2.5px
+         * （O-6/GAMES-111：原式只写注释无封顶——F1 激活前 dPx≡0 恒不触发故无意义，
+         *   修正台账恢复实测后按 §5.3 撕裂预算落地） */
         const p = Math.min(1, (now - S.blend.t0) / 120)
         const k = 0.18 + p * 0.5
-        S.vis.x += (sh.x - S.vis.x) * k
-        S.vis.y += (sh.y - S.vis.y) * k
+        let mx = (sh.x - S.vis.x) * k, my = (sh.y - S.vis.y) * k
+        const mv = Math.max(Math.abs(mx), Math.abs(my)) / 1000
+        if (mv > 2.5) { const c = 2.5 / mv; mx *= c; my *= c }
+        S.vis.x += mx; S.vis.y += my
         if (p >= 1 || Math.abs(sh.x - S.vis.x) < 500) S.blend = null
       } else {
         /* 软收敛：状态采重放值，视觉 35%/帧 逼近（~100ms 抹平） */
@@ -889,7 +937,7 @@
     sfxCalls: () => sfx.calls.slice(-40),
     sfxGroups: () => ({ slots: sfx.slots.slice(), calls: sfx.calls.slice(-64), on: sfx.on }),
     sound(v) { sfx.on = !!v; return sfx.on },
-    netProbe() { return { ping: S.ping, flight: S.flight, recon10s: S.recon.filter((r) => performance.now() - r.t < 10000).length, hashBad: S.hashBad, lapLocal: S.lapLocal.slice(), lapSrv: S.lapSrv.slice() } },
+    netProbe() { return { ping: S.ping, flight: S.flight, recon10s: S.recon.filter((r) => performance.now() - r.t < 10000).length, reconPx: S.recon.slice(-200), hashBad: S.hashBad, hashWarn: S.hashWarn, lapLocal: S.lapLocal.slice(), lapSrv: S.lapSrv.slice() } },
   }
   const dbg = new URLSearchParams(location.search).get('debug')
   if (dbg === '1') {
