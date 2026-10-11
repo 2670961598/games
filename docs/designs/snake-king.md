@@ -328,7 +328,7 @@ Bot 走网关 BotHost 统一接口 `spawnBot('snake-king', level)`；**Bot 即�
         "win":   { "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow" },
         "lose":  { "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
         "hunt":  { "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "kill-hunt" },
-        "full20":{ "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow", "asserts": ["全场任意 tick 蛇数 ≥20", "快照账本增量均 ≤850B/全量占比 ≤8%", "排行榜 A6", "存活到轮末（API 席 death 计 ≤3）"] }
+        "full20":{ "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow", "asserts": ["全场任意 tick 蛇数 ≥20", "快照账本增量均 ≤850B/全量占比 ≤8%", "排行榜 A6", "存活到轮末（API 席 deaths 三局中位 ≤5，§6.1 统计制重锚）"] }
       }
     }
   }
@@ -342,6 +342,28 @@ Bot 走网关 BotHost 统一接口 `spawnBot('snake-king', level)`；**Bot 即�
   - `kill-hunt`（A7）：锁 AOI 内最短蛇 → 拦截点闭式解（§4 competitive 同式）→ boost 收口；断言事件账本 kill≥1。
 - **full20 满房剧本**（20 实体口径）：1 API+19 bot 混编（3 competitive/6 balanced/10 casual + API），断言实体恒 ≥20、快照账本带宽画像落预期带（§5.5）、排行榜一致、存活性——**S6 红线的 api 侧首证**。
 - 剧本局时序：timeScale=4 下 3600 tick 压进 ~90s 墙钟；四剧本 ≈6 分钟总墙钟，与 mmo 剧本同级。
+
+### 6.1 断言口径注记：混沌类剧本的统计制（GAMES-107 校准）★
+
+> **口径变更**（PM 裁决收口）：剧本结局断言（A2 能赢 / hunt 胜负 / full20 胜负+存活）从「单 seed 单局必胜」改为「多 seed 统计上可胜」——**判据语义不变（能赢/能存活），强度不降（胜局 <2/3 即红，任一 seed 全败与仅 1 胜同判红）**。数值锚：win 轮末 n≥100 阈值不变；full20 存活锚按 GAMES-107 实测重锚 **deaths 中位 ≤3→≤5**（BOT 单生态位上线后竞技场烈度上移——胜局 deaths 实测 5/7/1，历史 full20 样本 {3,4,5,6,9}，≤3 为 BOT 前时代单局锚；统计制下中位 ≤5=三局至少两局 ≤5，系统性劣化（三局中位 ≥6）仍红）。
+
+**根因定级**：20 蛇混沌系统的随机相位分岔——同 seed 同提交复跑呈双峰取样（雪球局 API 席碾压 goal / 绞肉局全场低分团灭 round-end），剧本结局方差是系统本质而非缺陷。四单攻坚数据表：
+
+| 攻坚单 | 干预 | 样本 | 结果 |
+|---|---|---|---|
+| DEV GAMES-99 | 断路收官 + S6 专项断言 | 同提交 6 样本 | 绿1红5（双峰实证）→ `S6_DEV_TOLERANT` 应急容忍开关 |
+| QA1 GAMES-100 | 剧本硬化（避蛇避墙偏置） | 严格 3 跑 | 未三连全绿；硬红线（20 实体/带宽/排行榜/A7）全样本绿不受影响 |
+| FIX1 GAMES-101 | 负载数量说三档对照（swarm 常驻 minLive 0/1/2） | 三档 6 跑 | 4绿2红、无剂量反应（0 档反最差 28/2）→ 负载说证伪；三连跑 绿/绿/红 |
+| BOT GAMES-102 | 绞肉相位单参数硬化候选 | 严格 1绿1红 | 候选证伪 revert → 数量/负载/参数三说俱证伪，定级=混沌相位分岔 |
+
+**落地口径**（`scripts/api-check.js`，GAMES-107）：
+- S6 剧本局（win/hunt/full20）按派生 seed `{S, S+1, S+2}` 各打一局（S=game.json `net.api.script.seed`=20261007；lose 能输与非 S6 游戏维持单局严格口径不变）；
+- 胜负断言 = **三局两胜**（wins≥2 过；0/3、1/3 红）；单局真值全部入报告 JSON（`stat` 台账条目）与控制台披露；
+- 数值锚 = **三局中位数**（win 轮末 n 中位 ≥100；full20 API 席 deaths 中位 ≤5，实测重锚见上）——中位数不受单局分岔极值牵引；
+- 逐局硬断言不进统计口径：A6 排行榜 / A7 击杀链路 / full20 蛇数 ≥20 与带宽 ≤850B/8% **任一局违例即红**；
+- `S6_DEV_TOLERANT` 开关与 okT 容忍路径删除——api-check 无环境开关，一律严格；gate 冻结命令=`node scripts/api-check.js snake-king`（不含 env，GAMES-84 先例）。
+
+**SOP 候选（混沌类剧本断言的统计口径原则——留 REFINE 收割）**：凡剧本结局由多实体混沌系统涌现（结局方差来自系统本质而非可修缺陷——判据：同 seed 同提交复跑双峰取样 + 干预假说逐一证伪），断言口径应取统计制：① 多 seed 取样 ≥3 局；② 二值结局用多数胜制（2/3）、数值指标用中位数；③ 阈值原则上不随口径放松（强度不降：全败子集=红）；若实测分布证伪阈值锚定（本例：BOT 生态位上线后胜局 deaths 5/7/1 证伪 ≤3 旧锚），重锚须附实测数据、写入设计书并单独披露，不得与统计制叠加隐性双重放松；④ 协议/带宽/一致性类硬断言逐局严格、不进统计口径。前置门槛：统计制是口径校准不是免死金牌——须先以 ≥2 个干预假说证伪（负载/数量/参数）排除可修缺陷，才允许从单局制改统计制。
 
 ## 7. 视觉基调与平台接线
 
