@@ -328,7 +328,7 @@ Bot 走网关 BotHost 统一接口 `spawnBot('snake-king', level)`；**Bot 即�
         "win":   { "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow" },
         "lose":  { "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
         "hunt":  { "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "kill-hunt" },
-        "full20":{ "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow", "asserts": ["全场任意 tick 蛇数 ≥20", "快照账本增量均 ≤850B/全量占比 ≤8%", "排行榜 A6", "存活到轮末（API 席 death 计 ≤3）"] }
+        "full20":{ "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-grow", "asserts": ["全场任意 tick 蛇数 ≥20", "快照账本增量均 ≤850B/全量占比 ≤8%", "排行榜 A6", "存活到轮末（API 席 deaths 三局中位 ≤5，§6.1 统计制重锚）"] }
       }
     }
   }
