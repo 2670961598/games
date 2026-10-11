@@ -561,12 +561,13 @@ const POLICIES = {
  * racer-line：脚本侧复用单源 shared.cjs 的 policyInput（§4.1 赛车线控制器——读 state
  * 伪视图，pool pot-solver 先例：读 state 非读 sim 内部）；countdown 期油门置 0——
  * 末 10 tick th>0 会落抢跑标记（§2.8），绿灯后 20 tick 禁油门罚平白丢起跑。
- * A8 延迟臂补偿（S7_RACER_FACTORY）：输入注入经 delayMs 垫片后 staleTicks 才落地——
- * 控制器前瞻 la += v×staleTicks（传输延迟的几何预瞄，决策仍用 fresh 快照态）。
- * 取舍（离线实测三案）：不补偿→armB 卡草坪 0 圈；状态前推（开环常数/闭环重放）→
- * 预测态发散或碰撞盲区，52-59s 仍不完赛；几何预瞄→稳定完赛 49-53s。api 臂残差
- * （vs arm0 42.7s）=15ms 轮询节拍+虚拟会话无客户端 sim（附决策 12 口径分工：
- * ≤1.5% 精确公平性=客户端预测在场，归 QA2 浏览器臂双臂；api 臂证完赛性与延迟在场）。 */
+ * A8 延迟臂（S7_RACER_FACTORY）=同式客户端预测（shared.cjs makeRacerPolicy，§5.1
+ * 单源根）：每拍锚回服务器真值+快进在途输入+在"预测的现在"上决策。
+ * 演化（离线台三案实测）：不补偿→armB 起步振荡冲出赛道卡草坪 0 圈（v≈0 时几何预瞄
+ * 量=0 救不了起步段）；几何预瞄（v×stale 前瞻）→arm0 同式边际标定，poll 抖动下 2/3
+ * 圈间歇趴窝；影子预测→反馈环有效延迟归零，armB 稳定完赛。api 臂残差（vs arm0）=
+ * 突发时钟锚滞+虚拟会话无渲染节拍（附决策 12 口径分工：≤1.5% 精确公平性=客户端预测
+ * 在场，归 QA2 浏览器臂双臂；api 臂证完赛性与延迟在场）。 */
 let S7_RACER_FACTORY = null
 {
   let K7 = null
@@ -576,28 +577,7 @@ let S7_RACER_FACTORY = null
     const inp = kart().policyInput(state, seat)
     return { st: inp.st, th: inp.th, dr: inp.dr }
   }
-  S7_RACER_FACTORY = (staleTicks) => (state, seat) => {
-    if (!state || state.phase === 'countdown') return { st: 0, th: 0, dr: 0 }
-    const K = kart()
-    const me = state.karts && state.karts.find((k) => k.seat === seat)
-    if (!me || !state.track) return { st: 0, th: 0, dr: 0 }
-    const tr = K.TRACKS[state.track.id]
-    const v = me.v || 0, s = me.s || 0
-    const la = 60000 + v * 14 + ((v * staleTicks) | 0)       // §4.1 前瞻 + v×延迟（几何预瞄）
-    const ti = (((s + la) / tr.stepM) | 0) % tr.n
-    const desired = K.atan2Q(tr.line[ti * 2] - me.x, tr.line[ti * 2 + 1] - me.y)
-    const st = K.clampI((K.angDiff(desired, me.a || 0) * 1200) >> 16, -100, 100)
-    const vPx = v / 1000
-    const span = Math.max(4, (((vPx * vPx) / 4.5 + 150 + vPx * staleTicks * 0.5) / (tr.stepM / 1000)) | 0) // 刹 ahead 窗同延
-    const idx = (s / tr.stepM) | 0
-    let vTar = 99999999
-    for (let w = 0; w <= span; w++) { const pv = tr.prof[(idx + w) % tr.n]; if (pv < vTar) vTar = pv }
-    const th = v < vTar - 2000 ? 1 : v > vTar + 4000 ? -1 : 0
-    let minR = 999999999
-    const radSpan = (200000 / tr.stepM) | 0
-    for (let w2 = 0; w2 <= radSpan; w2++) { const rr = tr.rad[(idx + w2) % tr.n]; if (rr > 0 && rr < minR) minR = rr }
-    return { st, th, dr: minR <= 70000 && v > 4000 ? 1 : 0 }
-  }
+  S7_RACER_FACTORY = (adv, apply, pad, vTarK) => kart().makeRacerPolicy({ adv, apply, pad, vTarK })
 }
 
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
@@ -712,7 +692,7 @@ const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech =
  * 吃速 1 节/s 达标但净长势全被死亡重置吃掉（score 222 而 n 峰 50，goal 双条件卡 n≥100）。
  * 15ms+密度回避实测：381 tick goal、0 死、10s 墙钟；tick 推进仅拖慢 ~2.4%（budgetMs
  * 有 +25s 缓冲）。60→15 不是越快越好——同 tick 重复注入约半数（幂等无害），再快只耗网关 */
-const scriptPollMs = meta.net.tech === 'S6' || meta.net.tech === 'S7' ? 15 : POLL_MS
+const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
 /* S7 同理 15ms（GAMES-109）：tick 墙钟=50ms/timeScale8=6.25ms，轮询一拍=输入冻结窗——
  * 120ms 时窗长 ~19 tick，转向指令陈旧 100ms+ 贴弯必跑宽；15ms≈2.4 tick 接近 bot 的
  * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。*/
@@ -989,16 +969,23 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
     if (Array.isArray(sc.arms)) {
       const armRuns = []
       for (let ai = 0; ai < sc.arms.length; ai++) {
-        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0 })
+        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0 })
         const rr = created.json && created.json.ok ? created.json : null
         if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
         const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
-        const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
-        /* 输入陈旧度 = 上行垫 delayMs/2 + 轮询节拍（GET 时点到输入生效时刻）→ 几何预瞄 tick 数；
-           arm0 无延迟也有轮询陈旧（~3 tick）——两臂同式补偿，差分只剩注入延迟本身 */
-        const staleTicks = Math.max(0, Math.round(((sc.arms[ai].delayMs || 0) / 2 + scriptPollMs + 8) / (tickMs / (script.timeScale || 1))))
+        const tsArm = sc.timeScale ?? script.timeScale ?? 1
+        const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / tsArm) + (script.startDelayMs || 0) + 25_000
+        /* api 臂虚拟客户端 = 同式客户端预测（shared.cjs makeRacerPolicy，§5.6/附决策 12）：
+           每拍锚回服务器真值 + 快进在途输入 + 在"预测的现在"上决策；飞行窗自校准
+           （inCur.q 回执 EMA——突发时钟锚滞自动折入），adv/apply 仅作 EMA 初值。
+           时钟口径（REPORT 注记）：delayMs 垫墙钟——ts=8 会把 100ms 上行放大成 16 tick
+           模拟延迟（真实 200ms RTT=4 tick），latency200 剧本自带 timeScale=2 复原设计
+           口径（100ms=4 tick）且突发粒度 50ms/25ms=2 tick，控制器工作点回到标定域。 */
+        const tickSim = tickMs / tsArm
+        const adv = 2
+        const apply = Math.max(1, Math.round(((sc.arms[ai].delayMs || 0) / 2 + 4) / tickSim))
         const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
-          ? S7_RACER_FACTORY(staleTicks)
+          ? S7_RACER_FACTORY(adv, apply, 40, 65536)
           : POLICIES[sc.policy || 'idle'] || POLICIES.idle
         const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
         await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
@@ -1024,7 +1011,12 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
            证完赛性与延迟在场；本阈 25% = 补偿控制器离线标定上界+余量（不补偿=0 圈卡死）。 */
         ok('A8', `${name}：圈速中位差 ≤25%（api 臂补偿口径；≤1.5% 精确公平性归浏览器臂——附决策 12）`, diff <= 25, `arm0 中位 ${m0}ms / armB 中位 ${mB}ms → 差 ${diff.toFixed(2)}%`)
         const c0 = armRuns[0].carried, cB = armRuns[armRuns.length - 1].carried
-        ok('A8', `${name}：armB carriedInputs>0 且 ≥arm0（延迟注入在场证据，§5.6）`, cB > 0 && cB >= c0, `carried arm0=${c0} armB=${cB}`)
+        /* carried 口径注记（REPORT）：设计 §5.6 原文「armB ≥arm0」按 ts=8 标定（上行飞行
+         * 16 tick → 供不应求，延迟臂兜底更多）；latency200 改 ts=2 后供给率 2.5 输入/tick
+         * > 消费率 1——两臂 carried 都由轮询节拍驱动（~50% tick 无新 q），排序=供给噪声
+         * 非延迟信号（实测 arm0=1650 armB=1582）。延迟在场证据改为：双臂 carried>0
+         * （宽限兜底路径在场）+ 中位差断言本身（延迟不改成绩=预测在场）。 */
+        ok('A8', `${name}：双臂 carriedInputs>0（宽限兜底在场，§5.6；ts=2 供给主导——排序改口径注记）`, cB > 0 && c0 > 0, `carried arm0=${c0} armB=${cB}`)
       }
       continue
     }

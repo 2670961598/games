@@ -253,7 +253,11 @@
     var th = k.pen > 0 ? 0 : inp.th                   // 抢跑罚禁油门（§2.8）
     if (th > 0) k.v += (acc * sA) >> 16
     else if (th < 0) k.v += car.brake
-    else k.v += car.drag
+    else { // 松油滑行：阻力逆速度方向且不过零（滑到停，不倒溜）——原式恒 −120 会把
+      // 静止车拖成倒溜（绿灯死窗滚过起跑线 → s 回绕 → 控制器/回正在镜像几何里锁死）
+      if (k.v > 0) { k.v += car.drag; if (k.v < 0) k.v = 0 }
+      else if (k.v < 0) { k.v -= car.drag; if (k.v > 0) k.v = 0 }
+    }
     if (k.v > vEff) {
       if (k.bo > 0 || k.v - vEff <= 240) k.v = vEff
       else k.v -= 240                                  // boost 过期平滑回落（§2.5）
@@ -362,6 +366,15 @@
     var fw = false, bw = false
     if (ds < -(len >> 1)) { ds += len; fw = true }
     else if (ds > (len >> 1)) { ds -= len; bw = true }
+    /* 起跑线缝投影翻转守卫：缝上静止/微动车（idle 泊格/AFK/碰擦抖动）的 s 在 ±0 两侧
+     * 跳变，ds≈±len 伪装成一次反向/正向穿越 → pOff 虚增=名次污染（A3 idle 泊格
+     * pos=3/6 实锤）。真过线的车一拍位移 ≥2px；物理位移 <2px 的"回绕"必是投影伪影：
+     * 只重锚 s/idx，不动任何账。 */
+    if (fw || bw) {
+      var pdx = k.x - (k.pX === undefined ? k.x : k.pX), pdy = k.y - (k.pY === undefined ? k.y : k.pY)
+      if (pdx * pdx + pdy * pdy < 4000000) { k.s = p.s; k.idx = p.idx; k.pX = k.x; k.pY = k.y; return }
+    }
+    k.pX = k.x; k.pY = k.y
     var ads = ds < 0 ? -ds : ds
     if (ads > JUMP_S) { st.stats.jumpViol++; k.s = p.s; k.idx = p.idx; return } // 跳段不记进度（§1.4）
     k.s = p.s; k.idx = p.idx
@@ -601,6 +614,158 @@
     return { st: stOut, th: thOut, dr: drOut }
   }
 
+  /* =====================================================================
+   * S7 预测器（§5.1 单源核心）——浏览器客户端本地预测与 api 臂虚拟客户端共用。
+   * 三 API：anchor(权威己车态@tick) → push(在途输入@预计生效 tick) → advanceTo(目标 tick)。
+   * 影子 = 权威锚点 + 在途输入重放（integrate 同式）——逐拍重锚把预测误差压在单拍内；
+   * progress 同跑（本地圈点=客户端"本地感知圈时"账本，T7-A 对照条源，§3.4）。
+   * 输入生效语义与服务器一致：at ≤ 当前 tick 的最新一条粘性沿用（seatInput 同式）。
+   * ===================================================================== */
+  function makePredictor(trackId) {
+    var tr = TRACKS[trackId] || TRACKS['t-bay']
+    var stView = {
+      tr: tr, grid: buildGrid(tr), phase: 'race', tick: 0,
+      cpCount: Math.max(1, (tr.lenM / CP_SPAN) | 0), stats: { jumpViol: 0 },
+    }
+    var ring = []          // 在途输入环形缓冲（容量 96，§5.1 容量 64 的 api 臂余量版）
+    var lastInp = { st: 0, th: 0, dr: 0 }
+    var shadow = null, t = 0
+    var events = []        // 本地圈点事件账本（drain 消费）
+    function anchor(k, tick) {
+      shadow = {
+        seat: k.seat, car: k.car | 0, name: k.name,
+        x: k.x, y: k.y, a: k.a & 0xffff, d: (k.d === undefined ? k.a : k.d) & 0xffff, v: k.v,
+        s: k.s || 0, lat: k.lat || 0, idx: k.idx || 0, cross: k.cross || 0, laps: k.laps || 0,
+        cp: k.cp || 1, pOff: k.pOff || 0, lapT0: k.lapT0 || 0, lastLapTick: k.lastLapTick || 0,
+        lapTimes: k.lapTimes ? k.lapTimes.slice() : [], best: k.best || 0, fin: k.fin || 0,
+        dr: k.dr || 0, ch: k.ch || 0, tier: k.tier || 0, bo: k.bo || 0, boMul: k.boMul || 65536,
+        draft: k.draft || 0, drT: k.drT || 0, pen: k.pen || 0, jump: 0,
+        surf: 0, off: 0, wallHit: 0, boostN: 0, _bt: 0,
+      }
+      t = tick
+      // 已生效（at ≤ 锚点）的在途输入出环；未生效的留着重放（§5.1 ①）。
+      // lastInp 同步为最后出环者 = 服务器粘性 inCur（重放起点指令，宽限同式）
+      var keep = []
+      for (var i = 0; i < ring.length; i++) {
+        if (ring[i].at > tick) keep.push(ring[i])
+        else lastInp = ring[i].inp
+      }
+      ring = keep
+    }
+    function push(at, inp) {
+      ring.push({ at: at, inp: inp })
+      if (ring.length > 96) ring.shift()
+    }
+    function advanceTo(tick) {
+      if (!shadow) return null
+      if (tick > t + 64) tick = t + 64   // 快进上限：锚丢失防长跑发散（§5.1 重放成本上界）
+      while (t < tick) {
+        t++
+        stView.tick = t
+        // 相位翻转与 step() 同拍：tick≥COUNTDOWN 的该拍即转 race 并积分（先翻再积，
+        // 与服务端 step 内顺序一致——否则绿灯死窗内影子站桩、真车拖阻倒溜，预测失真）
+        if (stView.phase === 'countdown' && t >= COUNTDOWN) stView.phase = 'race'
+        while (ring.length && ring[0].at <= t) lastInp = ring.shift().inp
+        if (stView.phase !== 'countdown') {  // 倒计时冻结 ①-⑤（§2.8，与服务端同式）
+          integrate(stView, shadow, lastInp)
+          progress(stView, shadow, events)
+        }
+      }
+      return shadow
+    }
+    return {
+      anchor: anchor, push: push, advanceTo: advanceTo,
+      setPhase: function (p) { stView.phase = p },
+      kart: function () { return shadow },
+      tick: function () { return t },
+      drainEvents: function () { return events.splice(0) },
+      ringInfo: function () { return ring.map(function (e) { return e.at + ':' + e.inp.st + '/' + e.inp.th }) }, // 调试口
+    }
+  }
+
+  /* =====================================================================
+   * api 臂虚拟客户端策略（§5.6/附决策 12）：api 玩家=虚拟会话，本策略把"同式客户端
+   * 预测"搬进脚本侧——每拍锚回服务器真值、快进在途输入、在"预测的现在"上决策
+   * （racer-line 控制器同式）。这是 armB 完赛性的根：裸几何预瞄在 v≈0 起步段失效
+   * （首输入晚 ~16 tick 落地 → 低速无 GV 钳制的跟踪环 ±100 饱和振荡 → 冲出赛道趴
+   * 草地）——预测快进让决策态先跑起来，反馈环有效延迟归零。
+   *
+   * 飞行窗自校准（突发时钟标定，REPORT 注记）：网关 50ms 定时器 ×timeScale8 每拍补
+   * ~8 tick → GET 锚滞 0-8 tick 随机——固定 adv 无法两全（超前=陈旧指令虚构外推、
+   * 欠补=旧航向当现在）。策略自持发送序号、读服务器 inCur[seat].q 回执，EMA 观测
+   * 真实飞行 tick；adv（决策视界）与 apply（push 落地估）同源随动，恒差 ≈ 轮询 1 拍。
+   * 增益随飞行窗退火（1200×5/(5+flight)，下限 280）+ 死区 400 brads——死时间越长
+   * 增益越低（经典相位裕度换法，离线台标定）。
+   * 草地回正（尾部事件兜底）：瞄前方线点全油门自救（草地 vmax 自钳，§2.3）。
+   * ===================================================================== */
+  function makeRacerPolicy(o) {
+    o = o || {}
+    var padPx = o.pad || 0      // 刹 ahead 窗加宽（px）
+    var vTarK = o.vTarK || 65536 // 线速画像系数（Q16）
+    var flight = Math.max(1, o.apply || 2) // 飞行窗 EMA 初值（决策→服务器消费 tick）
+    var P = null, tr = null
+    var seq = 0                 // 发送序号镜像（playScript 帧号同源，0 起每发 +1）
+    var sentLog = []            // [{q, sentTick}] 飞行观测账本
+    var fn = function (view, seat) {
+      /* 飞行窗自校准：inCur.q 回执（已消费序号）→ 首见拍中点估落地 tick */
+      var ack = view && view.inCur && view.inCur[seat] ? (view.inCur[seat].q | 0) : -1
+      if (ack >= 0) {
+        while (sentLog.length && sentLog[0].q <= ack) {
+          var obs = view.tick - sentLog[0].sentTick
+          if (obs >= 0 && obs < 64) flight = (flight * 3 + obs + 1) >> 2  // EMA 75/25 + 落地拍余量
+          sentLog.shift()
+        }
+      }
+      if (!view || view.phase === 'countdown') { seq++; return { st: 0, th: 0, dr: 0 } }
+      if (!P) { P = makePredictor(view.track.id); tr = TRACKS[view.track.id]; fn.predictor = P }
+      var me = null
+      if (view.karts) for (var i = 0; i < view.karts.length; i++) if (view.karts[i].seat === seat) me = view.karts[i]
+      if (!me) { seq++; return { st: 0, th: 0, dr: 0 } }
+      var apply = flight                    // push 落地估
+      var adv = flight + 1                  // 决策视界=自身指令落地拍（超前=虚构、欠补=旧态）
+      P.setPhase(view.phase)
+      P.anchor(me, view.tick)
+      var k = P.advanceTo(view.tick + adv) || me
+      var absLat = k.lat < 0 ? -k.lat : k.lat
+      var out
+      if (absLat > (tr.W >> 1) - 12000 && k.v > 1500) { // 草地回正
+        // 瞄前方线点（同主控制器前瞻）——瞄"齐平 s 线点"在倒行/深出界时目标在侧后方，
+        // 纯追踪微分同向锁死成绕圈（离线台实锤：s 回绕后 3000 tick 绕圈 0 完圈）
+        var rIdx = (((k.s + 60000 + k.v * (14 + flight)) / tr.stepM) | 0) % tr.n
+        var rDes = atan2Q(tr.line[rIdx * 2] - k.x, tr.line[rIdx * 2 + 1] - k.y)
+        out = { st: clampI((angDiff(rDes, k.a || 0) * 400) >> 16, -70, 70), th: 1, dr: 0 }
+      } else {
+        var v = k.v || 0, s = k.s || 0
+        // 前瞻吃进飞行距离（60+v×14 基线 + v×flight）：指令落地前车已走 v×flight px——
+        // 前瞻<死区位移时瞄点在落地前被跑过（追点追不上车，lat 振荡 ±600 实锤）
+        var ti = (((s + 60000 + v * (14 + flight)) / tr.stepM) | 0) % tr.n
+        var diff = angDiff(atan2Q(tr.line[ti * 2] - k.x, tr.line[ti * 2 + 1] - k.y), k.a || 0)
+        var g = Math.max(280, ((1200 * 5) / (5 + flight)) | 0)  // 增益退火
+        var ad = diff < 0 ? -diff : diff
+        out = { st: ad < 400 ? 0 : clampI((diff * g) >> 16, -100, 100), th: 0, dr: 0 } // 死区 400
+        var vPx = v / 1000
+        var span = Math.max(4, (((vPx * vPx) / 4.5 + 150 + padPx + vPx * flight) / (tr.stepM / 1000)) | 0)
+        var idx = (s / tr.stepM) | 0
+        var vTar = 99999999
+        for (var w = 0; w <= span; w++) { var pv = tr.prof[(idx + w) % tr.n]; if (pv < vTar) vTar = pv }
+        vTar = ((vTar * vTarK) >> 16)
+        out.th = v < vTar - 2000 ? 1 : v > vTar + 4000 ? -1 : 0
+        var minR = 999999999
+        var radSpan = (200000 / tr.stepM) | 0
+        for (var w2 = 0; w2 <= radSpan; w2++) { var rr = tr.rad[(idx + w2) % tr.n]; if (rr > 0 && rr < minR) minR = rr }
+        out.dr = minR <= 70000 && v > 4000 ? 1 : 0
+      }
+      P.push(view.tick + apply, out)
+      sentLog.push({ q: seq, sentTick: view.tick })
+      if (sentLog.length > 96) sentLog.shift()
+      seq++
+      return out
+    }
+    fn.predictor = P // 调试口（离线台对拍影子 vs 服务器真值）
+    fn.flightOf = function () { return flight } // 调试口（自校准飞行窗读数）
+    return fn
+  }
+
   /* ---------- 确定性（A6：serialize/hash + 回放器） ---------- */
   function serialize(st) {
     var out = [st.tick, st.phase, st.champion, st.finishAt]
@@ -650,6 +815,7 @@
     CP_SPAN: CP_SPAN, CP_TOL: CP_TOL, JUMP_S: JUMP_S, R_KART: R_KART, DRAFT_T: DRAFT_T,
     create: create, step: step, integrate: integrate, collidePair: collidePair, progress: progress,
     project: project, buildGrid: buildGrid, rankAll: rankAll, totalProgress: totalProgress,
+    makePredictor: makePredictor, makeRacerPolicy: makeRacerPolicy,
     brain: brainImpl, policyInput: policyInput, botDecide: botDecide,
     serialize: serialize, hashState: hashState, hashKart: hashKart, replayInputs: replayInputs,
     fnv1a32: fnv1a32, mulberry32: mulberry32,
