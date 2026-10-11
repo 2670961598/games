@@ -375,19 +375,20 @@
    * 渲染（§3.2/§7：镜头旋进+速度缩放+motion 线+路缘石识图锚）
    * ===================================================================== */
   const g = cv.getContext('2d')
-  let edgeCache = null   // {trackId, inner:[], outer:[]} 边缘折线（法向偏移，一次性派生）
+  let edgeCache = null   // {trackId, mid/inner/outer:[]} 折线（px 坐标，法向偏移，一次性派生）
   function buildEdges() {
     if (edgeCache && edgeCache.trackId === S.track.id) return
-    const tr = S.tr, n = tr.n, half = tr.W / 2
-    const inner = [], outer = []
+    const tr = S.tr, n = tr.n, half = tr.W / 2000   // tr.W 毫米 → px 半宽（/1000 再 /2）
+    const mid = [], inner = [], outer = []
     for (let i = 0; i < n; i++) {
       const tx = tr.tan[i * 2] / 65536, ty = tr.tan[i * 2 + 1] / 65536
       const nx = -ty, ny = tx
       const px = tr.pts[i * 2] / 1000, py = tr.pts[i * 2 + 1] / 1000
+      mid.push(px, py)
       inner.push(px + nx * half, py + ny * half)
       outer.push(px - nx * half, py - ny * half)
     }
-    edgeCache = { trackId: S.track.id, inner, outer }
+    edgeCache = { trackId: S.track.id, mid, inner, outer }
   }
   /* 视口裁剪窗：以镜头为中心 ±R 的采样窗（idx 起止） */
   function viewWindow(cx, cy, R) {
@@ -498,7 +499,7 @@
     /* 赛道：沥青带宽+路缘石（红白虚线=识图主锚，§7） */
     const win = viewWindow(cam.x / 1000, cam.y / 1000, 900)
     const tr = S.tr
-    strokeWindow(tr.pts, win, () => { g.lineWidth = tr.W; g.strokeStyle = ASPH; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke() })
+    strokeWindow(edgeCache.mid, win, () => { g.lineWidth = tr.W / 1000; g.strokeStyle = ASPH; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke() })
     g.setLineDash([14, 14])
     strokeWindow(edgeCache.inner, win, () => { g.lineWidth = 7; g.strokeStyle = S.track.id === 't-neon' ? NEON.cyan : CURB_A; g.stroke() })
     strokeWindow(edgeCache.outer, win, () => { g.lineWidth = 7; g.strokeStyle = S.track.id === 't-neon' ? NEON.mag : CURB_B; g.stroke() })
@@ -849,6 +850,9 @@
     cam.x = me.x; cam.y = me.y; cam.ang = me.a
     S.remote.clear()
     S.remoteTick = 0
+    /* boot 覆盖层退场（online 走 welcome 路径隐藏；debug 竞技场在此隐藏——
+       留显会以 flex 兄弟节点挤偏 canvas 几何，识图 v2 几何断言红） */
+    document.getElementById('boot').style.display = 'none'
   }
   function debugKart() { return DBG ? DBG.st.karts[0] : null }
   function debugStep() {
