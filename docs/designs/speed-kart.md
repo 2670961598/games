@@ -237,11 +237,25 @@ Bot 走网关 BotHost 统一接口 `spawnBot('speed-kart', level)`，输出与�
 
 **三档可感知差异**（QA 断言口径）：完赛圈速中位 competitive < balanced < casual 严格序；漂移释放次数 casual=0、competitive ≥2/圈（t-canyon）；competitive 尾流触发 ≥1/局；casual 全程 bump 率最高（慢车挡路）。
 
+**GAMES-112 深化落值注记**（实现口径，bot2-check 挂具实测量）：
+- 漂移输入面接线：integrate 此前只读 `k.dr` 无写点（输入漂移键自交付即死键，§2.5 物理全死码）——本单接线 `k.dr=inp.dr` 激活；单源两端（客户端预测/服务器权威）同式。
+- 漂移触发域实值：rad 表最紧 t-bay 259px / t-canyon 62.7px / t-neon 122.7px——设计阈值 R≤70/50 在生成赛道上无命中面（t-canyon 发卡弧仅 ~100-200px≈8-20 tick）；实装 competitive R≤250px（蓄力跨入弯-发卡全程）、balanced R≤90px 短漂。**tier1=20tick 滑角蓄力在现赛道几何下几乎不可达**（实测最大连续蓄力 13 tick——需要 ~300px+ 持续全锁滑角弧）→ boost 事件稀有属结构性，tier 参数（§2.5 sim 核心）留专项评估；QA 断言口径改为漂移使用时长梯度（drT casual=0/bal≈90/comp≈250 每局）+ 蓄力尝试梯度。
+- 线速画像注记：t-bay prof 全平 18000（画像不 bind，档速差全靠 LINE_K）；t-canyon/t-neon 有真实画像。
+- 超车断言口径：同档互超含失误方差合法面，跨档断言=对 balanced 基座的超车数（casual=0、competitive ≥2）。
+- 尾流自然发生率：散场（6 车铺 15km 赛道）下 30-90px 对齐 6 tick 稀有（实测 0/局）——competitive 主动跟车（前 90-250px 追点）为尾流建立的主动面；判据挂具走决策级（跟车朝向 A/B）。
+
 ### 4.3 席位让位与托管（竞速语义）
 
 - **秒配**：BotHost 开场补至 6 车格；真人加入 → bot 让位（协议 §2 标准：优先最大 seat bot 就地接管，`kind:bot→human` 继承当前圈数/位置/车型——**接管即接车**，中途加入=接手一辆进行中的车）；真人 ≥6 全让位后满员旁观。
 - **掉线**：10s 席位保留窗（+1 拍，GAMES-63 口径），逾时 bot 托管继续跑（圈数照记，名次照常）；重连即夺回。
 - **AFK**：连续 30s 无输入 → casual 托管（任意输入夺回）——竞速无回合，托管粒度=整个驾驶。
+
+### 4.4 放水链（GAMES-112 陪玩放水——snake-king GAMES-102 范式的竞速语义）
+
+- **连败信号源**：多席竞速无 1v1 对席语义——rooms pulse 扩 `META.pulsePos`（opt-in，speed-kart=2）：终局按完赛名次记真人 pulse（pos≤2=胜断败，否则连败++；同连接跨房累计）。bot 经 `env.foeLose` 读对席真人最大连败数（bot 对 bot 恒全力）。
+- **让力梯度**（game.json `bot.mercy`，缺省同值兜底保证离线确定性不读文件）：连败 ≥`minFoeLose`(2) → 线速 ×0.90 + 转向噪声 ×1.6（圈速衰减+失误注入）；≥`hardFoeLose`(4) → ×0.78 + 噪声 ×2.5 + 停漂（放水不拼）。实测房间级重让臂首圈 +30.6%。
+- **生态位让位**（名次压制缓解）：真人近后方 `holdM`(400000=400px) 内同圈 → 让出内线（横向偏移）+ 收油（vTar×0.82）——真人在 bot 前后方缠斗时不被压制。
+- **A6 parity 纪律**：brain 读 env 后，回放器 replayInputs 须组同形 env（kinds+foeLose 全零）——测试房连败台账恒零，在线==回放逐字节成立（32/0 实证）。
 
 ## 5. S7 协议细节（核心节）
 
