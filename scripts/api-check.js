@@ -956,18 +956,33 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
        胜负=三局两胜、数值锚=三局中位；lose 与非 S6 游戏维持单局严格口径（行为不变） */
     const statSeeds = (meta.net.tech === 'S6' && name !== 'lose') ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
     const stat = { win: [], n: [], dies: [], notes: [] }
-    for (let si = 0; si < statSeeds.length; si++) {
-      const seed = statSeeds[si]
+    /* GAMES-107 提速（2026-10-11 断路收官 PM 落笔）：三 seed 并行开房——串行峰值 622s 贴 600s 收割/复验
+       闸窗两度 GATE-TIMEOUT（exit=124）；并行后剧本段墙钟≈最慢一局。判据零变动：房配置/剧本策略/
+       断言逻辑逐字未动，仅执行序并行（ok() 输出仍按 seed 序消费=确定性可复核）。 */
+    const seedLaunch = statSeeds.map(async (seed) => {
       const s0 = Date.now()
+      let roomL = null
       try {
         const created = await gw('POST', '/api/test/room', { gameId, seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
-        room = created.json && created.json.ok ? created.json : null
-        if (!room) { ok(aid, `${name} 建房`, false, `HTTP ${created.status} ${created.json && created.json.error}`); break }
-        const tickMs = (room.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
+        roomL = created.json && created.json.ok ? created.json : null
+        if (!roomL) return { seed, failCreate: `HTTP ${created.status} ${created.json && created.json.error}` }
+        const tickMs = (roomL.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
         const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
         const policy = POLICIES[sc.policy || 'idle'] || POLICIES.idle
-        const r = await playScript(room.roomId, policy, Date.now() + budgetMs, isS2, scriptPollMs)
-        const durMs = Date.now() - s0
+        const r = await playScript(roomL.roomId, policy, Date.now() + budgetMs, isS2, scriptPollMs)
+        return { seed, roomL, r, durMs: Date.now() - s0 }
+      } finally {
+        if (roomL) { await gw('DELETE', '/api/test/room', { roomId: roomL.roomId }).catch(() => {}) }
+      }
+    })
+    for (let si = 0; si < statSeeds.length; si++) {
+      const seed = statSeeds[si]
+      const got = await seedLaunch[si]
+      try {
+        if (got.failCreate) { ok(aid, `${name} 建房`, false, got.failCreate); break }
+        room = got.roomL
+        const r = got.r
+        const durMs = got.durMs
         if (!r.result) {
           ok(aid, `${name} 达成终态`, false, r.error || '未终局')
           stat.win.push(false)
