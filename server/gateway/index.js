@@ -26,6 +26,7 @@ import { empireSproutSim } from './sims/empire-sprout.js'
 import { poolPhysicsSim } from './sims/pool-physics.js'
 import { elementDuelSim } from './sims/element-duel.js'
 import { snakeKingSim } from './sims/snake-king.js'
+import { speedKartSim } from './sims/speed-kart.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -55,6 +56,7 @@ rooms.register(empireSproutSim) // S3 混合同步首证（GAMES-68）
 rooms.register(poolPhysicsSim)  // S4 服务端权威物理首证（GAMES-78）
 rooms.register(elementDuelSim)  // S5 回合权威本格首证（GAMES-88）
 rooms.register(snakeKingSim)    // S6 海量实体首证（GAMES-99，设计 §5.7）
+rooms.register(speedKartSim)    // S7 预测与和解首证（GAMES-109，设计 §5.1）
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
@@ -64,6 +66,7 @@ bothost.register({ gameId: 'empire-sprout', minLive: 2, levels: ['casual', 'bala
 bothost.register({ gameId: 'pool-physics', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7/§5.5）
 bothost.register({ gameId: 'element-duel', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数）
 bothost.register({ gameId: 'snake-king', minLive: 2, levels: ['casual', 'balanced', 'competitive'], maxRooms: 2, swarm: 20 }) // 常驻巨房 2（casual 房+混编房，实体目标 20；设计 §5.7/§4.1）
+bothost.register({ gameId: 'speed-kart', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual 房+混编房，t-bay 轮换；设计 §5.8）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })

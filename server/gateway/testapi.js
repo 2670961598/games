@@ -77,13 +77,23 @@ export class TestHost {
     }
     if (emptySeats === 0) return { status: 400, body: { ok: false, error: 'no-api-seat（botLevels 须留 null 席给 API 玩家）' } }
     const timeScale = Math.min(16, Math.max(0.25, Number(body.timeScale) || 1))
-    const startDelayMs = Math.min(30_000, Math.max(0, Number(body.startDelayMs) ?? 600))
+    // 缺省 600：Number(undefined)=NaN 而 ?? 不捕获 NaN（存量坑——api-check 恒显式传值未暴露，
+    // 缺参时 liveAt=NaN 房间永不转 live；GAMES-109 私口冒烟复现后收口）
+    const startDelayMs = Math.min(30_000, Math.max(0, Number.isFinite(Number(body.startDelayMs)) ? Number(body.startDelayMs) : 600))
     let room
     try {
       room = this.rooms.create({
         gameId: body.gameId, name: `测试房·${sim.META.title}`, bots,
         startDelayMs, maxTicks: body.maxTicks, hp: body.hp,
         seed: body.seed, test: true, timeScale,
+        // S7 扩展（GAMES-109 speed-kart，net-protocol §8.1 测试 API 扩展点——设计 §5.6/§6）：
+        // delayMs=双向各垫一半的模拟延迟（latency200 双臂 api 主证）；
+        // autopilot=API 席服务器节拍自动驾驶（deterministic 剧本——HTTP 注入有墙钟抖动，
+        // tick 锁定的服务器侧策略才满足"同 seed 同策略"逐字节断言口径）；track/laps=房参覆写。
+        delayMs: Math.min(1000, Math.max(0, Number(body.delayMs) || 0)),
+        autopilot: body.autopilot === true,
+        track: typeof body.track === 'string' ? body.track : null,
+        laps: Number.isInteger(body.laps) ? body.laps : null,
       })
     } catch (err) {
       return { status: 400, body: { ok: false, error: String(err && err.message || err) } }

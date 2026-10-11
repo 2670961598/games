@@ -1095,6 +1095,19 @@
         "bot": "生态位三档 PERSONA（casual 饲料蛇·碰撞流死亡源/balanced 觅食者 AOI 价值评估+机会击杀/competitive 猎手三技：拦截闭式解+围杀弧线+危险断尾）+放水链（连败代理=房内 deaths/kills，常驻房无终局脉冲）+swarm 让位/45s 防抖补员",
         "chain": "GAMES-98..106 九单链完整+FIX2 跳过（QA2 退回 0 全低危观察项，无修复对象——PM 裁量不派单）"
       }
+    },
+    "multiplayer:speed-kart": {
+      "stage": "dev",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "E6-W1-T7 轨 S7 预测与和解首证 DEV（单链 2/10+）。核心：单源 sim-kart（Q16 整数/三赛道烘焙表/两角漂移/understeer grip）+makePredictor（anchor/push/advanceTo 影子预测——api 臂虚拟客户端与浏览器客户端共用）+和解回路（ack 锚定重放/软收敛 35%帧/硬回滚 120ms 混合带/ext.pd 补齐 d·s·cp 完整态/hash 帧拍哨兵）；api-check A1-A8 全绿（A6 确定性双跑+回放、A8 双臂完赛中位差 4.27%@ts2 设计口径）。QA/FEEL/VIS 深化待后续单",
+      "net": {
+        "tech": "S7",
+        "bot": "赛车线三档（casual 中心线+噪声/balanced 赛车线×0.92+短漂/competitive 蓄放漂移+尾流抽头）——pure pursuit 前瞻+线速画像回溯烘焙进 tracks.cjs",
+        "chain": "GAMES-108 设计书→109 DEV（本单）；单链 2/10+"
+      }
     }
   }
 }
