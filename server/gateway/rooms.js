@@ -36,6 +36,12 @@ const sanitizeKeys = (k) => {
   // 与 mx/my/fire 同为持续态键（lastInput 宽限沿用）；不带该键的游戏零感知
   if (k && Number.isFinite(k.a)) out.a = ((Math.trunc(k.a) % 360) + 360) % 360
   if (k && k.boost !== undefined) out.boost = k.boost ? 1 : 0
+  // S7 连续驾驶键（GAMES-109 speed-kart 先例，协议 §6 input 面扩展）：
+  // st=转向量 [-100,100]/th=油门档 {-1,0,1}/dr=漂移开关——持续态键（lastInput 宽限沿用）；
+  // 输入序号 q 不在此处（由 input() 按 msg.frame 注入给 seqInput 游戏，§5.1 ack 锚点）
+  if (k && Number.isFinite(k.st)) out.st = n(k.st)
+  if (k && Number.isFinite(k.th)) out.th = Math.max(-1, Math.min(1, Math.trunc(k.th)))
+  if (k && k.dr !== undefined) out.dr = k.dr ? 1 : 0
   return out
 }
 
@@ -57,15 +63,18 @@ export class RoomManager {
   // opts.seed：确定性 seed 覆盖（测试 API 钉死地图用；缺省仍按 roomId 派生）；
   // opts.test：隔离测试房标记——不进 feed（matches）、不被 quick 命中、不计 BotHost 配额；
   // opts.timeScale：测试房假时钟倍速（仅影响 live 帧推进节奏，帧内容与真人房逐字节同构）。
-  create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp, seed, test = false, timeScale = 1 }) {
+  create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp, seed, test = false, timeScale = 1, delayMs = 0, autopilot = false, track = null, laps = null }) {
     const sim = this.sims.get(gameId)
     if (!sim) throw new Error(`game-unknown: ${gameId}`)
     // 房间 ID 前缀：缺省 gameId 首段；sim 可经 META.roomPrefix 指定（empire-sprout→emp：
     // 设计 §7 前缀纪律——feed 字典序 mmo-<net-<slg- 之后，存量房序断言不受扰）
     const roomId = genId(sim.META.roomPrefix || gameId.split('-')[0])
     const seedVal = Number.isInteger(seed) ? (seed >>> 0) : sim.fnv1a32(roomId + ':' + randomBytes(2).toString('hex'))
-    // opts.test 透传 sim（S2 常驻世界游戏据此隔离存档/终局投影，GAMES-52；S1 sim 忽略）
-    const state = sim.create(seedVal, { maxTicks, hp, test })
+    // opts.test 透传 sim（S2 常驻世界游戏据此隔离存档/终局投影，GAMES-52；S1 sim 忽略）；
+    // S7 扩展（GAMES-109 speed-kart）：delayMs=测试房延迟注入（§5.6 api 臂，双向各垫一半）、
+    // autopilot=服务器节拍自动驾驶席（A6 确定性双跑——HTTP 注入有墙钟抖动，tick 锁定才可逐字节断言）、
+    // track/laps=房参覆写（§5.8）
+    const state = sim.create(seedVal, { maxTicks, hp, test, autopilot, track, laps })
     const seats = []
     for (let i = 0; i < sim.META.seats; i++) {
       const botCfg = bots[i] || null // {level} | null → 空位等人
@@ -85,7 +94,16 @@ export class RoomManager {
       name: name || `${sim.META.title}房`,
       disposeAt: 0,
       test: !!test, timeScale: test ? (Number(timeScale) > 0 ? Number(timeScale) : 1) : 1,
+      delayMs: Number(delayMs) > 0 ? Number(delayMs) : 0, // S7 延迟注入（仅测试房语义，§5.6）
       result: null,
+    }
+    /* S7 延迟投递（GAMES-109 §5.6 api 臂）：该房全部下行按 delayMs/2 延迟发送——
+     * 发送队列 setTimeout 投递，不占 tick 预算；无 delayMs 时直发（零行为变化）。
+     * sim.emit 经 room.send 走同一通道（speed-kart 适配器约定）。 */
+    room.send = (ctx, text) => {
+      const half = room.delayMs >> 1
+      if (!half) { if (ctx.conn && ctx.conn.writable) ctx.conn.send(text); return }
+      setTimeout(() => { if (ctx.conn && ctx.conn.writable) ctx.conn.send(text) }, half)
     }
     this.rooms.set(roomId, room)
     this.log({ k: 'room-create', roomId, gameId, name: room.name, bots: bots.length, test: room.test })
@@ -201,8 +219,14 @@ export class RoomManager {
     if (!room || connCtx.role !== 'player') return
     const s = room.seats[connCtx.seat]
     if (!s || s.conn !== connCtx) return
-    const keys = sanitizeKeys(msg.keys)
-    const f = Number(msg.frame)
+    const apply = () => {
+      const s2 = room.seats[connCtx.seat]
+      if (!s2 || s2.conn !== connCtx) return // 延迟投递窗内掉线/易主：丢弃（迟到输入不作数）
+      const keys = sanitizeKeys(msg.keys)
+      const f = Number(msg.frame)
+      // S7 seqInput（GAMES-109）：input.frame=客户端输入序号 → keys.q（sim seatInput 的
+      // q 推进/单调守卫入口，§5.1）；无 frame 的注入维持旧语义（宽限沿用通道）。
+      if (room.sim.META.seqInput && Number.isInteger(f)) keys.q = f
     // S2 语义：input.frame=客户端输入序号 seq（预测和解 ack 锚点，GAMES-52）；
     // S1 语义不变（目标帧预约）。lastSeq 对 S1 游戏无用、零开销。
     if (Number.isInteger(f)) s.lastSeq = f
@@ -221,6 +245,11 @@ export class RoomManager {
     } else {
       s.lastInput = keys
     }
+    }
+    // S7 延迟注入（§5.6 api 臂）：上行输入按 delayMs/2 延迟投递（收发双向对称）；无延迟直入。
+    const half = room.delayMs >> 1
+    if (half) setTimeout(apply, half)
+    else apply()
   }
 
   /* ---------- op 通道（S4+，协议 §6 S5 预留位：一次性指令，服务器权威校验在 sim） ---------- */
@@ -404,13 +433,13 @@ export class RoomManager {
     // S5 迷雾下发（GAMES-88 element-duel 先例，设计 §5.3）：sim 声明 personalize 时
     // 按连接个性化（started/welcome 类带 state 的消息逐席换视图；无 sim 分叉零感知）
     if (room.sim && room.sim.personalize) {
-      for (const s of room.seats) if (s.conn && s.conn.conn.writable) s.conn.conn.send(JSON.stringify(room.sim.personalize(room, s.conn, msg)))
-      for (const c of room.spectators) if (c.conn.writable) c.conn.send(JSON.stringify(room.sim.personalize(room, c, msg)))
+      for (const s of room.seats) if (s.conn && s.conn.conn.writable) room.send(s.conn, JSON.stringify(room.sim.personalize(room, s.conn, msg)))
+      for (const c of room.spectators) if (c.conn.writable) room.send(c, JSON.stringify(room.sim.personalize(room, c, msg)))
       return
     }
     const text = JSON.stringify(msg)
-    for (const s of room.seats) if (s.conn && s.conn.conn.writable) s.conn.conn.send(text)
-    for (const c of room.spectators) if (c.conn.writable) c.conn.send(text)
+    for (const s of room.seats) if (s.conn && s.conn.conn.writable) room.send(s.conn, text)
+    for (const c of room.spectators) if (c.conn.writable) room.send(c, text)
   }
 
   broadcastSeat(room) {
@@ -440,7 +469,7 @@ export class RoomManager {
     }
     // S5 个性化（GAMES-88）：welcome.state=按角色裁剪视图（重连全量恢复=个性化全量，设计 §5.4）
     if (room.sim.personalize) msg = room.sim.personalize(room, ctx, msg)
-    ctx.conn.send(JSON.stringify(msg))
+    room.send(ctx, JSON.stringify(msg))
   }
 
   /* ---------- feed（GET /api/matches 数据源） ---------- */

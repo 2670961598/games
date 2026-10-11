@@ -1,0 +1,78 @@
+{
+  "slug": "speed-kart",
+  "title": "极速卡丁",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 190,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "takeover": "casual",
+    "desc": "三档=赛车线档差（设计 §4.2）：casual 巡航者（中心线+噪声+线速×0.78）/ balanced 学徒（赛车线×0.92+R≤50 短漂）/ competitive 车手（赛车线×1.00+R≤70 蓄放漂移）。控制器=pure pursuit 前瞻（×14 调参）+线速画像窗口油门，生成期烘焙进 tracks.cjs 派生表"
+  },
+  "scoring": {
+    "win": "率先完成 L 圈（2-3 圈按赛道）",
+    "lose": "完赛窗/超时按 (laps,s) 定格名次",
+    "s2": "最佳圈 lapMs",
+    "s3": "延迟补偿圈速对照（本地 vs 判定）"
+  },
+  "description": "200ms 延迟照样贴弯：本地预测驾驶+服务器和解，弯速损耗低到写进结算条给你看。三车三道，漂移蓄力，尾流抽头，还能跟全镇最佳幽灵异步斗圈。",
+  "net": {
+    "tech": "S7",
+    "gameId": "speed-kart",
+    "mode": "race-laps",
+    "seats": 6,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "turn":  { "ws": "input", "keys": ["st", "th"],
+                   "desc": "驾驶向量 20Hz 持续上报（心跳兼保活）：st∈[-100,100] 整数转向、th∈{-1,0,1} 油门档（变才带，st 恒带）；input.frame=客户端输入序号 seq（预测和解 ack 锚点，§5.1）。本地预测同式零等待" },
+        "drift": { "ws": "input", "keys": ["dr"],
+                   "desc": "漂移开关 0|1（变才上报）：入弯滑角蓄力（tier1=20tick/tier2=45tick），松开释放小涡轮增压（§2.5）" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）；scores 每席 {pos, best, laps}",
+        "winner": "'A'=API 席率先完成 L 圈 ｜ 'B'=任一 bot 席率先完成",
+        "teams": { "A": [0], "B": [1, 2, 3, 4, 5] },
+        "reason": "finish（首位完赛+完赛窗收口） ｜ timeout（7000 tick 按 laps,s 定格） ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：join→welcome.state（赛道表/发车格/圈数 L/countdown 相位）→ started→live；快照 10Hz 到流",
+        "A2 能赢：racer-line 策略（§4.1 控制器脚本侧实现）跑满 L 圈率先完赛（vs 5×balanced bot）",
+        "A3 能输：idle 策略（零输入泊在发车格）→ bot 完赛触发完赛窗收口（兜底 3600 tick 超时定格），API 席 rank=末位",
+        "A4 操作注入→快照反映 <100ms：turn 注入后 ≤2 tick（100ms）内快照己车 a 朝 st 方向收敛（W_eff 首拍可断言）",
+        "A5 断线重连 <10s：$disconnect→$reconnect → welcome 全量（圈数/圈速/排名/ack/己车态）→ pending 输入重放续跑（§5.1）",
+        "A6 确定性双跑：同 seed 同策略两房，终态 stateHash 与输入日志逐字节相等；且在线终态 hash==回放器重放 hash（S7 纪律首证；策略=服务器节拍 autopilot——HTTP 注入有墙钟抖动，tick 锁定才满足逐字节口径）",
+        "A7 圈速断言：任一完赛席 laps==L、lapTimes 长度==L 且每项 >0、sum(lapTimes)≤对局时长；{k:'lap'} 事件账本与 state 一致；s 单调性违例（跳段>600px）零计数",
+        "A8 200ms 双臂：latency200 剧本 arm0/arm200 两房同 seed 同策略——双臂完赛（finish 且 API 席 laps==L，延迟臂控制器=前瞻 v×delay 几何预瞄）；圈速中位差 api 臂口径 ≤25%（设计 §5.6 的 ≤1.5% 精确公平性=客户端预测在场，归 QA2 浏览器臂双臂——附决策 12 口径分工：api 臂虚拟会话无客户端 sim+15ms 轮询节拍为不可约臂差，DEV 离线标定不补偿=0 圈卡死草坪）；armB carriedInputs>0 且 ≥arm0（延迟注入在场证据，§5.6）"
+      ],
+      "script": {
+        "seed": 20261011, "timeScale": 8, "startDelayMs": 600, "maxTicks": 7000,
+        "scenarios": {
+          "win":   { "botLevels": [null, "balanced", "balanced", "balanced", "balanced", "balanced"], "expectWinner": "A", "policy": "racer-line" },
+          "lose":  { "maxTicks": 3600, "botLevels": [null, "balanced", "balanced", "balanced", "balanced", "balanced"], "expectWinner": "B", "policy": "idle" },
+          "deterministic": {
+            "runs": 2, "autopilot": true, "botLevels": [null, "balanced", "balanced", "casual", "casual", "casual"], "expectWinner": "any",
+            "policy": "racer-line",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志逐字节相等 && stateHash == replayHash"
+          },
+          "latency200": {
+            "arms": [ { "delayMs": 0 }, { "delayMs": 200 } ], "botLevels": [null, "balanced", "balanced", "balanced", "balanced", "balanced"],
+            "policy": "racer-line",
+            "assert": "双臂 finish && 圈速中位差 ≤1.5% && armB carriedInputs ≥ arm0（§5.6 表）"
+          }
+        }
+      }
+    }
+  }
+}

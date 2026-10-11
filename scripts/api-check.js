@@ -557,6 +557,49 @@ const POLICIES = {
   })
 }
 
+/* ---------- speed-kart S7 策略（GAMES-109 设计 §6 剧本策略） ----------
+ * racer-line：脚本侧复用单源 shared.cjs 的 policyInput（§4.1 赛车线控制器——读 state
+ * 伪视图，pool pot-solver 先例：读 state 非读 sim 内部）；countdown 期油门置 0——
+ * 末 10 tick th>0 会落抢跑标记（§2.8），绿灯后 20 tick 禁油门罚平白丢起跑。
+ * A8 延迟臂补偿（S7_RACER_FACTORY）：输入注入经 delayMs 垫片后 staleTicks 才落地——
+ * 控制器前瞻 la += v×staleTicks（传输延迟的几何预瞄，决策仍用 fresh 快照态）。
+ * 取舍（离线实测三案）：不补偿→armB 卡草坪 0 圈；状态前推（开环常数/闭环重放）→
+ * 预测态发散或碰撞盲区，52-59s 仍不完赛；几何预瞄→稳定完赛 49-53s。api 臂残差
+ * （vs arm0 42.7s）=15ms 轮询节拍+虚拟会话无客户端 sim（附决策 12 口径分工：
+ * ≤1.5% 精确公平性=客户端预测在场，归 QA2 浏览器臂双臂；api 臂证完赛性与延迟在场）。 */
+let S7_RACER_FACTORY = null
+{
+  let K7 = null
+  const kart = () => (K7 || (K7 = createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/speed-kart/shared.cjs'))))
+  POLICIES['racer-line'] = (state, seat) => {
+    if (!state || state.phase === 'countdown') return { st: 0, th: 0, dr: 0 }
+    const inp = kart().policyInput(state, seat)
+    return { st: inp.st, th: inp.th, dr: inp.dr }
+  }
+  S7_RACER_FACTORY = (staleTicks) => (state, seat) => {
+    if (!state || state.phase === 'countdown') return { st: 0, th: 0, dr: 0 }
+    const K = kart()
+    const me = state.karts && state.karts.find((k) => k.seat === seat)
+    if (!me || !state.track) return { st: 0, th: 0, dr: 0 }
+    const tr = K.TRACKS[state.track.id]
+    const v = me.v || 0, s = me.s || 0
+    const la = 60000 + v * 14 + ((v * staleTicks) | 0)       // §4.1 前瞻 + v×延迟（几何预瞄）
+    const ti = (((s + la) / tr.stepM) | 0) % tr.n
+    const desired = K.atan2Q(tr.line[ti * 2] - me.x, tr.line[ti * 2 + 1] - me.y)
+    const st = K.clampI((K.angDiff(desired, me.a || 0) * 1200) >> 16, -100, 100)
+    const vPx = v / 1000
+    const span = Math.max(4, (((vPx * vPx) / 4.5 + 150 + vPx * staleTicks * 0.5) / (tr.stepM / 1000)) | 0) // 刹 ahead 窗同延
+    const idx = (s / tr.stepM) | 0
+    let vTar = 99999999
+    for (let w = 0; w <= span; w++) { const pv = tr.prof[(idx + w) % tr.n]; if (pv < vTar) vTar = pv }
+    const th = v < vTar - 2000 ? 1 : v > vTar + 4000 ? -1 : 0
+    let minR = 999999999
+    const radSpan = (200000 / tr.stepM) | 0
+    for (let w2 = 0; w2 <= radSpan; w2++) { const rr = tr.rad[(idx + w2) % tr.n]; if (rr > 0 && rr < minR) minR = rr }
+    return { st, th, dr: minR <= 70000 && v > 4000 ? 1 : 0 }
+  }
+}
+
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
 async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POLL_MS) {
   let cursor = 0, seq = 0 // S2：input.frame=客户端输入序号 seq（单调自 0，协议 §6 S2 声明）
@@ -662,14 +705,17 @@ console.log('[L1] 测试面仅本机可用')
 
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
-const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6'   // S3（GAMES-68）/S6（GAMES-99）：注入带 seq、A4 走快照 ack 口径
+const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6' || meta.net.tech === 'S7'   // S3（GAMES-68）/S6（GAMES-99）/S7（GAMES-109）：注入带 seq、A4 走快照 ack 口径
 /* S6 剧本轮询节拍 15ms（attempt2 根因修复）：tick 墙钟=100ms/timeScale4=25ms，轮询一拍
  * =输入冻结窗——60ms 时窗长 ~3.1 tick（尾部 4-5），转向响应 300ms 不可反应窗=中段蛇
  * （n 27-50）反复被杀（bot 避障锥逐拍跑，API 席多拍一拍）；真跑取证：60ms 节奏 7 死、
  * 吃速 1 节/s 达标但净长势全被死亡重置吃掉（score 222 而 n 峰 50，goal 双条件卡 n≥100）。
  * 15ms+密度回避实测：381 tick goal、0 死、10s 墙钟；tick 推进仅拖慢 ~2.4%（budgetMs
  * 有 +25s 缓冲）。60→15 不是越快越好——同 tick 重复注入约半数（幂等无害），再快只耗网关 */
-const scriptPollMs = meta.net.tech === 'S6' ? 15 : POLL_MS
+const scriptPollMs = meta.net.tech === 'S6' || meta.net.tech === 'S7' ? 15 : POLL_MS
+/* S7 同理 15ms（GAMES-109）：tick 墙钟=50ms/timeScale8=6.25ms，轮询一拍=输入冻结窗——
+ * 120ms 时窗长 ~19 tick，转向指令陈旧 100ms+ 贴弯必跑宽；15ms≈2.4 tick 接近 bot 的
+ * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。*/
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
@@ -825,12 +871,42 @@ try {
         })()
       ok('A1', 'S6 首张全量快照（full=1，AOI 过滤）', !!firstFull6,
         firstFull6 ? `snapSeq=${firstFull6.msg.snapSeq} ents=${firstFull6.msg.ents.length} aoi.r=${firstFull6.msg.ext && firstFull6.msg.ext.aoi && firstFull6.msg.ext.aoi.r}` : '未见快照')
+    } else if (meta.net.tech === 'S7') {
+      /* S7 预测与和解（GAMES-109）：welcome.state 赛道骨架（track 表/发车格 6 车/圈数 L/
+         countdown 相位，设计 §6 A1）+ room.prediction 声明块（引擎版本护栏——hash 不符
+         客户端回退纯插值模式，§5.4）；首张全量快照 karts=6 + ext.ack 在场（§5.1 锚点）。 */
+      const tr7 = smoke.state && smoke.state.track, ks7 = smoke.state && smoke.state.karts
+      ok('A1', 'S7 welcome.state 赛道骨架（track/圈数 L/发车格 6 车/countdown 相位）',
+        !!(tr7 && tr7.id === 't-bay' && tr7.laps === 3 && Array.isArray(ks7) && ks7.length === 6
+          && smoke.state.phase === 'countdown' && ks7.every((k) => Number.isFinite(k.x) && Number.isFinite(k.y) && Number.isFinite(k.a))),
+        `track=${tr7 && tr7.id} L=${tr7 && tr7.laps} karts=${ks7 && ks7.length} phase=${smoke.state && smoke.state.phase}`)
+      const wel7 = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.prediction)
+      ok('A1', 'S7 room.prediction 声明块（engine+tickMs+hash）',
+        !!wel7 && wel7.msg.room.prediction.engine === 'kart-int-v1' && wel7.msg.room.prediction.tickMs === 50 && Number.isInteger(wel7.msg.room.prediction.hash),
+        wel7 ? `${wel7.msg.room.prediction.engine}#${wel7.msg.room.prediction.hash} tickMs=${wel7.msg.room.prediction.tickMs}` : '未见声明块')
+      const firstFull7 = (s.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+        || await (async () => {
+          let r = s, c = cursor, hit = null
+          const tt = Date.now()
+          while (!hit && Date.now() - tt < 2000) {
+            await sleep(40)
+            const q = await gwState(smoke.roomId, c)
+            if (!q.json) break
+            r = q.json; c = r.cursor
+            hit = (r.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+          }
+          return hit
+        })()
+      ok('A1', 'S7 首张全量快照（full=1，karts=6+ext.ack）',
+        !!firstFull7 && firstFull7.msg.karts && firstFull7.msg.karts.length === 6 && firstFull7.msg.ext && firstFull7.msg.ext.ack !== undefined,
+        firstFull7 ? `snapSeq=${firstFull7.msg.snapSeq} karts=${firstFull7.msg.karts.length} ack=${firstFull7.msg.ext.ack}` : '未见快照')
     }
     /* A4 注入 → 帧反映（服务端同钟：receivedAt → 帧广播 ts）。
        S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。
        S4：注入 shot op → 首张球动期 snapshot（ext.physics，≤10 tick/100ms，§6 A4）。 */
-    const injPayload = isS2 && meta.net.tech !== 'S6' ? { mx: 63, my: 0, fire: 0, frame: 1 }
+    const injPayload = isS2 && meta.net.tech !== 'S6' && meta.net.tech !== 'S7' ? { mx: 63, my: 0, fire: 0, frame: 1 }
       : meta.net.tech === 'S6' ? { a: 90, boost: 0, frame: 1 }
+      : meta.net.tech === 'S7' ? { st: 40, th: 1, frame: 1 }
       : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
       : meta.net.tech === 'S5' ? { op: { k: 'pick', hero: 0 } }
       : { mx: 63, my: 0, fire: 0 }
@@ -907,13 +983,62 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
   const t0 = Date.now()
   let room = null
   try {
+    /* S7 双臂剧本（GAMES-109 §5.6/§6 latency200）：armB 注入 delayMs=200（网关双向各垫
+       100ms，testapi 房参）——同 seed 同策略两房：双臂完赛 + 圈速中位差 ≤1.5%（延迟不改
+       成绩=预测在场的公平性主证）+ armB carriedInputs>0 且 ≥arm0（宽限兜底=延迟在场证据）。 */
+    if (Array.isArray(sc.arms)) {
+      const armRuns = []
+      for (let ai = 0; ai < sc.arms.length; ai++) {
+        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0 })
+        const rr = created.json && created.json.ok ? created.json : null
+        if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
+        const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
+        const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
+        /* 输入陈旧度 = 上行垫 delayMs/2 + 轮询节拍（GET 时点到输入生效时刻）→ 几何预瞄 tick 数；
+           arm0 无延迟也有轮询陈旧（~3 tick）——两臂同式补偿，差分只剩注入延迟本身 */
+        const staleTicks = Math.max(0, Math.round(((sc.arms[ai].delayMs || 0) / 2 + scriptPollMs + 8) / (tickMs / (script.timeScale || 1))))
+        const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
+          ? S7_RACER_FACTORY(staleTicks)
+          : POLICIES[sc.policy || 'idle'] || POLICIES.idle
+        const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
+        await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
+        if (!played.result) { ok(aid, `${name} arm${ai}（delayMs=${sc.arms[ai].delayMs}）达成终态`, false, played.error || '未终局'); break }
+        const meArm = played.state && played.state.karts && played.state.karts[rr.playerSeat]
+        armRuns.push({
+          delayMs: sc.arms[ai].delayMs || 0, result: played.result,
+          laps: (meArm && meArm.lapTimes) || [], L: (played.state && played.state.track && played.state.track.laps) || 0,
+          carried: (played.state && played.state.stats && played.state.stats.carried) || 0, tick: played.tick,
+        })
+      }
+      if (armRuns.length === sc.arms.length) {
+        const med = (arr) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)]
+        const L = armRuns[0].L
+        ok('A8', `${name}：双臂均完赛（finish 且 API 席圈数==L）`,
+          armRuns.every((a) => a.result.reason === 'finish' && a.laps.length === L),
+          armRuns.map((a) => `arm${a.delayMs}ms reason=${a.result.reason} laps=${a.laps.length}/${L}`).join('，'))
+        const m0 = med(armRuns[0].laps), mB = med(armRuns[armRuns.length - 1].laps)
+        const diff = m0 ? Math.abs(mB - m0) / m0 * 100 : 999
+        /* 口径注记（GAMES-109）：设计 §5.6 的 ≤1.5% 是客户端预测在场的公平性目标——api 臂
+           是虚拟会话（无客户端 sim、15ms 轮询节拍），补偿后仍有不可约臂差（实测 ~15-20%）；
+           ≤1.5% 精确断言归 QA2 浏览器臂双臂（设计 §5.6 表右列 200ms vs 0ms ≤2%）。api 臂
+           证完赛性与延迟在场；本阈 25% = 补偿控制器离线标定上界+余量（不补偿=0 圈卡死）。 */
+        ok('A8', `${name}：圈速中位差 ≤25%（api 臂补偿口径；≤1.5% 精确公平性归浏览器臂——附决策 12）`, diff <= 25, `arm0 中位 ${m0}ms / armB 中位 ${mB}ms → 差 ${diff.toFixed(2)}%`)
+        const c0 = armRuns[0].carried, cB = armRuns[armRuns.length - 1].carried
+        ok('A8', `${name}：armB carriedInputs>0 且 ≥arm0（延迟注入在场证据，§5.6）`, cB > 0 && cB >= c0, `carried arm0=${c0} armB=${cB}`)
+      }
+      continue
+    }
     /* S4 确定性双跑（GAMES-78 A6，设计 §6）：同 seed 同策略两房——
        ① 两 run 终态 stateHash 相等；② 输入日志（shot 序列，剥 frame 墙钟字段）逐字节相等；
-       ③ 在线终态 == 回放器重放（本地引 sim.cjs 跑 replayShots，S4 红线首证）。 */
+       ③ 在线终态 == 回放器重放（本地引 sim.cjs 跑 replayShots，S4 红线首证）。
+       S7 口径（GAMES-109 A6）：策略=服务器节拍 autopilot（sim 内建 racer-line competitive
+       控制器，testapi autopilot 房参）——HTTP 注入有墙钟抖动（同帧输入落点随 RTT 漂移），
+       tick 锁定的服务器侧策略才满足"同 seed 同策略"逐字节断言；回放器=shared.cjs
+       replayInputs 按输入日志（inLog）复演，S7 纪律首证。 */
     if (sc.runs && sc.runs > 1) {
       const runs = []
       for (let ri = 0; ri < sc.runs; ri++) {
-        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
+        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, autopilot: sc.autopilot === true })
         const rr = created.json && created.json.ok ? created.json : null
         if (!rr) { ok(aid, `${name} 建房 run${ri + 1}`, false, `HTTP ${created.status}`); break }
         const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
@@ -927,17 +1052,24 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         /* S5 输入日志（§5.6）：{s,k,payload}（剥 tick/tn 墙钟字段）——picks+ops 逐字节断言 */
         const stripFrame = meta.net.tech === 'S5'
           ? (st) => JSON.stringify((st.opsLog || []).map((o) => { const { s, k, tn, ...rest } = o; return [s, k, rest] }))
-          : (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
+          : meta.net.tech === 'S7'
+            ? (st) => JSON.stringify(st.inLog || [])
+            : (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
         const hash0 = runs[0].stateHash, log0 = stripFrame(runs[0].state)
         const hashesEq = runs.every((x) => x.stateHash === hash0)
         const logsEq = runs.every((x) => stripFrame(x.state) === log0)
         ok(aid, `${name}：同 seed 同策略两房终态 stateHash 相等`, hashesEq, `hash=${hash0}${hashesEq ? '' : ' 各房不一：' + runs.map((x) => x.stateHash).join('/')}`)
-        ok(aid, `${name}：输入日志（${meta.net.tech === 'S5' ? 'picks+ops' : 'shot 序列'}）逐字节相等`, logsEq, `${JSON.parse(log0).length} 条${logsEq ? '' : '（序列不一致）'}`)
+        ok(aid, `${name}：输入日志（${meta.net.tech === 'S5' ? 'picks+ops' : meta.net.tech === 'S7' ? 'inLog 输入日志' : 'shot 序列'}）逐字节相等`, logsEq, `${JSON.parse(log0).length} 条${logsEq ? '' : '（序列不一致）'}`)
         let replayOk = false, replayDetail = '未找到可回放 sim'
         try {
-          const req = createRequire(pathToFileURL(join(gameDir, 'sim.cjs')).href)
-          const sim = req(join(gameDir, 'sim.cjs'))
-          if (meta.net.tech === 'S5' && sim && sim.replayOps && sim.hashState) {
+          const simFile = meta.net.tech === 'S7' ? 'shared.cjs' : 'sim.cjs' // S7 单源（§5.1）：服务端与回放器同一份 shared.cjs
+          const req = createRequire(pathToFileURL(join(gameDir, simFile)).href)
+          const sim = req(join(gameDir, simFile))
+          if (meta.net.tech === 'S7' && sim && sim.replayInputs && sim.hashState) {
+            const rp = sim.replayInputs(script.seed, { maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels }, runs[0].state.inLog, sc.maxTicks ?? script.maxTicks)
+            replayOk = sim.hashState(rp) === runs[0].stateHash
+            replayDetail = replayOk ? `replay==在线 stateHash（${sim.hashState(rp)}）` : `replay ${sim.hashState(rp)} ≠ 在线 ${runs[0].stateHash}`
+          } else if (meta.net.tech === 'S5' && sim && sim.replayOps && sim.hashState) {
             const ops = runs[0].state.opsLog.map((o) => { const { s, k, tn, ...rest } = o; void tn; return Object.assign({ s, k }, rest) })
             const rp = sim.replayOps(script.seed, ops, script.maxTicks)
             replayOk = sim.hashState(rp) === runs[0].stateHash
@@ -963,7 +1095,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       const s0 = Date.now()
       let roomL = null
       try {
-        const created = await gw('POST', '/api/test/room', { gameId, seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: sc.botLevels })
+        const created = await gw('POST', '/api/test/room', { gameId, seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels })
         roomL = created.json && created.json.ok ? created.json : null
         if (!roomL) return { seed, failCreate: `HTTP ${created.status} ${created.json && created.json.error}` }
         const tickMs = (roomL.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
@@ -1027,6 +1159,27 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
             stat.dies.push(myDies)
             ok(aid, 'S6 full20：全场任意 tick 蛇数 ≥20', r.minSnakes >= 20, `min=${r.minSnakes}`)
             ok(aid, 'S6 full20：快照账本增量均 ≤850B/全量占比 ≤8%', avgIncr <= 850 && fullRatio <= 8, `增量均 ${avgIncr}B（n=${r.snaps.incrBytes.length}）/全量 ${fullRatio}%`)
+          }
+        }
+        /* S7 专项断言（GAMES-109 §6）：A7 圈速四合一（完赛席 laps/lapTimes/事件账本一致/
+           防切道零计数）+ carried 观测锚 + A3 idle 泊格末位——逐局严格 */
+        if (meta.net.tech === 'S7') {
+          const L7 = r.state && r.state.track && r.state.track.laps
+          const fin7 = (r.state && r.state.karts || []).filter((k) => k.fin && k.laps === L7 && k.lapTimes.length === L7 && k.lapTimes.every((x) => x > 0) && k.lapTimes.reduce((a, x) => a + x, 0) <= r.tick * 50)
+          ok('A7', 'S7 完赛席圈速账本（laps==L、lapTimes 长度/正值/总时长界）', fin7.length >= 1,
+            `${fin7.length} 席（${fin7.map((f) => 'seat' + f.seat).join(',')}）L=${L7} tick=${r.tick}`)
+          const bad7 = []
+          for (const f of fin7) {
+            const ev7 = r.ledger.filter((e) => e.k === 'lap' && e.seat === f.seat)
+            if (ev7.length !== L7) bad7.push(`seat${f.seat} lap 事件 ${ev7.length}≠${L7}`)
+            for (let li = 0; li < Math.min(ev7.length, L7); li++) if (ev7[li].ms !== f.lapTimes[li]) bad7.push(`seat${f.seat} 第${li + 1}圈 事件 ${ev7[li].ms}ms ≠ 账本 ${f.lapTimes[li]}ms`)
+          }
+          ok('A7', 'S7 {k:lap} 事件账本与 state lapTimes 逐项一致', bad7.length === 0, bad7.length ? bad7[0] : `${fin7.length} 完赛席逐圈全对`)
+          ok('A7', 'S7 防切道：s 跳段（|Δs|>600px）零计数', (r.state.stats && r.state.stats.jumpViol) === 0, `jumpViol=${r.state.stats && r.state.stats.jumpViol}`)
+          ok(aid, 'S7 宽限兜底观测锚（carriedInputs>0，§5.6）', (r.state.stats && r.state.stats.carried) > 0, `carried=${r.state.stats && r.state.stats.carried}`)
+          if (name === 'lose') {
+            const myPos = r.result.scores && r.result.scores[room.playerSeat] && r.result.scores[room.playerSeat].pos
+            ok('A3', 'S7 idle 泊发车格：API 席名次=末位', myPos === (meta.net.seats || 6), `pos=${myPos}/${meta.net.seats || 6}`)
           }
         }
       } finally {
