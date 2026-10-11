@@ -10,8 +10,14 @@
  * 表的 welcome 轨道行由静态资源替代，REPORT 注记）。
  * ===================================================================== */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 const require = createRequire(import.meta.url)
 const P = require('../../../games/multiplayer/speed-kart/shared.cjs')
+
+/* GAMES-112 放水链配置（game.json bot.mercy → env.mercy 注入 brain；离线/缺省走
+ * shared.cjs MERCY_DFT 同值兜底——不读文件的确定性路径与在线逐字节一致，A6 parity） */
+const BOT_CFG = JSON.parse(readFileSync(new URL('../../../games/multiplayer/speed-kart/game.json', import.meta.url), 'utf8'))
+const MERCY = (BOT_CFG && BOT_CFG.bot && BOT_CFG.bot.mercy) || null
 
 /* ---------- 快照账本（per-connection：稀疏脏字段基线 + 全量节拍） ---------- */
 const connState = new WeakMap()
@@ -101,7 +107,12 @@ export const speedKartSim = {
     track: opts.track, laps: opts.laps, autopilot: opts.autopilot,
   }),
   step: (st, inputs, room) => P.step(st, inputs, room),
-  brain: (st, seat, level, rng) => P.brain(st, seat, level, rng),
+  // GAMES-112：bot env 透传（rooms.js botEnv=kinds/foeLose）+ mercy 注入（挂具可显式覆盖）
+  brain: (st, seat, level, rng, env) => {
+    const e2 = env || {}
+    if (!e2.mercy && MERCY) e2.mercy = MERCY
+    return P.brain(st, seat, level, rng, e2)
+  },
   emit, onSync,
   hashState: (st) => P.hashState(st),
   welcomeExtra: () => ({ // S7 声明块（协议 §6 预留位整组激活，设计 §5.4/附决策 6）

@@ -68,6 +68,14 @@
   var BOT_EVERY = { casual: 4, balanced: 2, competitive: 2 }   // §4.2 决策间隔
   var BOT_LINE_K = { casual: 0.78, balanced: 0.92, competitive: 1.0 } // 线速系数
   var BOT_NOISE = { casual: 350, balanced: 120, competitive: 30 }     // 转向噪声 brads
+  /* GAMES-112 人格深化/放水链参数（§4.2 表落参数；全在 brain 层、sim 核零改动） */
+  var BOT_MARGIN = { casual: 34000, balanced: 24000, competitive: 20000 } // 车侧余量 m milli
+  var BOT_BRAKEW = { casual: 120, balanced: 140, competitive: 100 }  // 油门前瞻窗系数 ‰（balanced 提前收油=限速余量）
+  var BOT_MISS_P = 12       // casual 失误起窗概率 ‰/决策拍（决策 5/s → 4-8s 一失）
+  var BOT_BLOCK_T = 24      // 被堵 1.2s → competitive 抽头超车（§4.2）
+  var BOT_PULL_T = 40       // 抽头持线 tick（2s 完成超越）
+  var BOT_DEF_GAP = 95000   // 防守卡位：追兵 95px 内横向关门（≈尾流上限）
+  var MERCY_DFT = { minFoeLose: 2, hardFoeLose: 4, holdM: 400000 } // 放水链缺省（适配器从 game.json bot.mercy 注入同值；离线确定性不读文件）
 
   /* ---------- 整数算术（零 Math；除法向零取整） ---------- */
   function isqrt(n) {
@@ -102,6 +110,7 @@
     mode: 'race-laps', teams: { A: [0], B: [1, 2, 3, 4, 5] },
     takeOver: 'casual', tech: 'S7', seqInput: true, // S7：input.frame=seq（ack 锚点，§5.1）
     roomPrefix: 'speed', // feed 字典序 speed- 排尾（§5.8）
+    pulsePos: 2, // GAMES-112 放水链：多席竞速按完赛名次记真人 pulse（pos≤2=胜，连败=放水信号源）
     W: 375, H: 667,
   }
 
@@ -241,6 +250,10 @@
     var grass = absLat > halfW - ROAD_EDGE
     var surf = grass ? SURF.grass : SURF.road
     var sV = surf.v, sA = surf.a, sG = surf.g
+
+    /* 输入面接线（GAMES-112）：漂移开关键落 kart 态——此前 integrate 只读 k.dr 无写点，
+     * §2.5 漂移/蓄力/boost 物理自交付起是死代码（dr 恒 0）；单源两端同式激活 */
+    k.dr = inp.dr ? 1 : 0
 
     /* ② 推力（漂移/boost 状态机 + vmax 钳，§2.2/§2.3/§2.5） */
     var vEff = ((car.vmax * sV) >> 16)
@@ -543,49 +556,165 @@
   }
 
   /* =====================================================================
-   * Bot 三档（§4 赛车线控制器：pure pursuit 前瞻 + 线速画像窗口油门 + 档位漂移）。
+   * Bot 三档（§4 赛车线控制器 + GAMES-112 人格深化/放水链）。
+   * 控制器=pure pursuit 前瞻 + 线速画像窗口油门 + 档位漂移；深化层全在 brain：
+   *   casual 休闲巡航：中心线+大噪声+随机失误窗（错向压杆/误刹）+被堵减速跟随；
+   *   balanced 学徒：赛车线+限速余量（前瞻窗 ×1.4 提前收油）+并线礼让横向避让；
+   *   competitive 车手：路线优化（被堵 1.2s 侧向抽头超车/尾流跟车 1.2s 后变线）+
+   *     漂移蓄放（漂移中压滑角蓄 tier、近弯末松漂释放 boost）+防守卡位（追兵近关门）。
+   * 放水链（env 驱动，bot 对 bot 全力——foeLose/让位只认 human 席）：
+   *   连败让力（foeLose≥minFoeLose 圈速×0.90+噪声×1.6 / ≥hardFoeLose ×0.78+噪声×2.5+停漂）
+   *   + 生态位让位（真人近后方 holdM 内让线收油——名次压制缓解）。
    * 脚本侧 racer-line 策略共用 policyInput（读快照伪 state——§6 pool pot-solver 先例）。
    * ===================================================================== */
-  function botDecide(st, k, per, rng, useLine) {
+  function botDecide(st, k, per, rng, useLine, env) {
     var tr = st.tr
     var m = k.m
     m.dt = BOT_EVERY[per] || 2
-    var la = 60000 + k.v * 14 // d_la 前瞻（§4.1 式样 ×14 调参：×6 时纯跟踪欠转向实测出弯道，REPORT 注记）
-    var ti = (((k.s + la) / tr.stepM) | 0) % tr.n
-    var desired = atan2Q(useLine[ti * 2] - k.x, useLine[ti * 2 + 1] - k.y)
-    if (rng) desired += ((rng() * 2 - 1) * (BOT_NOISE[per] || 0) * 8) | 0
-    var diff = angDiff(desired, k.a)
-    m.st = clampI((diff * 1200) >> 16, -100, 100)
-    /* 油门：前瞻窗（刹 ahead 距离+150px）内线速画像低点 ×档位系数（画像已回溯两遍） */
     var car = CARS[k.car]
+    var halfW = tr.W >> 1
+    if (m.blk === undefined) { m.blk = 0; m.fol = 0; m.pul = 0; m.side = 0; m.mt = 0; m.mb = 0; m.mk = 0; m.rng = rng || null }
+    if (!m.rng && rng) m.rng = rng // 席位重接管（bot→human→bot）后重锚稳定 rng（失误窗恢复）
+
+    /* ---- 放水链：连败让力梯度（foeLose=对席真人连败数，rooms pulse 台账） ---- */
+    var mercy = (env && env.mercy) || MERCY_DFT
+    var fl = env && env.foeLose ? (env.foeLose[k.seat] || 0) : 0
+    var lk = BOT_LINE_K[per] || 0.92
+    var nz = BOT_NOISE[per] || 0
+    if (fl >= mercy.hardFoeLose) { lk *= 0.78; nz *= 2.5 }     // L2 重让：圈速大衰减+失误注入+停漂
+    else if (fl >= mercy.minFoeLose) { lk *= 0.90; nz *= 1.6 } // L1 让力：圈速衰减+噪声放大
+
+    /* ---- 前瞻目标（§4.1 pure pursuit；×14 调参）+ 档位横向偏移（路线优化/礼让/卡位） ---- */
+    var la = 60000 + k.v * 14
+    var ti = (((k.s + la) / tr.stepM) | 0) % tr.n
+    var loff = 0 // 横向偏移 milli（侧正=左法向 n=(−ty,tx)；0=贴参考线）
+    /* 生态位让位：真人近后方（同圈近距落后）→ 让线（偏出赛车线+收油，下方 vTar 再降） */
+    var yieldHold = false
+    var kinds = env && env.kinds
+    if (kinds && !k.fin) {
+      for (var y = 0; y < SEATS; y++) {
+        if (y === k.seat || kinds[y] !== 'human' || !st.karts[y]) continue
+        var hy = st.karts[y]
+        var dpy = (k.s - hy.s) + (k.cross - hy.cross) * tr.lenM
+        if (dpy > 0 && dpy <= mercy.holdM && hy.laps <= k.laps + 1) {
+          yieldHold = true
+          if (per !== 'competitive' || !m.pul) loff = (hy.lat >= k.lat ? -1 : 1) * 20000 // 让出内线
+          break
+        }
+      }
+    }
+    /* 前车态势：被堵（前方同道近距）/并线（横排）/追兵（后方更快）/跟车目标（前 90-250px） */
+    var blkAhead = null, beside = null, chaser = null, prey = null
+    for (var o = 0; o < SEATS; o++) {
+      if (o === k.seat) continue
+      var q = st.karts[o]
+      if (!q || q.fin) continue
+      var dsq = q.s - k.s
+      if (dsq > (tr.lenM >> 1)) dsq -= tr.lenM
+      else if (dsq < -(tr.lenM >> 1)) dsq += tr.lenM
+      var dlq = q.lat - k.lat
+      var adl = dlq < 0 ? -dlq : dlq
+      if (dsq > 10000 && dsq < 150000 && adl < 30000) {
+        if (!blkAhead || dsq < blkAhead.ds) blkAhead = { ds: dsq, dl: dlq }
+      } else if (dsq < 30000 && dsq > -30000 && adl < 40000) beside = { ds: dsq, dl: dlq }
+      else if (dsq >= 90000 && dsq <= 260000 && adl < 42000) {
+        if (!prey || dsq < prey.ds) prey = { ds: dsq, o: q }
+      }
+      if (dsq < 0 && -dsq < 160000 && adl < 46000 && q.v > k.v) chaser = { dl: dlq }
+    }
+    /* competitive 路线优化：被堵/尾流计时 → 侧向 ±(W/2−m) 抽头（§4.2；接受轻碰无避让） */
+    if (per === 'competitive' && !yieldHold) {
+      if (m.pul > 0) { m.pul--; loff = m.side * (halfW - BOT_MARGIN.competitive) }
+      else {
+        var ev2 = BOT_EVERY[per] || 2
+        if (blkAhead) m.blk += ev2; else m.blk = 0
+        if (k.draft) m.fol += ev2; else if (!blkAhead) m.fol = 0
+        if (m.blk >= BOT_BLOCK_T || m.fol >= BOT_BLOCK_T) {
+          m.side = blkAhead ? (blkAhead.dl >= 0 ? -1 : 1) : (k.lat > 0 ? -1 : 1) // 从对方空侧/外侧抽头
+          m.pul = BOT_PULL_T; m.blk = 0; m.fol = 0
+          loff = m.side * (halfW - BOT_MARGIN.competitive)
+        }
+      }
+      /* 防守卡位：追兵近距 → 向其侧横向关门（领跑护线，§4.2 防守卡位） */
+      if (!m.pul && chaser && (chaser.dl < 0 ? -chaser.dl : chaser.dl) < BOT_DEF_GAP) loff = (chaser.dl >= 0 ? 1 : -1) * 15000
+    }
+    /* balanced 并线礼让：±0.5 余量横向避让（§4.2） */
+    if (per === 'balanced' && beside && !yieldHold) loff = (beside.dl >= 0 ? -1 : 1) * (BOT_MARGIN.balanced >> 1)
+
+    var tx = useLine[ti * 2], ty = useLine[ti * 2 + 1]
+    /* competitive 主动跟车（§4.2 尾流）：非抽头期且前方 90-250px 同道有车 → 目标点=其车位
+     * （pure pursuit 追点自然收进 30-90px 尾流带；k.draft 后 m.fol 计时满 1.2s 走下方抽头） */
+    if (per === 'competitive' && prey && !m.pul && !yieldHold) { tx = prey.o.x; ty = prey.o.y }
+    if (loff) {
+      /* 绝对钳制：偏移后目标点的赛道横向位 ≤ W/2−余量（防抽头/卡位把车指到墙外） */
+      var ln = -tr.tan[ti * 2 + 1], ltn = tr.tan[ti * 2]
+      var lineLat = (((useLine[ti * 2] - tr.pts[ti * 2]) * ln) + ((useLine[ti * 2 + 1] - tr.pts[ti * 2 + 1]) * ltn)) / 65536
+      var room = halfW - (BOT_MARGIN[per] || 24000)
+      if (lineLat + loff > room) loff = room - lineLat
+      else if (lineLat + loff < -room) loff = -room - lineLat
+      tx += (ln * loff) / 65536
+      ty += (ltn * loff) / 65536
+    }
+    var desired = atan2Q(tx - k.x, ty - k.y)
+    if (rng && nz) desired += ((rng() * 2 - 1) * nz * 8) | 0
+    /* casual 随机失误窗（稳定 rng 才启用——AFK 托管逐拍新 rng 不触发）：错向压杆+可选误刹 */
+    if (per === 'casual' && rng && rng === m.rng) {
+      if (m.mt > 0) { m.mt--; if (m.mt === 0) { m.mb = 0; m.mk = 0 } }
+      else if (((rng() * 1000) | 0) < BOT_MISS_P) { m.mt = 14 + ((rng() * 17) | 0); m.mb = rng() < 0.5 ? -1 : 1; m.mk = rng() < 0.5 ? 1 : 0 }
+    }
+    var stCmd = clampI((angDiff(desired, k.a) * 1200) >> 16, -100, 100)
+    if (m.mt > 0) stCmd = clampI(stCmd + m.mb * 70, -100, 100)
+
+    /* ---- 油门：前瞻窗（刹 ahead）线速画像低点 ×档位系数（画像已回溯两遍；含让力/让位） ---- */
     var vPx = k.v / 1000
-    var winPx = (vPx * vPx) / 4.5 + 150
+    var winPx = ((vPx * vPx) / 4.5) * ((BOT_BRAKEW[per] || 100) / 100) + 150
     var span = Math.max(4, (winPx / (tr.stepM / 1000)) | 0)
     var vTar = 99999999
     for (var w = 0; w <= span; w++) {
-      var pv = (tr.prof[(k.idx + w) % tr.n] * BOT_LINE_K[per]) | 0
+      var pv = tr.prof[(k.idx + w) % tr.n] * lk
       if (pv < vTar) vTar = pv
     }
-    var vCar = (car.vmax * BOT_LINE_K[per]) | 0
+    var vCar = (car.vmax * lk) | 0
     if (vTar > vCar) vTar = vCar
+    if (yieldHold) vTar = (vTar * 0.82) | 0 // 生态位让位：收油让车（真人近后方）
     m.th = k.v < vTar - 2000 ? 1 : k.v > vTar + 4000 ? -1 : 0
-    /* 漂移（§4.2：casual 不用 / balanced R≤50 短漂 / competitive R≤70 蓄放） */
-    if (per === 'casual') { m.dr = 0; return }
-    var thr = per === 'competitive' ? 70000 : 50000
+    if (per === 'casual' && blkAhead && blkAhead.ds < 100000 && m.th > 0) m.th = 0 // 被堵减速跟随（§4.2）
+    if (m.mk && m.mt > 0) m.th = -1 // 失误窗误刹
+    m.st = stCmd
+
+    /* ---- 漂移（§4.2：casual 不用 / balanced 短漂稳住 / competitive 蓄放） ----
+     * competitive 触发域 R≤250px：表值最紧 62px 发卡弧仅 ~100-200px（2-8 采样），
+     * R≤70 域内蓄不满 tier1=20 tick 滑角——扩到入弯段让蓄力跨 入弯-发卡 全程；
+     * balanced R≤90 短漂（表值无 ≤50 弯，设计 §4.2 阈值在生成赛道上无命中面） */
+    if (per === 'casual' || fl >= mercy.hardFoeLose) { m.dr = 0; return } // 重让停漂（放水不拼）
+    var thr = per === 'competitive' ? 250000 : 90000
     var minR = 999999999
     var radSpan = (200000 / tr.stepM) | 0
     for (var w2 = 0; w2 <= radSpan; w2++) {
       var rr2 = tr.rad[(k.idx + w2) % tr.n]
       if (rr2 > 0 && rr2 < minR) minR = rr2
     }
-    m.dr = minR <= thr && k.v > 4000 ? 1 : 0
+    var inCorner = minR <= thr && k.v > 4000
+    if (per === 'competitive' && inCorner) {
+      /* 弯区出口距离：脚下起 corner 游程末端（弯前直道不截断、弯内 ≤3 采样缝容忍） */
+      var run = -1, gap = 0, seen = false
+      for (var w3 = 0; w3 <= radSpan + 6; w3++) {
+        var rc = tr.rad[(k.idx + w3) % tr.n]
+        if (rc > 0 && rc <= thr) { seen = true; run = w3; gap = 0 }
+        else if (seen && ++gap > 3) break
+      }
+      if (run * tr.stepM < k.v * 5) { m.dr = 0; return } // 距弯末 ≤5 tick 松漂 → 出弯释放 boost
+      m.dr = 1
+      var slip = angDiff(k.a, k.d); if (slip < 0) slip = -slip
+      if (slip < 5400) m.st = clampI(stCmd + (stCmd >= 0 ? 35 : -35), -100, 100) // 压滑角蓄 tier
+    } else m.dr = inCorner ? 1 : 0
   }
-  function brainImpl(st, seat, level, rng) {
+  function brainImpl(st, seat, level, rng, env) {
     var k = st.karts[seat]
     if (!k || st.phase === 'countdown') return { st: 0, th: 0, dr: 0 }
     var per = level || 'balanced'
     if (!k.m) Object.defineProperty(k, 'm', { value: { dt: 0, st: 0, th: 1, dr: 0 }, writable: true, enumerable: false })
-    if (k.m.dt <= 0) botDecide(st, k, per, rng, per === 'casual' ? st.tr.pts : st.tr.line)
+    if (k.m.dt <= 0) botDecide(st, k, per, rng, per === 'casual' ? st.tr.pts : st.tr.line, env)
     k.m.dt--
     return { st: k.m.st, th: k.m.th, dr: k.m.dr }
   }
@@ -791,11 +920,14 @@
     for (var i = 0; i < SEATS; i++) room.seats.push({ seat: i, kind: o.botLevels && o.botLevels[i] ? 'bot' : 'human' })
     var rngs = []
     for (i = 0; i < SEATS; i++) rngs[i] = mulberry32((seed ^ Math.imul(i, 0x9e3779b9)) >>> 0)
+    /* GAMES-112：bot env 同 rooms.js doFrame 形状（kinds+foeLose 全零——测试房连败台账
+     * 恒零）——brain 读 env 后回放与在线逐字节一致的必要条件（A6 parity） */
+    var rEnv = { kinds: room.seats.map(function (sr) { return sr.kind }), foeLose: room.seats.map(function () { return 0 }) }
     var fakeQ = 1000000
     while (st.tick < (maxTicks || MAX_TICKS)) {
       var inputs = {}
       for (i = 0; i < SEATS; i++) {
-        if (room.seats[i].kind === 'bot') inputs[i] = brainImpl(st, i, o.botLevels[i] || 'balanced', rngs[i])
+        if (room.seats[i].kind === 'bot') inputs[i] = brainImpl(st, i, o.botLevels[i] || 'balanced', rngs[i], rEnv)
       }
       var list = byTick[st.tick]
       if (list) for (var q2 = 0; q2 < list.length; q2++) inputs[list[q2][1]] = { q: ++fakeQ, st: list[q2][2], th: list[q2][3], dr: list[q2][4] }

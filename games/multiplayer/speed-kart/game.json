@@ -20,7 +20,13 @@
       "competitive"
     ],
     "takeover": "casual",
-    "desc": "三档=赛车线档差（设计 §4.2）：casual 巡航者（中心线+噪声+线速×0.78）/ balanced 学徒（赛车线×0.92+R≤50 短漂）/ competitive 车手（赛车线×1.00+R≤70 蓄放漂移）。控制器=pure pursuit 前瞻（×14 调参）+线速画像窗口油门，生成期烘焙进 tracks.cjs 派生表"
+    "desc": "三档=赛车线档差+人格深化（设计 §4.2，GAMES-112）：casual 巡航者（中心线+噪声+线速×0.78+随机失误窗+被堵减速跟随）/ balanced 学徒（赛车线×0.92+前瞻窗×1.4 限速余量+并线礼让）/ competitive 车手（赛车线×1.00+被堵/尾流 1.2s 抽头超车+漂移蓄放 boost+防守卡位）。控制器=pure pursuit 前瞻（×14 调参）+线速画像窗口油门，生成期烘焙进 tracks.cjs 派生表",
+    "mercy": {
+      "minFoeLose": 2,
+      "hardFoeLose": 4,
+      "holdM": 400000,
+      "desc": "放水链（GAMES-112）：真人连败≥2 bot 圈速×0.90+噪声×1.6；≥4 再降 ×0.78+噪声×2.5+停漂；真人近后方 holdM 内让线收油（名次压制缓解）。连败源=完赛名次 pulse（pos≤2 断败，META.pulsePos）"
+    }
   },
   "scoring": {
     "win": "率先完成 L 圈（2-3 圈按赛道）",
