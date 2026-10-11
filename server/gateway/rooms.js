@@ -406,13 +406,24 @@ export class RoomManager {
     this.broadcast(room, { t: 'end', frame: room.frame, result })
     this.log({ k: 'room-end', roomId: room.id, result })
     // 真人胜负 pulse 更新（GAMES-81）：1v1 终局记对席真人连败/连胜（放水信号源）；
-    // 团队作（>2 席）不适用——empire 走同队 carry（GAMES-71），不按对手放水
+    // 团队作（>2 席）不适用——empire 走同队 carry（GAMES-71），不按对手放水。
+    // GAMES-112 多席竞速（sim 声明 META.pulsePos）：按完赛名次记真人 pulse——
+    // pos≤pulsePos=胜（断连败），否则连败++（bot 放水链 foeLose 信号源；speed-kart=2）
     if (room.sim.META.seats === 2 && result && (result.winner === 'A' || result.winner === 'B')) {
       const winSeat = result.winner === 'A' ? 0 : 1
       for (const s of room.seats) {
         if (s.kind !== 'human' || !s.conn) continue
         const rec = this.pulse.get(s.conn) || { lose: 0, win: 0 }
         if (s.seat === winSeat) { rec.win++; rec.lose = 0 } else { rec.lose++; rec.win = 0 }
+        this.pulse.set(s.conn, rec)
+      }
+    } else if (room.sim.META.pulsePos && result && result.scores) {
+      for (const s of room.seats) {
+        if (s.kind !== 'human' || !s.conn) continue
+        const pos = result.scores[s.seat] && result.scores[s.seat].pos
+        if (!Number.isInteger(pos)) continue
+        const rec = this.pulse.get(s.conn) || { lose: 0, win: 0 }
+        if (pos <= room.sim.META.pulsePos) { rec.win++; rec.lose = 0 } else { rec.lose++; rec.win = 0 }
         this.pulse.set(s.conn, rec)
       }
     }
