@@ -80,12 +80,15 @@
   ]
   const fxLedgerArr = []
   function fxTrig(id) {
+    /* t0=即时 performance.now（事件侧真实落笔时刻）——不用模块级 now：取证注入
+     *（evaluate/截图间隙）下后者可滞后数百 ms，时延表会虚胖（GAMES-113 实测教训） */
+    const ts = performance.now()
     const e = fxLedgerArr.find((x) => x.id === id)
-    if (e) { e.t0 = now; e.drawn = 0; e.n = (e.n || 0) + 1 } else fxLedgerArr.push({ id, t0: now, drawn: 0, n: 1 })
+    if (e) { e.t0 = ts; e.drawn = 0; e.n = (e.n || 0) + 1 } else fxLedgerArr.push({ id, t0: ts, drawn: 0, n: 1 })
   }
   function fxDraw(id) {
     const e = fxLedgerArr.find((x) => x.id === id)
-    if (e && !e.drawn) e.drawn = now
+    if (e && !e.drawn) e.drawn = performance.now()   /* 即时时戳：同帧首绘≈0ms（模块级 now 是帧起点戳，会得负值） */
   }
   /* 有符号角差（int16 域，渲染层专用——不扰 sim） */
   function angD(a, b) { let d = (a - b) & 0xffff; if (d > 32767) d -= 65536; return d }
@@ -346,7 +349,11 @@
       if (ev.seat === S.seat) {
         S.lapSrv.push(ev.ms); if (!S.best || ev.ms < S.best) S.best = ev.ms
         /* 在线局横幅归预测圈（本地先至，§3.4）；debug 局预测圈事件不经 drain，走事件侧同一位点 */
-        if (S.mode === 'debug') { S.lapBanner = { lap: S.lapSrv.length, ms: ev.ms, t0: performance.now() }; fxTrig('F03') }
+        if (S.mode === 'debug') {
+          S.lapBanner = { lap: S.lapSrv.length, ms: ev.ms, t0: performance.now() }
+          sfx.play('lap', String(S.lapSrv.length)); fxTrig('F03')
+          if (S.best === ev.ms) sfx.play('pb', '')
+        }
       }
       else if (ev.seat >= 0) { const r = S.remote.get(ev.seat); if (r) r.lastLap = ev.ms }
     }
@@ -543,8 +550,10 @@
     if (sh && S.seat >= 0 && S.phase === 'race') {
       const dr = sh.dr ? 1 : 0
       if (dr !== S.lastDr) { S.lastDr = dr; if (dr) { sfx.play('drift', ''); fxTrig('F01'); fxTrig('F08') } }
-      if (dr && sh.v > 40000) pushMarks(sh)
+      if (dr && sh.v > 6000) pushMarks(sh)   /* v=milli-px/tick：6000≈120px/s（胎痕成形速度门） */
     }
+    /* F04/F05 名次检测置于世界渲染前：被超者名签绿环同帧即可首绘（时延表口径） */
+    checkRank()
     /* 视觉自车：混合带/软收敛（§5.1 ③——状态采重放值，视觉 35%/帧 逼近） */
     if (S.seat >= 0 && sh) {
       if (!S.vis) S.vis = { x: sh.x, y: sh.y, a: sh.a }
@@ -748,7 +757,9 @@
     }
   }
   function drawMotion(v, sh) {
-    const vPx = v / 1000 / 20
+    /* vPx=px/s（v 为 milli-px/tick ×20tick/s → v/50；GAMES-113 修正原 /1000/20
+     * 量纲错位——阈值 120px/s 永不达，速度线自 DEV 起即死码，本次激活） */
+    const vPx = v / 50
     if (vPx < 120) { S.motionOn = 0; return }
     if (!S.motionOn) { S.motionOn = 1; fxTrig('F10') }
     /* F10 强化（GAMES-113）：boost 爆密 +3 条；线条倾斜 ∝ 滑角（§3.2 出弯横摆跟随） */
@@ -760,7 +771,8 @@
     for (let i = 0; i < n; i++) {
       const x = i % 2 ? W - 8 - (i >> 1) * 12 : 8 + (i >> 1) * 12
       const len = 30 + (vPx % 80) + i * 8
-      const y = ((now / 4 + i * 97) % (H + len)) - len
+      /* 纵向带裁剪到 y<560：不压页脚/漂移钮/蓄力条识图锚区（§7 识图 v2 字形锚点口径） */
+      const y = ((now / 4 + i * 97) % (560 + len)) - len
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + tilt, y + len); g.stroke()
     }
     fxDraw('F10')
@@ -786,7 +798,6 @@
   }
   function drawHUD(t, v) {
     const me = S.pred ? S.pred.kart() : null
-    checkRank()
     /* 顶栏底 */
     g.fillStyle = 'rgba(20,16,32,0.82)'
     g.fillRect(0, 0, W, TOP_H)
@@ -851,10 +862,14 @@
       if (!S.countTrig) { S.countTrig = 1; fxTrig('F12') }
       const left = Math.max(0, Math.ceil((60 - S.simTick) * S.tickMs / 1000))
       const ph = 1 - ((60 - S.simTick) * S.tickMs % 1000) / 1000
-      g.font = HF('P0', 'count', 44 - (1 - ph) * 10, '700')
+      /* 字号登记表取恒 44px（动态 px 会把不同值写进注册表——hudFonts 逐键比对必红），
+       * 脉冲改走 scale 变换（视觉同式：秒内 0.78→1.0 张合） */
+      g.font = HF('P0', 'count', 44, '700')
       g.textAlign = 'center'; g.fillStyle = '#FFD166'
       g.globalAlpha = 0.4 + ph * 0.6
-      g.fillText(String(left || 'GO'), W / 2, H / 2 - 40)
+      g.save(); g.translate(W / 2, H / 2 - 40); g.scale(0.78 + ph * 0.22, 0.78 + ph * 0.22)
+      g.fillText(String(left || 'GO'), 0, 0)
+      g.restore()
       g.globalAlpha = 1; g.textAlign = 'left'
       fxDraw('F12')
       if (left !== S.lastCount) { S.lastCount = left; sfx.play('count', String(left)) }
