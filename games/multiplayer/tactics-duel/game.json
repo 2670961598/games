@@ -1,0 +1,77 @@
+{
+  "slug": "tactics-duel",
+  "title": "战棋对决",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap",
+    "secondary": "tap-target"
+  },
+  "avgDurationSec": 420,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "takeOver": "casual(单回合超时)/tendency-inherit(持续托管)",
+    "desc": "超时单回合=casual 随手代打；断线/主动托管=balanced 核+倾向继承（attackOpRatio/pointwardRatio 从输入日志复算，§4.5）；afk 三分离（连续 3 全超时回合认负）"
+  },
+  "scoring": {
+    "win": "歼灭对方全编制或占点分先到 10",
+    "lose": "全编制被歼灭/占点分落后到线/回合计分低/认输",
+    "s2": "歼灭敌单位数",
+    "s3": "存活单位总价值"
+  },
+  "description": "8×8 战棋对决：六兵种克制交锋、四点行动力排兵布阵、双据点攻防。回合全服务器裁决，随手托管棋局不断。",
+  "net": {
+    "tech": "S1+S5",
+    "gameId": "tactics-duel",
+    "mode": "1v1-tactics",
+    "seats": 2,
+    "teams": { "A": [0], "B": [1] },
+    "api": {
+      "spec": 1,
+      "ops": {
+        "select":  { "ws": "-", "keys": [], "desc": "本地选中（零上行）：点选单位出移动域/射程目标预览——客户端跑同款确定性引擎复算（§5.1/§3.1），不占 op 通道" },
+        "deploy":  { "ws": "op", "keys": ["cells"], "desc": "部署提交：cells=[{unit,cell}×6]（己方部署区互异格）；20s 超时服务端按默认阵代置（§2.4）" },
+        "move":    { "ws": "op", "keys": ["unit", "path"], "desc": "移动：path=[起点,…,终点] 正交邻接链，步数≤移动力、途经格可通行无单位；首个触及 idle 单位的 op 消耗 1 AP（§1.3）" },
+        "attack":  { "ws": "op", "keys": ["unit", "tgt"], "desc": "攻击：射程窗校验（bow 下限 2）；结算=伤害→死亡→反击（§1.4 固定序）；完成该单位激活" },
+        "skill":   { "ws": "op", "keys": ["unit", "cell"], "desc": "技能：mage=火球（≤3 曼哈顿任意格，十字 AOE 6 伤敌我不分）；healer=治疗（窗 1-2 己方单体 +8）" },
+        "undo":    { "ws": "op", "keys": [], "desc": "悔棋：恢复本回合 turnStart 快照（≤1 次/回合，仅己方 act；对手批量披露下零信息泄漏 §5.4）" },
+        "endTurn": { "ws": "op", "keys": [], "desc": "结束回合：向对手批量披露本回合事件序列；对方 turnStart（占点分结算→胜负检查）" },
+        "host":    { "ws": "op", "keys": ["on"], "desc": "主动托管开关（棋局不断）；任意合法 op 或 resume 即夺回" },
+        "concede": { "ws": "op", "keys": [], "desc": "认负 → end{reason:'resign'}" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）+ reveal:{deploys} + quip",
+        "winner": "'A'=席0 ｜ 'B'=席1 ｜ 'draw'",
+        "teams": { "A": [0], "B": [1] },
+        "reason": "wipe（歼灭，双方同灭 draw） ｜ score（占点分到 10） ｜ timeout（16 回合/60000 tick 计分：占点分+存活价值） ｜ afk（连续3全超时回合） ｜ resign ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live deploy(20s)→双方部署→reveal 全量 state（mapId 地形/双据点/双方各 6 单位/B 起始分 1）+ room.duel={engine:'tactics-int-v1',hash} 声明块",
+        "A2 能赢：blitz-center 剧本 A 席 wipe 或 score 终态（vs casual 随手）",
+        "A3 能输：idle 剧本 B 席 afk 终态（3×30s 全超时回合 casual 代打后认负——超时/托管路径一并覆盖）",
+        "A4 操作注入→ruling 回执 ≤10 tick（服务端同钟）",
+        "A5 断线重连 <10s：$disconnect 后托管续打（该回合完成）→ $reconnect welcome 全量个性化恢复（含 turn/phase/AP/激活态/timerMs/undoUsed/托管标志）",
+        "A6 确定性双跑：同 seed 两房终态 stateHash 与输入日志（deploys+ops）逐字节相等；且在线终态 hash == 回放器重放 hash（S1+S5 首证）"
+      ],
+      "script": {
+        "seed": 20261012, "timeScale": 8, "startDelayMs": 600, "maxTicks": 60000,
+        "scenarios": {
+          "win":  { "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "blitz-center" },
+          "lose": { "botLevels": [null, "competitive"], "expectWinner": "B", "policy": "idle" },
+          "deterministic": {
+            "runs": 2, "botLevels": [null, "balanced"], "expectWinner": "any",
+            "policy": "blitz-center",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志(deploys+ops 序列)逐字节相等 && stateHash == replayHash"
+          }
+        }
+      }
+    }
+  }
+}

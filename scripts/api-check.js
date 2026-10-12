@@ -557,6 +557,94 @@ const POLICIES = {
   })
 }
 
+/* ---------- tactics-duel S1+S5 策略（GAMES-118 设计 §6 剧本策略） ----------
+ * blitz-center：部署默认阵 T0；每回合贪心：斩杀>最大伤害攻击（tie 目标 id 升序）、
+ * mage 火球打敌聚集 ≥2 格（无则净收益最优单体/不放）、healer 治疗最伤己方（有缺口才放）、
+ * lance 直插最近据点占驻、其余向另一据点/敌阵推进（BFS 最短路）。4 AP 用满 → endTurn。
+ * 零 rng——确定性双跑前提（§6）。每次轮询至多回 1 条 op（S5 op 通道）。
+ * 复用 sim.cjs 单源导出（reach/atkTargets/fireballCells/healTargets/predictDmg）——
+ * pool pot-solver 先例：读 state 非读 sim 内部。 */
+{
+  let TD = null
+  const td = () => (TD || (TD = createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/tactics-duel/sim.cjs'))))
+  POLICIES['blitz-center'] = (state, seat) => {
+    if (!state || state.over) return {}
+    if (state.phase === 'deploy') {
+      if (state.deployDone && state.deployDone[seat]) return {}
+      const T = td().TEMPLATES[0]
+      return { op: { k: 'deploy', cells: td().TYPE_ORDER.map((tp, i) => ({ unit: tp, cell: T[i][seat] })) } }
+    }
+    if (state.phase !== 'act' || state.turnSeat !== seat) return {}
+    const K = td()
+    const mine = state.units.filter((u) => u.seat === seat && u.ph !== 'done' && (u.ph !== 'idle' || state.ap > 0))
+    if (!mine.length) return { op: { k: 'endTurn' } }
+    /* 1. 攻击：斩杀优先，否则最大伤害（tie 目标 id 升序） */
+    let atk = null
+    for (const u of mine) {
+      for (const t of K.atkTargets(state, u.id)) {
+        const dmg = K.predictDmg(state, u.id, t)
+        const foe0 = state.units.find((x) => x.id === t)
+        const kill = foe0 && dmg >= foe0.hp
+        if (!atk || (kill && !atk.kill) || (kill === atk.kill && (dmg > atk.dmg || (dmg === atk.dmg && t < atk.tgt)))) {
+          atk = { op: { k: 'attack', unit: u.id, tgt: t }, dmg, kill }
+        }
+      }
+    }
+    if (atk && atk.kill) return { op: atk.op }
+    /* 2. mage 火球：敌聚集 ≥2 心格取净收益最大（tie cell 升序）——聚集位才值得烧激活 */
+    const mage = mine.find((u) => u.type === 'mage')
+    if (mage) {
+      let fb = null
+      for (const c of K.fireballCells(state, mage.id)) {
+        if (c.foes < 2) continue
+        const score = 3 * c.foes - c.own
+        if (!fb || score > fb.score || (score === fb.score && c.cell < fb.cell)) fb = { op: { k: 'skill', unit: mage.id, cell: c.cell }, score }
+      }
+      if (fb) return { op: fb.op }
+    }
+    /* 3. healer 治疗最伤己方（有缺口才放） */
+    const healer = mine.find((u) => u.type === 'healer')
+    if (healer) {
+      const ts = K.healTargets(state, healer.id)
+      if (ts.length) {
+        let best = null
+        for (const t of ts) { const w = state.units.find((x) => x.id === t); const miss = K.UNITS[w.type].hp - w.hp; if (!best || miss > best.miss) best = { op: { k: 'skill', unit: healer.id, cell: w.cell }, miss } }
+        return { op: best.op }
+      }
+    }
+    if (atk) return { op: atk.op }
+    /* 3b. mage 单体火球（无普攻可用时的最优单体，净打正才放） */
+    if (mage) {
+      let fb = null
+      for (const c of K.fireballCells(state, mage.id)) if (c.foes === 1 && c.own === 0 && (!fb || c.cell < fb.cell)) fb = { op: { k: 'skill', unit: mage.id, cell: c.cell } }
+      if (fb) return { op: fb.op }
+    }
+    /* 4. 推进：lance/全军向最近据点（lance 占驻优先），已达者守点 */
+    const PRIO = { lance: 0, sword: 1, axe: 2, bow: 3, mage: 4, healer: 5 }
+    const movers = mine.filter((u) => u.ph === 'idle').sort((a, b) => (PRIO[a.type] - PRIO[b.type]) || (a.id - b.id))
+    for (const u of movers) {
+      const rs = K.reach(state, u.id)
+      const goal = (cell) => {
+        let best = null, bd = 1e9
+        for (const p of state.points) {
+          let d = K.dist(cell, p)
+          if (state.own[state.points.indexOf(p)] === seat && u.type !== 'healer') d += 6 // 己方已驻点降权（分兵）
+          if (state.own[state.points.indexOf(p)] !== seat && u.type === 'lance') d -= 3   // lance 直插未控点（§6）
+          if (d < bd) { bd = d; best = p }
+        }
+        return bd
+      }
+      let best = null
+      for (const r of rs) {
+        const g = goal(r.cell)
+        if (!best || g < best.g || (g === best.g && r.cell < best.cell)) best = { g, ...r }
+      }
+      if (best && best.path.length > 1) return { op: { k: 'move', unit: u.id, path: best.path } }
+    }
+    return { op: { k: 'endTurn' } }
+  }
+}
+
 /* ---------- speed-kart S7 策略（GAMES-109 设计 §6 剧本策略） ----------
  * racer-line：脚本侧复用单源 shared.cjs 的 policyInput（§4.1 赛车线控制器——读 state
  * 伪视图，pool pot-solver 先例：读 state 非读 sim 内部）；countdown 期油门置 0——
@@ -889,6 +977,7 @@ try {
       : meta.net.tech === 'S7' ? { st: 40, th: 1, frame: 1 }
       : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
       : meta.net.tech === 'S5' ? { op: { k: 'pick', hero: 0 } }
+      : meta.net.tech === 'S1+S5' ? { op: { k: 'endTurn' } } /* S1+S5（GAMES-118）：deploy 期注入 endTurn → ruling 回执（reject not-deploy 亦为 ≤10 tick 回执证据，§6 A4） */
       : { mx: 63, my: 0, fire: 0 }
     const inj = await gwInput(smoke.roomId, smoke.playerSeat, 'ctrl', injPayload)
     const receivedAt = inj.json && inj.json.receivedAt
@@ -901,9 +990,9 @@ try {
         ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && Number(e.msg.ext.ack) >= 1)
         : meta.net.tech === 'S4'
           ? (r4.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.ext && e.msg.ext.physics)
-          : meta.net.tech === 'S5'
+          : (meta.net.tech === 'S5' || meta.net.tech === 'S1+S5')
             ? (r4.events || []).find((e) => e.msg.t === 'ruling' && e.ts >= receivedAt
-                && (e.msg.events || []).some((v) => (v.k === 'pick' && v.s === smoke.playerSeat) || (v.k === 'reject' && v.seat === smoke.playerSeat)))
+                && (e.msg.events || []).some((v) => (v.k === 'pick' && v.s === smoke.playerSeat) || (v.k === 'deploy' && v.s === smoke.playerSeat) || (v.k === 'reject' && v.seat === smoke.playerSeat)))
             : (r4.events || []).find((e) => e.msg.t === 'frame' && e.msg.inputs && e.msg.inputs[smoke.playerSeat] && e.msg.inputs[smoke.playerSeat].mx === 63)
       if (!refl) await sleep(30)
     }
@@ -1041,8 +1130,8 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         runs.push(played)
       }
       if (runs.length === sc.runs) {
-        /* S5 输入日志（§5.6）：{s,k,payload}（剥 tick/tn 墙钟字段）——picks+ops 逐字节断言 */
-        const stripFrame = meta.net.tech === 'S5'
+        /* S5/S1+S5 输入日志（§5.6）：{s,k,payload}（剥 tick/tn 墙钟字段）——deploys+picks+ops 逐字节断言 */
+        const stripFrame = (meta.net.tech === 'S5' || meta.net.tech === 'S1+S5')
           ? (st) => JSON.stringify((st.opsLog || []).map((o) => { const { s, k, tn, ...rest } = o; return [s, k, rest] }))
           : meta.net.tech === 'S7'
             ? (st) => JSON.stringify(st.inLog || [])
@@ -1061,7 +1150,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
             const rp = sim.replayInputs(script.seed, { maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels }, runs[0].state.inLog, sc.maxTicks ?? script.maxTicks)
             replayOk = sim.hashState(rp) === runs[0].stateHash
             replayDetail = replayOk ? `replay==在线 stateHash（${sim.hashState(rp)}）` : `replay ${sim.hashState(rp)} ≠ 在线 ${runs[0].stateHash}`
-          } else if (meta.net.tech === 'S5' && sim && sim.replayOps && sim.hashState) {
+          } else if ((meta.net.tech === 'S5' || meta.net.tech === 'S1+S5') && sim && sim.replayOps && sim.hashState) {
             const ops = runs[0].state.opsLog.map((o) => { const { s, k, tn, ...rest } = o; void tn; return Object.assign({ s, k }, rest) })
             const rp = sim.replayOps(script.seed, ops, script.maxTicks)
             replayOk = sim.hashState(rp) === runs[0].stateHash

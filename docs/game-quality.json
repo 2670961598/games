@@ -1108,6 +1108,19 @@
         "bot": "赛车线三档（casual 巡航者中心线+噪声+失误窗/balanced 学徒×0.92+并线礼让/competitive 车手蓄放漂移+尾流抽头+防守卡位）+放水链两档（连败≥2 ×0.90/≥4 ×0.78+停漂，信号源=pulsePos 名次 pulse）——pure pursuit 前瞻×14+线速画像烘焙 tracks.cjs",
         "chain": "GAMES-108..116 九单链完整+FIX2 跳过（QA2 五面退回 0 全绿无修复对象——W1 波收官裁量同蛇王 GAMES-106 先例）"
       }
+    },
+    "multiplayer:tactics-duel": {
+      "stage": "dev",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 0,
+      "notes": "E6-W2-T1 轨 S1+S5 双技术复用首款 DEV（单链 2/10+）。核心：确定性回合战棋引擎 sim.cjs（全整数/Q8 克制×1.25 唯一乘子位/判定路径零随机/AOE 与 Bot argmax tie-break=unit id 升序·枚举序/serialize 键字母序——S1 纪律 slg 范式继承）+S5 回合裁决层（op→ruling 单通道/部署相位密置+对手回合批量披露 turn-commit 个性化/undo=turnStart 快照整体回滚≤1 次/AP=4 行动点调度/四通道胜负 wipe·score·timeout·afk·resign·abandon）。DEV 自测：api-check 17/0 全绿（A6 双跑 stateHash==replayHash==1475299752/ENGINE_HASH 3306507531）；浏览器冒烟 13/0（quick 入局·中途入局两路自适应/本地移动域 BFS/move 裁决 AP-1·moved·moveSteps/HF 三档自证/识图 v2 三锚点像素探针/零 pageerror 在线+离线）；perf=对照口径（环境 rAF 封顶 13.3fps 落在 element 12.3~pool 15.3 已验收对照带内+每帧 render 成本 p50 0.6/p95 0.9ms、超 16.7ms 帧占 0%）",
+      "net": {
+        "tech": "S1+S5",
+        "bot": "三档战棋 Bot（casual 随机合法拟人延时/balanced 整数 V+scratch 副本逐激活贪心 argmax 零随机/competitive 精确威胁图叠加封顶+击杀确认 +8 偏置+棋形三项+束宽 3 两 ply 前瞻）+托管三层（超时=casual 单回合代打/断线·主动=倾向继承 balanced：faceBias=0.5+attackOpRatio·pointBias=0.5+pointwardRatio 输入日志复算/主动 host op）+棋桌评语 quip 七优先级",
+        "chain": "GAMES-117 起 W2 波开链（单链 2/10 交付，QA1 待派）"
+      }
     }
   }
 }
