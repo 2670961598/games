@@ -14,9 +14,16 @@
  *   - 零快照流：回合制事件驱动，静默期仅心跳（全目录最低带宽档）。
  * ===================================================================== */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const DUEL = require('../../../games/multiplayer/tactics-duel/sim.cjs')
+
+/* 陪玩放水配置（GAMES-121，element GAMES-91 同式）：阈值入 game.json bot.mercy 可调——
+ * 适配器读出经 env.mercy 注入 brain；sim 侧零配置（离线确定性/回放不读 game.json，
+ * brain 缺省阈值 minFoeLose=2/hardFoeLose=3 兜底） */
+const GAME_CFG = JSON.parse(readFileSync(new URL('../../../games/multiplayer/tactics-duel/game.json', import.meta.url), 'utf8'))
+const MERCY_CFG = (GAME_CFG.bot && GAME_CFG.bot.mercy) || { minFoeLose: 2, hardFoeLose: 3 }
 
 function sendTo(ctx, msg) {
   if (ctx && ctx.conn && ctx.conn.writable) ctx.conn.send(typeof msg === 'string' ? msg : JSON.stringify(msg))
@@ -90,7 +97,11 @@ export const tacticsDuelSim = {
   },
   serialize: DUEL.serialize,
   deserialize: null,
-  brain: (state, seat, level) => DUEL.brain(state, seat, level),
+  /* brain 出口包装（GAMES-121 放水链）：网关 botEnv（kinds/foeLose）+game.json
+   * bot.mercy 经 env 注入（pool/element/snake 先例）；无 env（离线直调/api-check
+   * sim 级剧本）→ brain 缺省兜底零放水 */
+  brain: (state, seat, level, rng, env) => DUEL.brain(state, seat, level, rng, env ? Object.assign({}, env, { mercy: MERCY_CFG }) : env),
+  botStats: DUEL.botStats,
   op,
   emit,
   onSync,
