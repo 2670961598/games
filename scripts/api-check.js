@@ -675,6 +675,7 @@ async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POL
   const ledger = []
   const snaps = { n: 0, full: 0, incrBytes: [], fullBytes: [] }
   let a6samples = 0, a6bad = 0, minSnakes = Infinity
+  let opRulings = 0, mySeat = -1                                                        // GAMES-120 F1 门禁：API 席 op 级 ruling 回执计数
   const collect = (st) => {
     const lb = st && st.leaderboard
     if (lb && lb.length) { // A6：top5 非增 && 榜首=全场 argmax（任意 tick 抽样）
@@ -692,6 +693,7 @@ async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POL
     const r = await gwState(roomId, cursor)
     if (!r.json || !r.json.ok) return { error: r.json && r.json.error || `HTTP ${r.status}` }
     cursor = r.json.cursor
+    if (Number.isInteger(r.json.playerSeat)) mySeat = r.json.playerSeat
     for (const e of r.json.events || []) {
       const m = e.msg
       if (m && m.t === 'snapshot') {
@@ -700,10 +702,15 @@ async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POL
         else snaps.incrBytes.push(JSON.stringify(m).length)
         if (m.events) ledger.push(...m.events)
       }
+      /* GAMES-120 F1 门禁封堵：op 级 ruling（操作者逐 op 实时回执，events 带 seat=操作席的
+         move/attack/skill 确认事件）——席 1 API + 席 0 bot 无连接时走 drainOutbox 席位直取
+         路径（GAMES-119 F1）；旧过滤数组索引缺陷下该计数恒 0（广播 'all' 不受影响）。 */
+      if (m && m.t === 'ruling' && mySeat >= 0 && Array.isArray(m.events) &&
+          m.events.some((ev) => ev && ev.seat === mySeat && (ev.k === 'move' || ev.k === 'attack' || ev.k === 'skill'))) opRulings++
     }
     if (r.json.phase === 'ended') {
       collect(r.json.state)
-      return { result: r.json.result, tick: r.json.tick, state: r.json.state, stateHash: r.json.stateHash, ledger, snaps, a6samples, a6bad, minSnakes }
+      return { result: r.json.result, tick: r.json.tick, state: r.json.state, stateHash: r.json.stateHash, ledger, snaps, a6samples, a6bad, minSnakes, opRulings }
     }
     if (Date.now() > deadlineMs) return { error: '剧本超时未终局' }
     if (r.json.phase === 'live') {
@@ -1214,6 +1221,10 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           if (aid === 'A2') ok('A2', '能赢：剧本胜方达成终态（' + r.result.reason + '）', winnerOk, detail)
           else if (aid === 'A3') ok('A3', '能输：剧本败方终态达成（' + r.result.reason + '）', winnerOk, detail)
           else ok(aid, `${name}：期望胜方达成终态`, winnerOk, detail)
+          /* GAMES-120 F1 门禁封堵：assertRuling 剧本（API 席坐 bot 旁席位）——op 级 ruling
+             回执须在场（旧缺陷：席 0 无连接+操作者=席 1 → vis=1 路由整体静默丢弃，计数恒 0；
+             轮询态照常绿——故必须显式断言回执而非仅凭胜负/状态） */
+          if (sc.assertRuling) ok(aid, `${name}：API 席（seat=${room.playerSeat}）op 级 ruling 回执在场`, (r.opRulings || 0) >= 8, `opRulings=${r.opRulings || 0}（阈值 8；广播类不计数，仅操作者路由）`)
         } else {
           /* 统计口径：单局真值入台账（报告 JSON stat 条目+控制台披露），胜负断言局后聚合 */
           checks.push({ id: aid, name: `${name} 局 ${si + 1}/${statSeeds.length} 终态（seed=${seed}）`, pass: true, stat: true, detail })

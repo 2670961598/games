@@ -68,7 +68,9 @@ const revealed = await page.evaluate(() => {
   return { units: v.units.length, turn: v.turn, ap: v.ap, mySeat: window.__GAMES_DEBUG__.seat() }
 })
 ok(revealed.units === 12, 'reveal 后双方 6+6 单位', `units=${revealed.units}`)
-if (freshDeploy) ok(revealed.turn === revealed.mySeat && revealed.ap === 4, '回合 1=先手 A 席（API 席）AP=4', `turn=${revealed.turn} ap=${revealed.ap}`)
+/* GAMES-120 修正：先手 A 席=seat 0 按引擎定义直断言（reveal 即 startTurn(seat 0)）——原
+   turn===mySeat 假设浏览器席自坐席 0，quick 常驻房 bot 预坐席 0 下真人恒落席 1 恒假红。 */
+if (freshDeploy) ok(revealed.turn === 0 && revealed.ap === 4, '回合 1=先手 A 席（bot 预坐席 0）AP=4', `turn=${revealed.turn} ap=${revealed.ap} mySeat=${revealed.mySeat}`)
 /* 等到己方回合（中途入局须等 bot 打完当回合；30s 计时 1x 实时） */
 await page.waitForFunction(() => {
   const v = window.__GAMES_DEBUG__.state().view

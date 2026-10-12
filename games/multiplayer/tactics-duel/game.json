@@ -58,7 +58,8 @@
         "A3 能输：idle 剧本 B 席 afk 终态（3×30s 全超时回合 casual 代打后认负——超时/托管路径一并覆盖）",
         "A4 操作注入→ruling 回执 ≤10 tick（服务端同钟）",
         "A5 断线重连 <10s：$disconnect 后托管续打（该回合完成）→ $reconnect welcome 全量个性化恢复（含 turn/phase/AP/激活态/timerMs/undoUsed/托管标志）",
-        "A6 确定性双跑：同 seed 两房终态 stateHash 与输入日志（deploys+ops）逐字节相等；且在线终态 hash == 回放器重放 hash（S1+S5 首证）"
+        "A6 确定性双跑：同 seed 两房终态 stateHash 与输入日志（deploys+ops）逐字节相等；且在线终态 hash == 回放器重放 hash（S1+S5 首证）",
+        "A+(win-seat1) API 席=1 臂（GAMES-120）：botLevels [casual,null]——席 0 无连接下操作者 ruling 席位路由（GAMES-119 F1 修复的门禁面；断言 ruling 回执在场，非仅轮询态绿）"
       ],
       "script": {
         "seed": 20261012, "timeScale": 8, "startDelayMs": 600, "maxTicks": 60000,
@@ -69,7 +70,9 @@
             "runs": 2, "botLevels": [null, "balanced"], "expectWinner": "any",
             "policy": "blitz-center",
             "assert": "两 run 终态 stateHash 相等 && 输入日志(deploys+ops 序列)逐字节相等 && stateHash == replayHash"
-          }
+          },
+          "win-seat1": { "botLevels": ["casual", null], "expectWinner": "B", "policy": "blitz-center",
+            "assertRuling": "API 席=1：bot 席 0 无连接——drainOutbox 席位路由（GAMES-119 F1）唯一穿行臂；断言 op 级 ruling 回执在场（events 带 seat=API 席的 move/attack/skill 确认事件）" }
         }
       }
     }
