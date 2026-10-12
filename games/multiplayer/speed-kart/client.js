@@ -15,6 +15,10 @@
  * 红白识图锚；HUD 字号对齐 hud-font-standard §1（HF 登记表+ping 徽标 P0 升档
  * ——T7-A 首个触发者，§3.3）。debug（?debug=1）：本地 6 车竞技场（同渲染路径，
  * perf-smoke 契约）。
+ *
+ * GAMES-113 手感层：动效 16 项（FXLIST 登记；fb 反馈类 ≤80ms 首绘红线——
+ * fxTrig=事件侧落笔/fxDraw=首绘侧落笔双时戳台账）+胎痕/横摆倾斜/超车名次 juice
+ * +相机前视速度带外扩+motion 线横摆跟随+音效位 13 槽（含引擎声部）。
  * ===================================================================== */
 'use strict'
 ;(function () {
@@ -37,7 +41,7 @@
 
   /* ---------- 音效位（≥12 槽；makeSound 包络，总闸门默认 false=静音只记账） ---------- */
   const sfx = {
-    slots: ['green', 'lap', 'pb', 'drift', 'boost', 'wall', 'bump', 'draft', 'count', 'fin', 'pass', 'pen'],
+    slots: ['green', 'engine', 'lap', 'pb', 'drift', 'boost', 'wall', 'bump', 'draft', 'count', 'fin', 'pass', 'pen'],
     calls: [], on: false, ac: null,
     tone(f0, f1, dur, type, vol) {
       if (!this.ac) { try { this.ac = new (window.AudioContext || window.webkitAudioContext)() } catch { this.ac = null } }
@@ -51,6 +55,7 @@
       this.calls.push({ g: slot, t: t || '', at: performance.now() })
       if (!this.on) return
       if (slot === 'green') this.tone(523, 1046, 0.2, 'square', 0.06)
+      else if (slot === 'engine') this.tone(90, 190, 0.5, 'sawtooth', 0.04)   // 引擎声部：绿灯起跑rev-up
       else if (slot === 'lap') this.tone(660, 990, 0.14, 'triangle', 0.05)
       else if (slot === 'pb') { this.tone(784, 784, 0.12, 'sine', 0.07); setTimeout(() => this.tone(1046, 1568, 0.22, 'sine', 0.07), 110) }
       else if (slot === 'drift') this.tone(220, 180, 0.1, 'sawtooth', 0.03)
@@ -64,6 +69,29 @@
       else if (slot === 'pen') this.tone(200, 120, 0.2, 'square', 0.05)
     },
   }
+
+  /* ---------- 动效登记表（GAMES-113 §3.5 juice 清单；fb=反馈类 ≤80ms 首绘红线，state=状态类）
+   * 台账 fxTrig=事件侧落笔、fxDraw=首绘侧落笔，两时戳差=实测起效时延。 ---------- */
+  const FXLIST = [
+    ['F01', 'driftTire', 'fb'], ['F02', 'boostTrail', 'fb'], ['F03', 'lapBanner', 'fb'], ['F04', 'overtake', 'fb'],
+    ['F05', 'rankPop', 'fb'], ['F06', 'wallSpark', 'fb'], ['F07', 'bumpFlash', 'fb'], ['F08', 'bodyRoll', 'fb'],
+    ['F09', 'chargeBar', 'state'], ['F10', 'motionTilt', 'state'], ['F11', 'finishTape', 'fb'], ['F12', 'countPulse', 'state'],
+    ['F13', 'camCurve', 'state'], ['F14', 'draftHint', 'fb'], ['F15', 'penFlash', 'fb'], ['F16', 'greenFlash', 'fb'],
+  ]
+  const fxLedgerArr = []
+  function fxTrig(id) {
+    /* t0=即时 performance.now（事件侧真实落笔时刻）——不用模块级 now：取证注入
+     *（evaluate/截图间隙）下后者可滞后数百 ms，时延表会虚胖（GAMES-113 实测教训） */
+    const ts = performance.now()
+    const e = fxLedgerArr.find((x) => x.id === id)
+    if (e) { e.t0 = ts; e.drawn = 0; e.n = (e.n || 0) + 1 } else fxLedgerArr.push({ id, t0: ts, drawn: 0, n: 1 })
+  }
+  function fxDraw(id) {
+    const e = fxLedgerArr.find((x) => x.id === id)
+    if (e && !e.drawn) e.drawn = performance.now()   /* 即时时戳：同帧首绘≈0ms（模块级 now 是帧起点戳，会得负值） */
+  }
+  /* 有符号角差（int16 域，渲染层专用——不扰 sim） */
+  function angD(a, b) { let d = (a - b) & 0xffff; if (d > 32767) d -= 65536; return d }
 
   /* ---------- 全局状态 ---------- */
   const S = {
@@ -88,6 +116,10 @@
     drag: null, th: 1, dr: 0,
     /* juice */
     parts: [], shake: 0, shakeT: 0, flash: 0, flashC: '#7FE8D8', zoomP: 0, sparks: 0,
+    /* GAMES-113 juice 扩展：胎痕/名次/超车/闪白/彩带/尾流/漂移窗（fx 台账配套态） */
+    marks: [], rankPop: 0, rankDir: 0, lastRank: 0, rankCur: 0, rankHold: null,
+    passFlash: null, bumpFlash: null, draftT: 0, boostFx: 0, confettiT: 0, driftFx: 0,
+    motionOn: 0, countTrig: 0, lastDr: 0,
     fpsShown: 0,
   }
   const cam = { x: 0, y: 0, ang: 0, zoom: 1, zT: 1 }
@@ -292,7 +324,7 @@
         if (ev.k === 'lap') {
           S.lapLocal.push(ev.ms)
           S.lapBanner = { lap: ev.lap, ms: ev.ms, t0: performance.now() }
-          sfx.play('lap', String(ev.lap))
+          sfx.play('lap', String(ev.lap)); fxTrig('F03')
           if (!S.best || ev.ms < S.best) { S.best = ev.ms; sfx.play('pb', '') }
         }
       }
@@ -308,25 +340,40 @@
     }
   }
   function onEvent(ev) {
-    if (ev.k === 'green') { S.greenAt = performance.now(); S.flash = 1; S.flashC = '#7FE8D8'; sfx.play('green', '') }
+    if (ev.k === 'green') {
+      S.greenAt = performance.now(); S.flash = 1; S.flashC = '#7FE8D8'
+      sfx.play('green', ''); sfx.play('engine', '')
+      fxTrig('F16'); fxTrig('F09'); fxTrig('F13')   // 状态类（蓄力条/相机曲线）随绿灯激活
+    }
     else if (ev.k === 'lap') {
-      if (ev.seat === S.seat) { S.lapSrv.push(ev.ms); if (!S.best || ev.ms < S.best) S.best = ev.ms }
+      if (ev.seat === S.seat) {
+        S.lapSrv.push(ev.ms); if (!S.best || ev.ms < S.best) S.best = ev.ms
+        /* 在线局横幅归预测圈（本地先至，§3.4）；debug 局预测圈事件不经 drain，走事件侧同一位点 */
+        if (S.mode === 'debug') {
+          S.lapBanner = { lap: S.lapSrv.length, ms: ev.ms, t0: performance.now() }
+          sfx.play('lap', String(S.lapSrv.length)); fxTrig('F03')
+          if (S.best === ev.ms) sfx.play('pb', '')
+        }
+      }
       else if (ev.seat >= 0) { const r = S.remote.get(ev.seat); if (r) r.lastLap = ev.ms }
     }
     else if (ev.k === 'bump') {
-      if (ev.a === S.seat || ev.b === S.seat) { S.shake = 4; S.shakeT = performance.now(); sfx.play('bump', String(ev.a)) }
+      if (ev.a === S.seat || ev.b === S.seat) {
+        S.shake = 4; S.shakeT = performance.now(); sfx.play('bump', String(ev.a))
+        S.bumpFlash = { t0: performance.now(), seats: [ev.a, ev.b] }; fxTrig('F07')
+      }
     }
     else if (ev.k === 'wall') {
-      if (ev.seat === S.seat) { S.shake = 2; S.shakeT = performance.now(); S.sparks = 8; sfx.play('wall', '') }
+      if (ev.seat === S.seat) { S.shake = 2; S.shakeT = performance.now(); S.sparks = 10; sfx.play('wall', ''); fxTrig('F06') }
     }
     else if (ev.k === 'boost') {
-      if (ev.seat === S.seat) { S.zoomP = 1; sfx.play('boost', String(ev.tier)); spawnJet() }
+      if (ev.seat === S.seat) { S.zoomP = 1; sfx.play('boost', String(ev.tier)); S.boostFx = performance.now(); spawnJet(); fxTrig('F02') }
     }
-    else if (ev.k === 'draft') { if (ev.seat === S.seat) sfx.play('draft', '') }
+    else if (ev.k === 'draft') { if (ev.seat === S.seat) { sfx.play('draft', ''); S.draftT = performance.now(); fxTrig('F14') } }
     else if (ev.k === 'finish') {
-      if (ev.seat === S.seat) { sfx.play('fin', String(ev.pos)); S.flash = 1; S.flashC = '#FFD166' }
+      if (ev.seat === S.seat) { sfx.play('fin', String(ev.pos)); S.flash = 1; S.flashC = '#FFD166'; S.confettiT = performance.now(); fxTrig('F11') }
     }
-    else if (ev.k === 'jump') { if (ev.seat === S.seat) { S.penUntil = performance.now() + 1000; sfx.play('pen', '') } }
+    else if (ev.k === 'jump') { if (ev.seat === S.seat) { S.penUntil = performance.now() + 1000; sfx.play('pen', ''); fxTrig('F15') } }
   }
   function spawnJet() { for (let i = 0; i < 10; i++) S.parts.push({ x: 0, y: 10, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 3, life: 1, c: '#FFD166', sz: 2 }) }
 
@@ -371,6 +418,7 @@
    * ===================================================================== */
   let lastT = performance.now(), acc = 0
   function frame(t) {
+    if (S.pauseViz) { lastT = t; requestAnimationFrame(frame); return } // 识图/墨水带采样冻结帧（仅 debug 钩子可置位，net 局不触碰）
     const dt = Math.min(100, t - lastT); lastT = t; now = t
     acc += dt
     while (acc >= S.tickMs) {
@@ -406,7 +454,7 @@
       if (ev.k === 'lap') {
         S.lapLocal.push(ev.ms)
         S.lapBanner = { lap: ev.lap, ms: ev.ms, t0: now }
-        sfx.play('lap', String(ev.lap))
+        sfx.play('lap', String(ev.lap)); fxTrig('F03')
         if (!S.best || ev.ms < S.best) { S.best = ev.ms; sfx.play('pb', '') }
       }
     }
@@ -498,6 +546,14 @@
     buildEdges()
     const sh = S.pred ? S.pred.kart() : null
     const me = S.mode === 'debug' ? debugKart() : (S.seat >= 0 ? sh : remoteHead())
+    /* F01/F08 漂移边缘（渲染层检测：dr 0→1 落笔+音效位；胎痕随滑移持续落墨） */
+    if (sh && S.seat >= 0 && S.phase === 'race') {
+      const dr = sh.dr ? 1 : 0
+      if (dr !== S.lastDr) { S.lastDr = dr; if (dr) { sfx.play('drift', ''); fxTrig('F01'); fxTrig('F08') } }
+      if (dr && sh.v > 6000) pushMarks(sh)   /* v=milli-px/tick：6000≈120px/s（胎痕成形速度门） */
+    }
+    /* F04/F05 名次检测置于世界渲染前：被超者名签绿环同帧即可首绘（时延表口径） */
+    checkRank()
     /* 视觉自车：混合带/软收敛（§5.1 ③——状态采重放值，视觉 35%/帧 逼近） */
     if (S.seat >= 0 && sh) {
       if (!S.vis) S.vis = { x: sh.x, y: sh.y, a: sh.a }
@@ -527,10 +583,13 @@
     cam.zT = 1.00 - 0.16 * vK
     if (S.zoomP > 0) { cam.zT -= 0.04 * S.zoomP; S.zoomP *= 0.85; if (S.zoomP < 0.02) S.zoomP = 0 }
     cam.zoom += (cam.zT - cam.zoom) * 0.08
-    const look = 90 * 1000
+    /* F13 相机跟随曲线（§3.2 优化落值，GAMES-113）：前视随速度带外扩 56→100px
+     * （原固定 90px）——高速弯道预视窗更长，低速贴弯收紧；lerp 12%/帧与速度缩放带不变 */
+    const look = (56 + 44 * vK) * 1000
     const fwdX = Math.cos(vis.a * Math.PI / 32768), fwdY = Math.sin(vis.a * Math.PI / 32768)
     const tx = vis.x + fwdX * look, ty = vis.y + fwdY * look
     cam.x += (tx - cam.x) * 0.12; cam.y += (ty - cam.y) * 0.12
+    fxDraw('F13')
     /* 旋进角：车头朝上 → 世界旋转 -a-90° */
     const rot = (-(vis.a * Math.PI / 32768) - Math.PI / 2)
     let sx = 0, sy = 0
@@ -552,6 +611,9 @@
     strokeWindow(edgeCache.inner, win, () => { g.lineWidth = 7; g.strokeStyle = S.track.id === 't-neon' ? NEON.cyan : CURB_A; g.stroke() })
     strokeWindow(edgeCache.outer, win, () => { g.lineWidth = 7; g.strokeStyle = S.track.id === 't-neon' ? NEON.mag : CURB_B; g.stroke() })
     g.setLineDash([])
+    /* 胎痕（F01）+刮墙火花（F06）：世界系、车底图层 */
+    drawTireMarks()
+    if (vis) drawSparks(vis)
     /* 远车（100ms 插值缓冲+迟到外推 1 张） */
     const rdt = now - 100
     for (const [, r] of S.remote) {
@@ -564,8 +626,8 @@
     drawPartsWorld()
     g.restore()
     /* 屏系 juice：motion 线 + 闪光 + HUD */
-    drawMotion(v)
-    if (S.flash > 0) { g.globalAlpha = S.flash * 0.35; g.fillStyle = S.flashC; g.fillRect(0, 0, W, H); g.globalAlpha = 1; S.flash *= 0.9; if (S.flash < 0.03) S.flash = 0 }
+    drawMotion(v, sh)
+    if (S.flash > 0) { g.globalAlpha = S.flash * 0.35; g.fillStyle = S.flashC; g.fillRect(0, 0, W, H); g.globalAlpha = 1; S.flash *= 0.9; if (S.flash < 0.03) S.flash = 0; fxDraw('F16') }
     drawHUD(t, v)
     fpsTick(t)
   }
@@ -583,6 +645,14 @@
     g.save()
     g.translate(x, y)
     g.rotate(a * Math.PI / 32768)
+    /* F08 横摆倾斜（§3.2，GAMES-113）：车身按滑角侧旋 ±14° 封顶（渲染期偏移不扰判定）；
+     * 漂移位保底 ±2.3°——滑角未成形的漂移按下也有可见姿态反馈 */
+    if (isMe && sh) {
+      let roll = (angD(sh.a, sh.d) / 32768) * Math.PI * 0.35
+      if (roll > 0.244) roll = 0.244; else if (roll < -0.244) roll = -0.244
+      if (drift) { if (roll > -0.04 && roll < 0.04) roll = roll < 0 ? -0.04 : 0.04; fxDraw('F08') }
+      g.rotate(roll)
+    }
     /* 阴影 */
     g.fillStyle = 'rgba(0,0,0,0.3)'
     g.beginPath(); g.ellipse(0, 2, 20, 12, 0, 0, 7); g.fill()
@@ -594,6 +664,21 @@
     g.fillRect(-8, -4, 16, 10)
     /* 席位形状标（色盲二次编码，§7） */
     drawShape(0, 6, seat, isMe)
+    /* F07 碰撞轻反馈：双车白闪 150ms（渲染层，§3.5） */
+    if (S.bumpFlash && now - S.bumpFlash.t0 < 150 && S.bumpFlash.seats.indexOf(seat) >= 0) {
+      g.fillStyle = 'rgba(255,255,255,0.45)'
+      roundRect(-11, -18, 22, 36, 6); g.fill()
+      fxDraw('F07')
+    }
+    /* F02 氮气拖尾：尾喷火花锥（bo 激活/probe 窗同一位点；本地 -x=车尾） */
+    if (isMe && ((sh && sh.bo > 0) || (S.boostFx && now - S.boostFx < 500))) {
+      const fl = 14 + Math.random() * 8
+      g.fillStyle = '#FFD166'
+      g.beginPath(); g.moveTo(-11, -7); g.lineTo(-11 - fl, 0); g.lineTo(-11, 7); g.closePath(); g.fill()
+      g.fillStyle = '#5CD9E8'
+      g.beginPath(); g.moveTo(-11, -3); g.lineTo(-11 - fl * 0.55, 0); g.lineTo(-11, 3); g.closePath(); g.fill()
+      fxDraw('F02')
+    }
     /* 漂移烟/尾流 */
     if (drift && Math.random() < 0.6) S.parts.push({ x: x * 1000, y: y * 1000, vx: (Math.random() - 0.5) * 400, vy: (Math.random() - 0.5) * 400, life: 0.7, c: 'rgba(200,200,210,0.5)', sz: 5, world: 1 })
     if (sh && sh.bo > 0) S.parts.push({ x: x * 1000, y: y * 1000, vx: -Math.cos(a * Math.PI / 32768) * 1200, vy: -Math.sin(a * Math.PI / 32768) * 1200, life: 0.4, c: '#FFD166', sz: 3, world: 1 })
@@ -603,6 +688,13 @@
       g.font = HF('P2', 'name', 9)
       g.fillStyle = DIM; g.textAlign = 'center'
       g.fillText(nameOf(seat), 0, -24)
+      /* F04 超车提示：被超者名签绿环闪边 600ms（不遮挡，§3.5） */
+      if (S.passFlash && S.passFlash.seat === seat && now - S.passFlash.t0 < 600) {
+        const al = 1 - (now - S.passFlash.t0) / 600
+        g.strokeStyle = 'rgba(61,220,132,' + (al * 0.9).toFixed(2) + ')'; g.lineWidth = 2
+        g.beginPath(); g.arc(0, 0, 24, 0, 7); g.stroke()
+        fxDraw('F04')
+      }
       g.rotate(a * Math.PI / 32768)
     }
     g.restore()
@@ -625,6 +717,32 @@
     if (s !== 'cross') g.fill()
   }
   function roundRect(x, y, w2, h2, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w2, y, x + w2, y + h2, r); g.arcTo(x + w2, y + h2, x, y + h2, r); g.arcTo(x, y + h2, x, y, r); g.arcTo(x, y, x + w2, y, r); g.closePath() }
+  /* F01 胎痕：漂移中后轮双痕落笔（世界系 milli，持久带帽 480 点≈2s 双轮轨迹） */
+  function pushMarks(sh) {
+    const a = sh.a * Math.PI / 32768
+    const bx = sh.x - Math.cos(a) * 14000, by = sh.y - Math.sin(a) * 14000   // 后轴 -14px
+    const nx2 = -Math.sin(a) * 8000, ny2 = Math.cos(a) * 8000                // 轮距 ±8px
+    S.marks.push({ x: bx + nx2, y: by + ny2 }, { x: bx - nx2, y: by - ny2 })
+    if (S.marks.length > 480) S.marks.splice(0, S.marks.length - 480)
+  }
+  function drawTireMarks() {
+    if (!S.marks.length) return
+    g.fillStyle = 'rgba(16,14,24,0.5)'
+    for (const m of S.marks) g.fillRect(m.x / 1000 - 2, m.y / 1000 - 2, 4, 4)
+    fxDraw('F01')
+  }
+  /* F06 刮墙火花流：车头环带随机溅射，帧衰减 */
+  function drawSparks(vis) {
+    if (S.sparks <= 0.5) { S.sparks = 0; return }
+    g.fillStyle = '#FFD166'
+    const fx2 = vis.x / 1000, fy2 = vis.y / 1000
+    for (let i = 0; i < S.sparks; i++) {
+      const ang = Math.random() * 6.28, r = 14 + Math.random() * 14
+      g.fillRect(fx2 + Math.cos(ang) * r, fy2 + Math.sin(ang) * r - 12, 3, 3)
+    }
+    S.sparks *= 0.85
+    fxDraw('F06')
+  }
   function drawPartsWorld() {
     for (let i = S.parts.length - 1; i >= 0; i--) {
       const p = S.parts[i]
@@ -638,20 +756,46 @@
       g.globalAlpha = 1
     }
   }
-  function drawMotion(v) {
-    const vPx = v / 1000 / 20
-    if (vPx < 120) return
-    const n = Math.min(7, Math.floor(vPx / 45))
+  function drawMotion(v, sh) {
+    /* vPx=px/s（v 为 milli-px/tick ×20tick/s → v/50；GAMES-113 修正原 /1000/20
+     * 量纲错位——阈值 120px/s 永不达，速度线自 DEV 起即死码，本次激活） */
+    const vPx = v / 50
+    if (vPx < 120) { S.motionOn = 0; return }
+    if (!S.motionOn) { S.motionOn = 1; fxTrig('F10') }
+    /* F10 强化（GAMES-113）：boost 爆密 +3 条；线条倾斜 ∝ 滑角（§3.2 出弯横摆跟随） */
+    let n = Math.min(7, Math.floor(vPx / 45))
+    if ((sh && sh.bo > 0) || (S.boostFx && now - S.boostFx < 500)) n = Math.min(10, n + 3)
+    const tilt = sh ? (angD(sh.a, sh.d) / 32768) * 14 : 0
     g.strokeStyle = 'rgba(232,236,243,0.16)'
     g.lineWidth = 2
     for (let i = 0; i < n; i++) {
       const x = i % 2 ? W - 8 - (i >> 1) * 12 : 8 + (i >> 1) * 12
       const len = 30 + (vPx % 80) + i * 8
-      const y = ((now / 4 + i * 97) % (H + len)) - len
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + len); g.stroke()
+      /* 纵向带裁剪到 y<560：不压页脚/漂移钮/蓄力条识图锚区（§7 识图 v2 字形锚点口径） */
+      const y = ((now / 4 + i * 97) % (560 + len)) - len
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + tilt, y + len); g.stroke()
     }
+    fxDraw('F10')
   }
   /* ---------- HUD（§7：顶栏 56+迷你图 Ø96+蓄力条+漂移钮；HF 登记） ---------- */
+  /* F04/F05 名次变动检测（渲染层边缘触发：改善=超车提示+音效位；rankHold=取证注入同一位点） */
+  function checkRank() {
+    if (S.seat < 0 || !S.ranks.length) return
+    const held = S.rankHold && now < S.rankHold.until
+    const r = (held ? S.rankHold.ranks : S.ranks).indexOf(S.seat) + 1
+    S.rankCur = r
+    if (!r) return
+    if (S.lastRank && r !== S.lastRank) {
+      S.rankDir = r < S.lastRank ? 1 : -1
+      S.rankPop = 1; fxTrig('F05')
+      if (S.rankDir > 0) {
+        fxTrig('F04'); sfx.play('pass', '')
+        const prev = (held ? S.rankHold.prev : S.ranks)[S.lastRank - 1]
+        if (prev != null && prev !== S.seat) S.passFlash = { seat: prev, t0: now }
+      }
+    }
+    S.lastRank = r
+  }
   function drawHUD(t, v) {
     const me = S.pred ? S.pred.kart() : null
     /* 顶栏底 */
@@ -659,11 +803,22 @@
     g.fillRect(0, 0, W, TOP_H)
     g.strokeStyle = 'rgba(201,168,232,0.25)'; g.lineWidth = 1
     g.beginPath(); g.moveTo(0, TOP_H - 0.5); g.lineTo(W, TOP_H - 0.5); g.stroke()
-    const rank = me ? S.ranks.indexOf(S.seat) + 1 : 0
-    /* P 位次（P0） */
+    const rank = me ? S.rankCur : 0
+    /* P 位次（P0；F05 变动跳动=1+0.4·pop 缩放+方向色） */
     g.textAlign = 'left'; g.textBaseline = 'alphabetic'
-    g.font = HF('P0', 'pos', 13, '600'); g.fillStyle = INK
-    g.fillText('P' + (rank || '—'), 10, 22)
+    if (S.rankPop > 0.03) {
+      const sc = 1 + 0.4 * S.rankPop
+      g.save(); g.translate(10, 22); g.scale(sc, sc)
+      g.font = HF('P0', 'pos', 13, '600')
+      g.fillStyle = S.rankPop > 0.5 ? (S.rankDir > 0 ? '#3DDC84' : '#FF8A65') : INK
+      g.fillText('P' + (rank || '—'), 0, 0)
+      g.restore()
+      S.rankPop *= 0.92
+      fxDraw('F05')
+    } else {
+      g.font = HF('P0', 'pos', 13, '600'); g.fillStyle = INK
+      g.fillText('P' + (rank || '—'), 10, 22)
+    }
     g.font = HF('P1', 'posOf', 11); g.fillStyle = DIM
     g.fillText('/6', g.measureText('P' + (rank || '—')).width + 16, 22)
     /* 圈数（P0） */
@@ -702,24 +857,30 @@
     }
     /* 迷你图 Ø96（右上，整圈轮廓+6 色点） */
     drawMinimap()
-    /* 倒计时（P0 大字脉冲） */
+    /* 倒计时（P0 大字脉冲；F12 首见落笔） */
     if (S.phase === 'countdown') {
+      if (!S.countTrig) { S.countTrig = 1; fxTrig('F12') }
       const left = Math.max(0, Math.ceil((60 - S.simTick) * S.tickMs / 1000))
       const ph = 1 - ((60 - S.simTick) * S.tickMs % 1000) / 1000
-      g.font = HF('P0', 'count', 44 - (1 - ph) * 10, '700')
+      /* 字号登记表取恒 44px（动态 px 会把不同值写进注册表——hudFonts 逐键比对必红），
+       * 脉冲改走 scale 变换（视觉同式：秒内 0.78→1.0 张合） */
+      g.font = HF('P0', 'count', 44, '700')
       g.textAlign = 'center'; g.fillStyle = '#FFD166'
       g.globalAlpha = 0.4 + ph * 0.6
-      g.fillText(String(left || 'GO'), W / 2, H / 2 - 40)
+      g.save(); g.translate(W / 2, H / 2 - 40); g.scale(0.78 + ph * 0.22, 0.78 + ph * 0.22)
+      g.fillText(String(left || 'GO'), 0, 0)
+      g.restore()
       g.globalAlpha = 1; g.textAlign = 'left'
+      fxDraw('F12')
       if (left !== S.lastCount) { S.lastCount = left; sfx.play('count', String(left)) }
     }
     if (S.phase !== 'countdown' && S.greenAt && now - S.greenAt < 600) {
       g.font = HF('P0', 'go', 40, '700'); g.textAlign = 'center'; g.fillStyle = '#7FE8D8'
       g.fillText('GO!', W / 2, H / 2 - 40); g.textAlign = 'left'
     }
-    /* 抢跑罚红字 */
-    if (now < S.penUntil) { g.font = HF('P1', 'pen', 11, '600'); g.fillStyle = '#FF6B5C'; g.textAlign = 'center'; g.fillText('抢跑罚：禁油门 1s', W / 2, H / 2 - 70); g.textAlign = 'left' }
-    /* 圈速横幅（1.2s，§3.5） */
+    /* 抢跑罚红字（F15） */
+    if (now < S.penUntil) { g.font = HF('P1', 'pen', 11, '600'); g.fillStyle = '#FF6B5C'; g.textAlign = 'center'; g.fillText('抢跑罚：禁油门 1s', W / 2, H / 2 - 70); g.textAlign = 'left'; fxDraw('F15') }
+    /* 圈速横幅（1.2s，§3.5；F03 圈速完成闪现） */
     if (S.lapBanner && now - S.lapBanner.t0 < 1200) {
       const a = 1 - (now - S.lapBanner.t0) / 1200
       g.globalAlpha = a
@@ -727,6 +888,7 @@
       g.font = HF('P0', 'lapBan', 15, '600'); g.fillStyle = '#FFD166'; g.textAlign = 'center'
       g.fillText('圈 ' + S.lapBanner.lap + ' · ' + fmt(S.lapBanner.ms) + (S.best === S.lapBanner.ms ? ' ★PB' : ''), W / 2, H / 2 + 2)
       g.globalAlpha = 1; g.textAlign = 'left'
+      fxDraw('F03')
     }
     /* 左下：漂移蓄力条（两段刻度）+油门档（P1） */
     if (me && S.seat >= 0) {
@@ -741,6 +903,13 @@
       g.font = HF('P1', 'charge', 11); g.fillStyle = DIM
       g.fillText('漂移' + (me.tier >= 2 ? 'Ⅱ' : me.tier === 1 ? 'Ⅰ' : ''), bx, by - 8)
       g.fillText('油门 ' + (S.th > 0 ? '▲' : S.th < 0 ? '▼' : '—'), bx, by + 26)
+      fxDraw('F09')
+    }
+    /* F14 尾流提示（HUD 小字 1.2s，§3.5） */
+    if (S.draftT && now - S.draftT < 1200) {
+      g.font = HF('P1', 'draftHint', 11); g.fillStyle = '#5CD9E8'
+      g.fillText('尾流 +12%', 12, H - 130)
+      fxDraw('F14')
     }
     /* 右下漂移钮 Ø72（P1 ≥11） */
     g.globalAlpha = S.dr ? 1 : 0.72
@@ -757,6 +926,17 @@
     if (S.hashWarn) { g.font = HF('P1', 'hashWarn', 11, '600'); g.fillStyle = '#FF8A65'; g.fillText('⚠ 网络模式降级（校验分歧）', 10, TOP_H + 16) }
     if (S.connLost && !S.end) { g.fillStyle = 'rgba(20,16,32,0.7)'; g.fillRect(0, H / 2 - 30, W, 60); g.font = HF('P1', 'lost', 12, '600'); g.fillStyle = '#FF8A65'; g.textAlign = 'center'; g.fillText('连接已断开（10s 内重连可夺回席位）', W / 2, H / 2 + 4); g.textAlign = 'left' }
     if (S.err) { g.font = HF('P1', 'err', 11); g.fillStyle = '#FF6B5C'; g.textAlign = 'center'; g.fillText(S.err, W / 2, H / 2 + 30); g.textAlign = 'left' }
+    /* F11 终点冲线：彩带 400ms（屏系下落带，§3.5 冲线彩带） */
+    if (S.confettiT && now - S.confettiT < 400) {
+      const p = (now - S.confettiT) / 400
+      g.globalAlpha = 1 - p
+      for (let i = 0; i < 36; i++) {
+        g.fillStyle = SEAT_COL[i % 6]
+        g.fillRect((i * 53 + 7) % (W - 8), -16 + p * (120 + (i % 5) * 36) + (i * 31) % 40, 4, 7)
+      }
+      g.globalAlpha = 1
+      fxDraw('F11')
+    } else if (S.confettiT) S.confettiT = 0
     /* 结算页（T7-A 下半：名次+每圈双条对照+再来一局） */
     if (S.end) drawSettle()
   }
@@ -907,9 +1087,11 @@
     const st = DBG.st
     const inputs = {}
     for (let i = 1; i < 6; i++) inputs[i] = K.brain(st, i, ['casual', 'balanced', 'competitive', 'balanced', 'casual'][i - 1], DBG.rngs[i])
-    /* 我席=赛车线 autopilot（手感样本：真输入走预测器路径） */
+    /* 我席=赛车线 autopilot（手感样本：真输入走预测器路径）；fxScene('drift')
+     * 覆盖窗=真输入漂移取证（GAMES-113：dr 事件链/胎痕/横摆全真态） */
     const my = K.policyInput({ track: { id: S.track.id }, karts: st.karts }, 0)
     inputs[0] = { q: st.tick, st: my.st, th: my.th, dr: my.dr }
+    if (S.driftFx && performance.now() - S.driftFx < 1400) inputs[0].dr = 1
     const r = K.step(st, inputs, DBG.room)
     for (const ev of r.events) onEvent(ev)
     /* 预测器同跑（渲染/进度路径与在线同径） */
@@ -937,6 +1119,15 @@
     sfxCalls: () => sfx.calls.slice(-40),
     sfxGroups: () => ({ slots: sfx.slots.slice(), calls: sfx.calls.slice(-64), on: sfx.on }),
     sound(v) { sfx.on = !!v; return sfx.on },
+    /* GAMES-113 手感层取证钩子（台账/场景注入；蛇王 FEEL 同范式） */
+    fxLedger: () => fxLedgerArr.map((e) => ({ id: e.id, n: e.n, lat: e.drawn ? Math.round(e.drawn - e.t0) : null })),
+    fxScene(name) {
+      if (name === 'calm') { S.lapBanner = null; S.flash = 0; S.shake = 0; S.sparks = 0; S.confettiT = 0; S.draftT = 0; S.rankPop = 0; S.passFlash = null; S.bumpFlash = null; S.boostFx = 0; S.zoomP = 0; S.penUntil = 0; return true }
+      if (name === 'rank') { S.rankHold = { ranks: [S.seat].concat(S.ranks.filter((s) => s !== S.seat)), prev: S.ranks.slice(), until: performance.now() + 250 }; return true }
+      if (name === 'drift') { S.driftFx = performance.now(); return true }
+      return false
+    },
+    fxProbe: (ev) => onEvent(ev),
     netProbe() { return { ping: S.ping, flight: S.flight, recon10s: S.recon.filter((r) => performance.now() - r.t < 10000).length, reconPx: S.recon.slice(-200), hashBad: S.hashBad, hashWarn: S.hashWarn, lapLocal: S.lapLocal.slice(), lapSrv: S.lapSrv.slice() } },
   }
   const dbg = new URLSearchParams(location.search).get('debug')
