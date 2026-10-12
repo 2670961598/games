@@ -575,6 +575,21 @@ function posBonus(st, u, pointQ8) {
   return p
 }
 function unitPower(u) { return 2 * u.hp + 4 * UNITS[u.type].atk + UNITS[u.type].val }
+/* GAMES-121 路线价值支撑：咽喉格=可通行格 ≥2 正交邻格为岩/河（M1 桥口/M3 岩缝；
+ * 纯 terrain 派生 → mapId 惰性记忆零状态，双跑确定） */
+const CHOKE_MEMO = {}
+function chokeOf(st) {
+  if (CHOKE_MEMO[st.mapId]) return CHOKE_MEMO[st.mapId]
+  const s = new Set()
+  for (let c = 0; c < 64; c++) {
+    if (!PASSABLE[st.terrain[c]]) continue
+    let n = 0
+    for (const nb of NEIGH(c)) if (!PASSABLE[st.terrain[nb]]) n++
+    if (n >= 2) s.add(c)
+  }
+  CHOKE_MEMO[st.mapId] = s
+  return s
+}
 function riskRough(st, u) {                                                   // 粗算：单最大威胁不叠加（§4.2）
   let mx = 0
   for (const e of st.units) {
@@ -663,6 +678,27 @@ function evaluate(st, seat, opts = {}) {
     for (const u of st.units) if (u.seat === seat && MELEE[u.type]) rows[(u.cell / 8) | 0] = (rows[(u.cell / 8) | 0] || 0) + 1
     for (const r in rows) if (rows[r] >= 2) v += 2
   }
+  /* GAMES-121 棋形扩展三项（competitive 专用 opts；小权重防扰动 FIX1 重锚后的梯度）：
+   * 威胁图净压 threatNet——我方威胁图覆盖的敌单位数（封顶 3）：压着打不脱节；
+   * 控制区 controlW——据点 3 格压力差（≤2 格×2、3 格×1，±4 封顶）×权重；
+   * 路线价值 routeW——咽喉格（桥口/岩缝）近战驻防津贴。 */
+  if (opts.threatNet) {
+    const my = threatMap(st, seat)
+    let f = 0
+    for (const u of st.units) if (u.seat === e && my.has(u.cell)) f++
+    v += opts.threatNet * Math.min(3, f)
+  }
+  if (opts.controlW) {
+    for (const p of st.points) {
+      let pr = 0
+      for (const u of st.units) { const dd = dist(u.cell, p); if (dd <= 3) pr += (u.seat === seat ? 1 : -1) * (dd <= 2 ? 2 : 1) }
+      v += opts.controlW * Math.max(-4, Math.min(4, pr))
+    }
+  }
+  if (opts.routeW) {
+    const ch = chokeOf(st)
+    for (const u of st.units) if (u.seat === seat && MELEE[u.type] && ch.has(u.cell)) v += opts.routeW
+  }
   return v
 }
 /* 枚举全部单激活复合动作（§4.2 ≈≤720 项；序=单位 id × BFS 格 × 目标 id，确定序） */
@@ -725,11 +761,18 @@ function engageNear(st, seat) { // 任意 (我单位, 敌单位) 对距 ≤6 →
 }
 /* 出手核：balanced=贪心 argmax / competitive=击杀偏置+精确威胁+棋形（§4.3 四件套；
  * 2-ply 以「对手最强一手」反评估实现——深度 1 对手前瞻覆盖主风险面，预算保护） */
-function smartNext(st, seat, level) {
+function smartNext(st, seat, level, mercy, bookUnit) {
   const opts = {}
+  /* GAMES-121 开局库接管口径：bookUnit=开局树提议的出手单位——动作全集收敛到该单位
+   * 的复合动作子集，但 argmax 仍走全量评估（evaluate+killBonus/坐点偏置+2-ply worst）
+   * ——脚本只定「谁动」，「怎么动」留给搜索（安全网零让渡）。子集空/无正收益 → 返
+   * null 由调用方退回全量（不浪费 AP）。 */
+  /* GAMES-121 放水让力（§4.4）：mercy≥1 评估噪声注入——决策流 rng 定桩
+   * （seed^seat^turnNo^决策序），同 seed 双跑确定；仅摆动 argmax 邻近项，不破合法性 */
+  if (mercy) opts.noise = mercy >= 2 ? 13 : 5
   /* GAMES-120 O1 调参：killBonus 8→12 + pointW 16（占点永续分）+ sitterDmgW 3/sitterBonus 10
    * （坐点者猎杀）+ hunt（牵引接敌）+ 静态风险 ½×（见 evaluate 注）——四件套语义不变，权重重锚 */
-  if (level === 'competitive') { opts.precise = true; opts.formation = true; opts.killBonus = 12; opts.pointW = 16; opts.sitterBonus = 10; opts.sitterDmgW = 3; opts.hunt = true }
+  if (level === 'competitive') { opts.precise = true; opts.formation = true; opts.killBonus = 12; opts.pointW = 16; opts.sitterBonus = 10; opts.sitterDmgW = 3; opts.hunt = true; opts.threatNet = 2; opts.controlW = 2; opts.routeW = 3 }
   if (level === 'hosted') {                                                   // 倾向继承（§4.5）：从已入账输入日志复算两系数
     let atk = 0, moves = 0, pointward = 0
     for (const o of st.opsLog) {
@@ -749,7 +792,9 @@ function smartNext(st, seat, level) {
     opts.pointQ8 = clampQ8(0.5 + (moves ? pointward / moves : 0.5))
   }
   const base = evaluate(st, seat, opts)
-  const acts = enumerateActivations(st, seat)
+  const all = enumerateActivations(st, seat)
+  const acts = bookUnit === undefined ? all : all.filter((a) => a.ops[0].k !== 'endTurn' && a.ops[0].unit === bookUnit)
+  if (bookUnit !== undefined && acts.length === 0) return null
   const scored = []                                                           // 打分相（GAMES-121 排序源数据）
   for (let idx = 0; idx < acts.length; idx++) {
     const act = acts[idx]
@@ -781,6 +826,7 @@ function smartNext(st, seat, level) {
         if (opts.sitterDmgW) d += opts.sitterDmgW * dmg
       }
     }
+    if (opts.noise) { const nr = botRng(st, seat, 47100 + idx); d += (((nr() * 2 - 1) * opts.noise) | 0) }
     scored.push({ act, d, idx, cl, pure: act.ops.length === 1 && act.ops[0].k === 'move' })
   }
   scored.sort((a, b) => b.d - a.d || a.idx - b.idx)
@@ -852,20 +898,86 @@ function hostedNext(st, seat) {                                               //
   if (q && q.length) return q.shift()
   return smartNext(st, seat, 'hosted')
 }
-function brain(state, seat, level) {
+/* ---------- 开局库雏形（GAMES-121 §4.3 件 5）：意图树×2，目标格派生制 ----------
+ * 树不脚本化路径：路径每拍用 reach() 现场求（对手占位/地形变化下恒合法）；只在
+ * 「本席无任何可攻目标」（开局接敌前）接管移动决策，接敌即交还搜索——战斗强度零
+ * 让渡。adherence=competitive 前 BOOK_TURNS 个己方回合（此后全搜索）；树选择=开局
+ * 一次性 rng 定桩缓存在 st._bookTree（brain 暂存面，不入 serialize/hash，§5.5 决策
+ * 流口径——scratch 克隆不复制故 smartNext 副本恒 undefined 零干扰）。 */
+const BOOK_TURNS = 3
+function bookTree(st, seat) {
+  if (!st._bookTree) st._bookTree = [null, null]
+  if (st._bookTree[seat] === null) { const rng = botRng(st, seat, 9100 + seat); st._bookTree[seat] = (rng() * 2) | 0 }
+  return st._bookTree[seat]
+}
+function bookGoals(st, seat, tree) {
+  const r = (p) => (p / 8) | 0
+  const pts = [...st.points].sort((a, b) => r(a) - r(b))                    // [上（靠 B 席）, 下（靠 A 席）]
+  const ownPt = seat === 0 ? pts[1] : pts[0]
+  const foePt = seat === 0 ? pts[0] : pts[1]
+  if (tree === 0) {                                                          // 树 A「双线推进」
+    return { lance: st.own[st.points.indexOf(ownPt)] === seat ? foePt : ownPt, // 就近未控点直插（已占则转压敌侧）
+      sword: foePt, axe: foePt, bow: ownPt, mage: ownPt, healer: ownPt }     // 双近战压敌侧点+后线守己侧
+  }
+  return { lance: ownPt, sword: ownPt, axe: ownPt, bow: ownPt,               // 树 B「集中突破」：四兵力聚力己侧点
+    mage: foePt, healer: ownPt }                                             // 法师前压牵制/医者随队
+}
+function bookNext(st, seat, tree) {
+  for (const u of st.units) if (u.seat === seat && u.ph !== 'done' && atkTargets(st, u.id).length) return null // 接敌→交还搜索
+  const g = bookGoals(st, seat, tree)
+  const PRIO = { lance: 0, sword: 1, axe: 2, bow: 3, mage: 4, healer: 5 }
+  const mine = st.units.filter((u) => u.seat === seat && u.ph === 'idle' && st.ap > 0).sort((a, b) => (PRIO[a.type] - PRIO[b.type]) || (a.id - b.id))
+  for (const u of mine) {
+    const goal = g[u.type]
+    if (u.cell === goal) continue
+    let best = null
+    for (const rr of reach(st, u.id)) {
+      const d = dist(rr.cell, goal)
+      if (!best || d < best.d || (d === best.d && rr.cell < best.cell)) best = { d, cell: rr.cell, path: rr.path }
+    }
+    if (best && best.d < dist(u.cell, goal)) return { unit: u.id }            // 提议单位（出手权交搜索：同单位动作子集内 argmax，2-ply 安全网保留）
+  }
+  return null
+}
+/* ---------- 陪玩放水（GAMES-121 §4.4；pool/element/snake 先例的 1v1 回合制形） ----------
+ * 信号源=网关 pulse 台账（rooms.js botEnv.foeLose[seat]=对席真人连败局数；真人胜清零）；
+ * 阈值 game.json bot.mercy 经适配器 env.mercy 注入（离线确定性不读文件，缺省兜底）。
+ * L1 连败（≥minFoeLose）→ 评估噪声注入 ±5（决策级轻让）；L2 重败（≥hardFoeLose）→
+ * 搜索深度降档（competitive 四件套+2-ply+开局库全摘，落 casual 随手核——档位锚定见
+ * smartNext 前实测注）叠加 ±13 噪声。casual 已最弱不适用；hosted 托管续打走
+ * hostedNext 通道不经此（托管连续性优先，GAMES-63 口径）。
+ * botStats=观测面计数（QA 取证），不入 state/hash。 */
+const MERCY_DFT = { minFoeLose: 2, hardFoeLose: 3 }
+const botStats = { mercy: 0, mercyDeep: 0 }
+function brain(state, seat, level, rng, env) {
   const st = state
   if (st.over) return {}
+  const fl = env && env.foeLose ? env.foeLose[seat] || 0 : 0
+  const mc = (env && env.mercy) || MERCY_DFT
+  const mercy = fl >= (mc.hardFoeLose || 3) ? 2 : fl >= (mc.minFoeLose || 2) ? 1 : 0
   if (st.phase === 'deploy') {
     if (st.deployDone[seat]) return {}
     if (gated(st, seat, level)) return {}
-    return { op: deployAction(st, seat, level) }
+    return { op: deployAction(st, seat, mercy >= 2 && level === 'competitive' ? 'balanced' : level) } // L2 部署降档（弃开局定桩）
   }
   if (st.phase !== 'act' || st.turnSeat !== seat) return {}
   const q = st._botQ[seat]
   if (q && q.length && !gated(st, seat, level)) return { op: q.shift() }      // 复合动作续队列（每 op 一拍，免巨石阻塞）
   if (gated(st, seat, level)) return {}
   if (st.turnOps[seat] > 24) return { op: { k: 'endTurn' } }                  // 安全阀（防意外长回合）
-  const a = level === 'casual' ? casualNext(st, seat) : smartNext(st, seat, level)
+  if (mercy) { botStats.mercy++; if (mercy >= 2) botStats.mercyDeep++ }       // 观测面（不入 state/hash）
+  if (level === 'competitive' && !mercy && st.turnCounts[seat] <= BOOK_TURNS) { // 开局库（放水局摘除）
+    const bk = bookNext(st, seat, bookTree(st, seat))
+    if (bk) {
+      const a = smartNext(st, seat, level, mercy, bk.unit)                     // 该单位子集 argmax（全评估安全网）
+      if (a) return { op: a }
+    }
+  }
+  /* L2 深度降档锚定实测（blitz 中等剧本 8 seed）：balanced 核+±13 噪声真人仅 3/8——
+   * 中间档对中等真人仍不可胜，梯度按「结果可证性」锚 casual 随手核（8/8）；
+   * 部署仍 T0（降档≠乱下）。L1 噪声 ±5 为决策级轻让（结果不翻、opsLog 可见分叉）。 */
+  const eff = mercy >= 2 && level === 'competitive' ? 'casual' : level
+  const a = eff === 'casual' ? casualNext(st, seat) : smartNext(st, seat, eff, mercy)
   return { op: a || { k: 'endTurn' } }
 }
 
@@ -952,6 +1064,7 @@ return {
   META, LEVELS, UNITS, TYPE_ORDER, BEATS, TEMPLATES, ENGINE_HASH,
   fnv1a32, mulberry32, create, step, applyOp, brain, viewFor, serialize, hashState, replayOps,
   reach, atkTargets, fireballCells, healTargets, predictDmg, dmgCalc, evaluate, enumerateActivations, quip,
+  botStats, MERCY_DFT, BOOK_TURNS, bookTree, bookGoals, chokeOf,
   T_PLAIN, T_FOREST, T_ROCK, T_RIVER, T_POINT, PASSABLE, dist, NEIGH,
 }
 })
