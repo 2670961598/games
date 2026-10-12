@@ -16,7 +16,8 @@
   "bot": {
     "levels": ["casual", "balanced", "competitive"],
     "takeOver": "casual(单回合超时)/tendency-inherit(持续托管)",
-    "desc": "超时单回合=casual 随手代打；断线/主动托管=balanced 核+倾向继承（attackOpRatio/pointwardRatio 从输入日志复算，§4.5）；afk 三分离（连续 3 全超时回合认负）"
+    "desc": "超时单回合=casual 随手代打；断线/主动托管=balanced 核+倾向继承（attackOpRatio/pointwardRatio 从输入日志复算，§4.5）；afk 三分离（连续 3 全超时回合认负）",
+    "mercy": { "minFoeLose": 2, "hardFoeLose": 3 }
   },
   "scoring": {
     "win": "歼灭对方全编制或占点分先到 10",
