@@ -833,11 +833,26 @@
     /* 最佳圈（P1） */
     g.font = HF('P1', 'best', 11); g.fillStyle = DIM
     g.fillText('最佳 ' + (S.best ? fmt(S.best) : '—'), 100, 22)
-    /* T7-A ping 徽标（P0 13/600 升档，§3.3）：三档色+「预测中」副行 */
+    /* T7-A ping 徽标（P0 13/600 升档，§3.3）：三档色+信号条形码+「预测中」副行。
+     * GAMES-115 色弱双编码：绿档 #3DDC84 与红档 #FF8A65 灰度 luma 162/169 同带
+     * （Δ7 不可辨），档位改以信号条 3/2/1 实条计数为形通道（灰度下可数） */
     const pcol = S.ping <= 80 ? '#3DDC84' : S.ping <= 160 ? '#FFD166' : '#FF8A65'
+    const pTier = S.ping <= 80 ? 3 : S.ping <= 160 ? 2 : 1
     g.textAlign = 'right'
     g.font = HF('P0', 'ping', 13, '600'); g.fillStyle = S.seat >= 0 ? pcol : DIM
     g.fillText('PING ' + (S.ping || '—') + 'ms', W - 10, 22)
+    if (S.seat >= 0) {
+      const tw = g.measureText('PING ' + (S.ping || '—') + 'ms').width
+      const bx = Math.round(W - 10 - tw - 24)
+      S.pingBars = { x: bx, y: 22 }   // 落笔位登记（识图探针地面真值）
+      for (let i = 0; i < 3; i++) {
+        const bh = 4 + i * 3
+        g.globalAlpha = i < pTier ? 1 : 0.22
+        g.fillStyle = pcol
+        g.fillRect(bx + i * 6, 22 - bh, 4, bh)
+      }
+      g.globalAlpha = 1
+    }
     g.font = HF('P1', 'predOn', 11); g.fillStyle = S.seat >= 0 ? pcol : DIM
     g.fillText(S.seat >= 0 ? '预测中' : '旁观', W - 10, 42)
     g.textAlign = 'left'
@@ -956,9 +971,6 @@
       if (i === 0) g.moveTo(x, y); else g.lineTo(x, y)
     }
     g.closePath(); g.stroke()
-    /* 起跑线标记 */
-    g.fillStyle = '#FFD166'
-    g.fillRect(mx + (tr.pts[0] / 1000 - tr.world / 2000) * sc - 2, my + (tr.pts[1] / 1000 - tr.world / 2000) * sc - 2, 4, 4)
     /* 6 色点 */
     const put = (x, y, seat, me2) => {
       g.fillStyle = SEAT_COL[seat % 6]
@@ -969,6 +981,15 @@
     const me = S.pred ? S.pred.kart() : null
     if (me && S.seat >= 0) put(me.x, me.y, S.seat, true)
     else if (S.mode === 'debug' && debugKart()) put(debugKart().x, debugKart().y, 0, true)
+    /* 起跑线标记（GAMES-115 精化）：黑白格旗标 7×7 顶层绘制（通用起跑符号、色盲
+     * 通用；原 4×4 金方与车位点同族且常被点阵遮挡——识图不可证） */
+    const sx = Math.round(mx + (tr.pts[0] / 1000 - tr.world / 2000) * sc) - 3
+    const sy = Math.round(my + (tr.pts[1] / 1000 - tr.world / 2000) * sc) - 3
+    S.mmMark = { x: sx, y: sy }   // 落笔位登记（识图探针地面真值）
+    for (let cy = 0; cy < 2; cy++) for (let cx = 0; cx < 2; cx++) {
+      g.fillStyle = (cx + cy) % 2 ? '#2A2438' : '#E8ECF3'
+      g.fillRect(sx + cx * 3.5, sy + cy * 3.5, 3.5, 3.5)
+    }
   }
   function drawSettle() {
     g.fillStyle = 'rgba(12,8,20,0.92)'
@@ -1013,10 +1034,19 @@
         if (Math.abs(d) <= 0.005) { g.fillStyle = '#3DDC84'; g.fillText('补偿归零', W - 46, y + 6) }
         else { g.fillStyle = '#FF8A65'; g.fillText('链路 ' + ((sv - loc) / 1000).toFixed(3) + 's 已回填', W - 46, y + 6) }
       }
-      /* 双条 */
-      const bw = 90
-      g.fillStyle = '#5CD9E8'; g.fillRect(180, y - 8, Math.min(1, loc ? loc / 60000 : 0) * bw, 5)
-      g.fillStyle = DIM; g.fillRect(180, y - 1, Math.min(1, sv ? sv / 60000 : 0) * bw, 5)
+      /* 双条（GAMES-115 VIS 精化）：逐圈行内归一——当圈较慢者为满条（原固定 60s 归一
+       * 在 ~45s 圈速下条长不足 75% 且 <1s 链路差压成 <1.5px 不可辨）；零基线柱+
+       * 条尾亮端标（差值端点可数，色弱下条尾位置即读数，不依赖红绿） */
+      const bw = 90, bx = 180
+      const mx2 = Math.max(loc || 0, sv || 0, 1)
+      const lw2 = (loc ? loc / mx2 : 0) * (bw - 2)
+      const sw2 = (sv ? sv / mx2 : 0) * (bw - 2)
+      g.strokeStyle = 'rgba(139,147,167,0.55)'; g.lineWidth = 1
+      g.beginPath(); g.moveTo(bx + 0.5, y - 11); g.lineTo(bx + 0.5, y + 7); g.stroke()
+      g.fillStyle = '#5CD9E8'; g.fillRect(bx + 2, y - 9, lw2, 5)
+      if (lw2 > 3) { g.fillStyle = '#7FE8D8'; g.fillRect(bx + 2 + lw2 - 1.5, y - 10, 1.5, 7) }
+      g.fillStyle = DIM; g.fillRect(bx + 2, y - 2, sw2, 5)
+      if (sw2 > 3) { g.fillStyle = INK; g.fillRect(bx + 2 + sw2 - 1.5, y - 3, 1.5, 7) }
     }
     /* 再来一局（tap 区） */
     g.fillStyle = 'rgba(255,209,102,0.2)'; roundRect(W / 2 - 90, H - 120, 180, 44, 10); g.fill()
@@ -1125,7 +1155,35 @@
       if (name === 'calm') { S.lapBanner = null; S.flash = 0; S.shake = 0; S.sparks = 0; S.confettiT = 0; S.draftT = 0; S.rankPop = 0; S.passFlash = null; S.bumpFlash = null; S.boostFx = 0; S.zoomP = 0; S.penUntil = 0; return true }
       if (name === 'rank') { S.rankHold = { ranks: [S.seat].concat(S.ranks.filter((s) => s !== S.seat)), prev: S.ranks.slice(), until: performance.now() + 250 }; return true }
       if (name === 'drift') { S.driftFx = performance.now(); return true }
+      /* GAMES-115 VIS 结算帧取证：合成完赛态（名次=当前 ranks；对照样本 3 圈，第 2 圈
+       * 放大链路差 670ms 显差行）——仅显示态注入，不触网不写圈账本 */
+      if (name === 'settle') {
+        S.end = { seats: S.ranks.slice() }
+        S.best = S.best || 44120
+        S.lapLocal = [44120, 45230, 43980]
+        S.lapSrv = [44145, 45900, 44002]
+        return true
+      }
       return false
+    },
+    /* GAMES-115 VIS 取证钩子（蛇王 visInfo 同范式：只读暴露+显示态注入） */
+    visInfo() {
+      const neon = S.track && S.track.id === 't-neon'
+      return {
+        version: '1.0.0',
+        seats: SEAT_COL.map((c, i) => ({ seat: i, c, shape: SEAT_SHAPE[i] })),
+        curb: { inner: neon ? NEON.cyan : CURB_A, outer: neon ? NEON.mag : CURB_B, dash: [14, 14] },
+        pingTiers: [{ max: 80, c: '#3DDC84', bars: 3 }, { max: 160, c: '#FFD166', bars: 2 }, { max: Infinity, c: '#FF8A65', bars: 1 }],
+        ping: S.ping, pingBars: S.pingBars || null,
+        motion: { on: S.motionOn ? 1 : 0 },
+        cam: { zoom: +cam.zoom.toFixed(3), zT: +cam.zT.toFixed(3) },
+        mm: { x: 375 - 48 - 10, y: 56 + 48 + 10, r: 48, mark: S.mmMark || null },
+      }
+    },
+    visSet(o) {   // 显示态注入（仅 VIS 取证：ping 档位/详情卡开合；net 局不触碰）
+      if ('ping' in o) S.ping = o.ping
+      if ('pingOpen' in o) S.pingOpen = !!o.pingOpen
+      return true
     },
     fxProbe: (ev) => onEvent(ev),
     netProbe() { return { ping: S.ping, flight: S.flight, recon10s: S.recon.filter((r) => performance.now() - r.t < 10000).length, reconPx: S.recon.slice(-200), hashBad: S.hashBad, hashWarn: S.hashWarn, lapLocal: S.lapLocal.slice(), lapSrv: S.lapSrv.slice() } },
