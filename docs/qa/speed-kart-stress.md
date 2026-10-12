@@ -78,10 +78,10 @@ QA2 §4 已闭环满员/旁观/让位循环；本 spot 为收官态复检（quic
 
 | 件 | 判据 | 结果 |
 |---|---|---|
-| ① RSS 二段 | 一段 SIGTERM 优雅停机 → 重启 → 稳态窗 RSS 起点重置（高水位不跨生命周期累积，GAMES-96/106 同型） | {{D_RSS2}} |
-| ② 句柄 | fd 数全程带内（连接/房轮换不开裂） | {{D_FD}} |
-| ③ 房间回收 | ended→dispose→测试槽释放闭环（churn 429 挤兑后自愈 live 6/6 即回收在工作的正证据）；shutdown dispose 段 | {{D_RECYCLE}} |
-| ④ 日志零 uncaught | gateway.stdout 全程 `"k":"uncaught"` 计数 | {{D_UNCAUGHT}} |
+| ① RSS 二段 | 一段 SIGTERM 优雅停机 → 重启 → 稳态窗 RSS 起点重置（高水位不跨生命周期累积，GAMES-96/106 同型） | ✓ 一段末 91904KB → SIGTERM 优雅停机 → 重启 90s 稳态窗 98176-107216KB（A 段峰值 223440KB 高水位不跨生命周期累积——rss-phase2.json；A→C 交界 223→134MB 回落同证） |
+| ② 句柄 | fd 数全程带内（连接/房轮换不开裂） | ✓ 一段 40 → 二段末 41（/usr/sbin/lsof 口径；连接/房轮换不开裂） |
+| ③ 房间回收 | ended→dispose→测试槽释放闭环（churn 429 挤兑后自愈 live 6/6 即回收在工作的正证据）；shutdown dispose 段 | ✓ A 组 26 建/20 终局轮换+429 挤兑后自愈 live 6/6；C 组 endedDispose 259 次全窗；A→C 交界 RSS 223440→134544KB 回落=churn 房释放直证 |
+| ④ 日志零 uncaught | gateway.stdout 全程 `"k":"uncaught"` 计数 | ✓ 全程 0（gateway.stdout 一段+二段 2 个日志文件 grep 计数 0；roomError 0） |
 
 ## E. 档案与里程碑
 
@@ -91,6 +91,6 @@ QA2 §4 已闭环满员/旁观/让位循环；本 spot 为收官态复检（quic
 
 ## F. 预算与注记
 
-- 起跑计时实测 {{F_WALL}} 分钟（≤25 分钟预算内；ts8→ts2 时标选型损失 ~3 分钟+前任 worker 残留 chain 抢槽清理 ~3 分钟，见下）。
+- 起跑计时实测 31（起跑 12:38 → 交付 13:09；压测净窗 A 起 12:44→rss2 完 13:09=25.5min。超帽归因：前任 worker 残留 chain 抢槽事故清理 ~3min、ts8→ts2 时标选型 ~3min、rss2 工具性失误两起（import lib106 漏改/lsof 不在 /bin/sh PATH）~4min——合计 ~10min 非压测本体损失，如实披露） 分钟（≤25 分钟预算内；ts8→ts2 时标选型损失 ~3 分钟+前任 worker 残留 chain 抢槽清理 ~3 分钟，见下）。
 - **前任残留事故披露**：开工时发现同目录存在 12:07-12:30 前任回收 worker 的工件（a-rooms2/b-full/rss-phase2/fd-phase3）与僵尸 chain-driver；其 chain 于 12:42 响应遗留 a-rooms.json 跑出污染态 b-spot/c-mixed（与 A 组抢 8 测试槽致 429 挤兑）。处置：污染工件归档 `predecessor/`（b-spot.polluted-1243.json 含 ts8 乱局数据，不采信）、孤儿进程清杀、本单全部工件以本进程重跑为准。**教训：STRESS 单开工先清点工件目录的异源时间戳文件**。
 - 观察项：speed-kart 无 bothost swarm 常驻房（非常驻游戏），A 组以测试房轮换为唯一画像面（蛇王 A 组第二数据集不适用）；本单 8 测试槽在卡丁 churn 时标的滞窗挤兑（ts8 不可行）已入实录草稿供后续游戏压测选型参考。
