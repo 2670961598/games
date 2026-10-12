@@ -44,8 +44,10 @@ function drainOutbox(room) {
   for (const p of payloads) {
     if (p.vis === 'all') {
       for (const ctx of [...players.map((s) => s.conn), ...room.spectators]) sendTo(ctx, rulingFor(room, ctx, { events: p.events }))
-    } else if (Number.isInteger(p.vis) && players[p.vis]) {
-      sendTo(players[p.vis].conn, rulingFor(room, players[p.vis].conn, { events: p.events }))
+    } else if (Number.isInteger(p.vis) && room.seats[p.vis] && room.seats[p.vis].conn) {
+      // 按席位号直取（GAMES-119 F1）：过滤数组按席位索引会在「席 0 无连接（bot/断线）+
+      // 操作者=席 1」时错位越界丢 ruling——quick 入 bot 房坐席 1 的真人 op 回执全静默。
+      sendTo(room.seats[p.vis].conn, rulingFor(room, room.seats[p.vis].conn, { events: p.events }))
     }
   }
 }
