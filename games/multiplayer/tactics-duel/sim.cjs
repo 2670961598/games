@@ -707,6 +707,22 @@ function simulate(st, seat, act) {                                            //
   }
   return cl
 }
+/* GAMES-121 2-ply 搜索优化三件（决策不变性=构造目标，见块末注释）：
+ * ① 排序：先全量打分（不含 worst），按 (d 降序, 枚举 idx 升序) 二次遍历——
+ *   胜者判定保持「d 严格大于、平局取低 idx」= 原枚举序 argmax 语义；
+ * ② 剪枝：降序遍历中 s.d ≤ bestD 即 break——worst ≤ 0 只减分，其后项不可能翻盘；
+ * ③ 深度自适应预算：worst 只可能来自伤害型对手动作（hp1<hp0 口径，GAMES-120），
+ *   伤害可达上界=对手 mv+rg 最大 6（lance 5+1/bow 3+3/mage 火 3+3）——两军最近
+ *   跨距 >6 时 worst 恒 0，跳过整个 2-ply 展开零决策差；预算帽 PLY2_BUDGET
+ *   兜底防病态宽局。 */
+const PLY2_BUDGET = 32
+function engageNear(st, seat) { // 任意 (我单位, 敌单位) 对距 ≤6 → 伤害可达
+  for (const m of st.units) {
+    if (m.seat !== seat) continue
+    for (const f of st.units) if (f.seat === seat && dist(m.cell, f.cell) <= 6) return true
+  }
+  return false
+}
 /* 出手核：balanced=贪心 argmax / competitive=击杀偏置+精确威胁+棋形（§4.3 四件套；
  * 2-ply 以「对手最强一手」反评估实现——深度 1 对手前瞻覆盖主风险面，预算保护） */
 function smartNext(st, seat, level) {
@@ -733,8 +749,10 @@ function smartNext(st, seat, level) {
     opts.pointQ8 = clampQ8(0.5 + (moves ? pointward / moves : 0.5))
   }
   const base = evaluate(st, seat, opts)
-  let best = null, bestD = 0                                                  // endTurn 基线 ΔV=0；动作须严格更优
-  for (const act of enumerateActivations(st, seat)) {
+  const acts = enumerateActivations(st, seat)
+  const scored = []                                                           // 打分相（GAMES-121 排序源数据）
+  for (let idx = 0; idx < acts.length; idx++) {
+    const act = acts[idx]
     if (act.ops[0].k === 'endTurn') continue
     const cl = simulate(st, seat, act)
     if (!cl) continue
@@ -763,13 +781,23 @@ function smartNext(st, seat, level) {
         if (opts.sitterDmgW) d += opts.sitterDmgW * dmg
       }
     }
-    if (level === 'competitive' && act.ops.length === 1 && act.ops[0].k === 'move') {
+    scored.push({ act, d, idx, cl, pure: act.ops.length === 1 && act.ops[0].k === 'move' })
+  }
+  scored.sort((a, b) => b.d - a.d || a.idx - b.idx)
+  let best = null, bestD = 0, ply2 = 0                                        // endTurn 基线 ΔV=0；动作须严格更优
+  for (const s of scored) {
+    if (s.d <= bestD) break                                                   // 剪枝：降序下其后不可能翻盘（worst≤0）
+    let d = s.d
+    if (level === 'competitive' && s.pure && ply2 < PLY2_BUDGET && engageNear(s.cl, seat)) {
       // 2-ply 轻量前瞻：纯移动后让对手取最强一手反评估（站位换打的 Risk 覆盖）。
       // GAMES-120 O1 修正：worst 只计「真实命中我方」的对手动作（hp 总量下降者）——
       // 原口径把对手纯推进/占位的评估增益也计入 worst，即使对手根本够不到我们，任何
       // 纯移动也 d+worst<0 过不了 d>0 门槛 → competitive 龟缩裸回合（实测 6/10 回合零
       // op、score 0）负于 balanced。占位增益与己方移动增益对称（d 已含 posBonus），
       // 不该单边罚；伤害型 fd 才是「站位换打」的真实代价。
+      // GAMES-121：engageNear 门=两军跨距 >6 时伤害不可达 → worst 恒 0，跳过展开零决策差。
+      ply2++
+      const cl = s.cl
       const foe0 = foe(seat)
       const hp0 = cl.units.filter((x) => x.seat === seat).reduce((a, x) => a + x.hp, 0)
       let worst = 0
@@ -785,7 +813,7 @@ function smartNext(st, seat, level) {
       }
       d += worst
     }
-    if (d > bestD) { bestD = d; best = act }
+    if (d > bestD) { bestD = d; best = s.act }
   }
   if (!best) return { k: 'endTurn' }
   st._botQ[seat] = best.ops.slice(1)
