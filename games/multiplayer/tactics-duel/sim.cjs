@@ -625,13 +625,29 @@ function evaluate(st, seat, opts = {}) {
   const pointQ8 = opts.pointQ8 || 256
   let v = 0
   for (const u of st.units) {
-    if (u.seat === seat) v += unitPower(u) + posBonus(st, u, pointQ8) - (opts.precise ? 2 * riskPrecise(st, u, st.units.filter((x) => x.seat === e)) : riskRough(st, u))
+    /* GAMES-120 O1：precise 静态风险 2×→½×（>>1 时间折扣）——threat 图按「所有能打到我的敌
+     * 全打我」计（集火叠加、封顶血量），但对手一回合仅 4 AP≈2-4 激活，静态罚系统性高估；
+     * 且 2-ply 伤害型 worst 已对纯移动动态定价「进场吃最重一手」，双计把 competitive 推向
+     * 全面避战（实测战斗单位停家、atk 4-5/局 vs balanced 基线 10-24）。½× 保留集火感知。 */
+    if (u.seat === seat) v += unitPower(u) + posBonus(st, u, pointQ8) - (opts.precise ? (riskPrecise(st, u, st.units.filter((x) => x.seat === e)) >> 1) : riskRough(st, u))
     else v -= ((unitPower(u) + posBonus(st, u, 0)) * faceQ8) >> 8
   }
   v += 15 * st.scores[seat] - 15 * st.scores[e]
   let mine = 0, theirs = 0
   for (let i = 0; i < 2; i++) { if (st.own[i] === seat) mine++; else if (st.own[i] === e) theirs++ }
-  v += 8 * mine - 8 * theirs
+  /* GAMES-120 O1：占点权重可调（opts.pointW）——competitive 调 16。终局多为 score 通道
+   * （scoreLine=10），占点=每回合 +15 score 的永续引擎；8 档下 competitive 中场缠斗
+   * 弃点跑分惜败（8-10/9-10），16 档让「换一手打吃点」在贪心 d 里过线。 */
+  const pw = opts.pointW || 8
+  v += pw * mine - pw * theirs
+  if (opts.hunt) {                                                            // GAMES-120 O1：坐点者猎杀牵引（-4×最近距）
+    for (const f of st.units) {                                               // 敌坐点者每近一步 +2——启动多回合击杀
+      if (f.seat !== e || !st.points.includes(f.cell)) continue               // 序列（1-ply 贪心只见单手伤害，无此
+      let md = 99                                                             // 牵引则永不接敌，奶妈死局 9-9 靠 B
+      for (const w of st.units) if (w.seat === seat && w.type !== 'healer') md = Math.min(md, dist(w.cell, f.cell)) // 起始补偿分恒判负）
+      if (md < 99) v -= 4 * md
+    }
+  }
   if (opts.formation) {                                                       // 棋形三项（§4.3 件 4）
     const tm = threatMap(st, e)
     for (const u of st.units) {
@@ -695,7 +711,9 @@ function simulate(st, seat, act) {                                            //
  * 2-ply 以「对手最强一手」反评估实现——深度 1 对手前瞻覆盖主风险面，预算保护） */
 function smartNext(st, seat, level) {
   const opts = {}
-  if (level === 'competitive') { opts.precise = true; opts.formation = true; opts.killBonus = 8 }
+  /* GAMES-120 O1 调参：killBonus 8→12 + pointW 16（占点永续分）+ sitterDmgW 3/sitterBonus 10
+   * （坐点者猎杀）+ hunt（牵引接敌）+ 静态风险 ½×（见 evaluate 注）——四件套语义不变，权重重锚 */
+  if (level === 'competitive') { opts.precise = true; opts.formation = true; opts.killBonus = 12; opts.pointW = 16; opts.sitterBonus = 10; opts.sitterDmgW = 3; opts.hunt = true }
   if (level === 'hosted') {                                                   // 倾向继承（§4.5）：从已入账输入日志复算两系数
     let atk = 0, moves = 0, pointward = 0
     for (const o of st.opsLog) {
@@ -724,15 +742,43 @@ function smartNext(st, seat, level) {
     if (opts.killBonus) {                                                     // 击杀确认偏置（防「打残不打死」平局化；普攻/火球皆计）
       const kills = cl.stats[seat].kills - st.stats[seat].kills
       if (kills > 0) d += opts.killBonus * kills
+      /* GAMES-120 O1：坐点者猎杀偏置——占格即封锁（单位站上据点后敌无法踏入），唯一夺点
+       * 通道=击杀坐点者→下回合踏入→±2 分/回合摆动（scoreLine=10 制下的主胜负手）。
+       * 平局化对局（9-9 靠 B 起始补偿分 10-9 恒胜）因此被 competitive 打破。killBonus/
+       * sitterBonus 只在单手击杀确认时触发（奶妈死局下永不满足）；sitterDmgW 把偏置下沉
+       * 到伤害层：多回合消耗（4 攻手×伤×W > 奶 +8/回合）逐步过线。 */
+      if (opts.sitterDmgW || opts.sitterBonus) {
+        const e = foe(seat)
+        let dmg = 0
+        for (const x of st.units) {
+          if (x.seat !== e) continue
+          /* 守备圈=坐点者 + dist≤2 护卫（奶妈治疗窗 1-2——先杀续航是消耗战正解） */
+          const onPt = st.points.includes(x.cell)
+          const escort = !onPt && st.points.some((p) => dist(x.cell, p) <= 2 && st.own[st.points.indexOf(p)] === e)
+          if (!onPt && !escort) continue
+          const y = cl.units.find((z) => z.id === x.id)
+          if (!y) { dmg += 99; if (opts.sitterBonus && onPt) d += opts.sitterBonus } // 击杀=满分+定额
+          else dmg += Math.max(0, x.hp - y.hp) * (onPt ? 2 : 1)                   // 坐点者伤害双计
+        }
+        if (opts.sitterDmgW) d += opts.sitterDmgW * dmg
+      }
     }
     if (level === 'competitive' && act.ops.length === 1 && act.ops[0].k === 'move') {
-      // 2-ply 轻量前瞻：纯移动后让对手取最强一手反评估（站位换打的 Risk 覆盖）
+      // 2-ply 轻量前瞻：纯移动后让对手取最强一手反评估（站位换打的 Risk 覆盖）。
+      // GAMES-120 O1 修正：worst 只计「真实命中我方」的对手动作（hp 总量下降者）——
+      // 原口径把对手纯推进/占位的评估增益也计入 worst，即使对手根本够不到我们，任何
+      // 纯移动也 d+worst<0 过不了 d>0 门槛 → competitive 龟缩裸回合（实测 6/10 回合零
+      // op、score 0）负于 balanced。占位增益与己方移动增益对称（d 已含 posBonus），
+      // 不该单边罚；伤害型 fd 才是「站位换打」的真实代价。
       const foe0 = foe(seat)
+      const hp0 = cl.units.filter((x) => x.seat === seat).reduce((a, x) => a + x.hp, 0)
       let worst = 0
       for (const fa of enumerateActivations(cl, foe0)) {
         if (fa.ops[0].k === 'endTurn') continue
         const fcl = simulate(cl, foe0, fa)
         if (!fcl) continue
+        const hp1 = fcl.units.filter((x) => x.seat === seat).reduce((a, x) => a + x.hp, 0)
+        if (hp1 >= hp0) continue                                             // 非伤害型（推进/治疗/占位）不计
         const fd = evaluate(fcl, seat, opts) - evaluate(cl, seat, opts)
         if (fd < worst) worst = fd
         if (worst < -12) break                                                // 早停（预算保护）
