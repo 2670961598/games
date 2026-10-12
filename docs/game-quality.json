@@ -1097,16 +1097,16 @@
       }
     },
     "multiplayer:speed-kart": {
-      "stage": "dev",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "E6-W1-T7 轨 S7 预测与和解首证 DEV（单链 2/10+）。核心：单源 sim-kart（Q16 整数/三赛道烘焙表/两角漂移/understeer grip）+makePredictor（anchor/push/advanceTo 影子预测——api 臂虚拟客户端与浏览器客户端共用）+和解回路（ack 锚定重放/软收敛 35%帧/硬回滚 120ms 混合带/ext.pd 补齐 d·s·cp 完整态/hash 帧拍哨兵）；api-check A1-A8 全绿（A6 确定性双跑+回放、A8 双臂完赛中位差 4.27%@ts2 设计口径）。QA/FEEL/VIS 深化待后续单",
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 9,
+      "notes": "E6-W1-T7 轨 S7 预测与和解首证收官（影子预测核心 makePredictor anchor/push/advanceTo api 与浏览器共用/和解回路 ack 锚定重放+软收敛 35%+硬回滚 120ms 混合带+A8 双臂 ts2 设计口径）。STRESS 三组 PASS+无泄漏四件套（6 测试房 8min ts2 churn 漂移带内/满编 6/6+旁观+让位 spot 7 断言/八游戏混编全家福+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/speed-kart-stress.md）；QA2 五面退回 0（§5.3 预算表 FIX1 后首次可测全落带/延迟三点扫描/重连三档/abandon 锚/满员让位循环）；QA1 揪和解观测面双死码（F1 dPx≡0/F2 hash 哨兵欠跑态假绿）退 FIX1 修复；BOT 赛车线三档人格+放水链（连败代理=pulsePos 名次 pulse）；FEEL 16 项动效（胎痕速度门/motion 量纲两枚死码激活+fx 双时戳台账）；VIS 色盲双编码（ping 信号条 3-2-1 形通道升 P0 裁量例）+识图 v2 22 断言。实录=知识库草稿 GAMES-116/极速卡丁开发实录",
       "net": {
         "tech": "S7",
-        "bot": "赛车线三档（casual 中心线+噪声/balanced 赛车线×0.92+短漂/competitive 蓄放漂移+尾流抽头）——pure pursuit 前瞻+线速画像回溯烘焙进 tracks.cjs",
-        "chain": "GAMES-108 设计书→109 DEV（本单）；单链 2/10+"
+        "bot": "赛车线三档（casual 巡航者中心线+噪声+失误窗/balanced 学徒×0.92+并线礼让/competitive 车手蓄放漂移+尾流抽头+防守卡位）+放水链两档（连败≥2 ×0.90/≥4 ×0.78+停漂，信号源=pulsePos 名次 pulse）——pure pursuit 前瞻×14+线速画像烘焙 tracks.cjs",
+        "chain": "GAMES-108..116 九单链完整+FIX2 跳过（QA2 五面退回 0 全绿无修复对象——W1 波收官裁量同蛇王 GAMES-106 先例）"
       }
     }
   }
