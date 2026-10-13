@@ -1,5 +1,5 @@
 /* =====================================================================
- * 战棋对决 客户端（GAMES-118 · S1+S5；GAMES-122 FEEL juice 层）——石板战情室（§7）。
+ * 战棋对决 客户端（GAMES-118 · S1+S5；GAMES-122 FEEL juice 层；GAMES-124 VIS 可读性硬化）——石板战情室（§7）。
  * S1 面：本地跑同源 sim.cjs（TDuelSim）做选中/移动域 BFS/伤害预演（§3.1
  * <100ms 全本地、零上行——「客户端预测=决策辅助」的战棋形态）；
  * S5 面：渲染=ruling 全量个性化 state 直染（操作者实时/对手边界态批量披露）。
@@ -527,6 +527,7 @@
         ctx.moveTo(p.x + BOARD.cs - m, p.y + 1); ctx.lineTo(p.x + BOARD.cs - 1, p.y + 1); ctx.lineTo(p.x + BOARD.cs - 1, p.y + m)
         ctx.stroke()
         ctx.fillStyle = '#FF6B4A'; ctx.font = F0(13); ctx.textAlign = 'center'
+        ctx.lineWidth = 3; ctx.strokeStyle = '#10151B'; ctx.lineJoin = 'round'; ctx.strokeText('-' + dmgPreview(S.sel.unit, tid), p.x + BOARD.cs / 2, p.y - 3) // 深底描边=可读性双通道（GAMES-124 VIS，slg 战场先例）
         ctx.fillText('-' + dmgPreview(S.sel.unit, tid), p.x + BOARD.cs / 2, p.y - 3)
       }
     }
@@ -628,7 +629,9 @@
         ctx.fillStyle = f.k === 'healFx' ? '#6FE87C' : f.k === 'reject' ? '#FFD37A' : f.k === 'valFloat' ? '#8CE89A' : '#FF6B4A'
         ctx.font = f.k === 'reject' ? F1(13) : f.k === 'valFloat' ? F1(12) : F0(Math.round(19 * (t < 0.15 ? 1 + 0.25 * (1 - t / 0.15) : 1)))
         ctx.textAlign = 'center'
-        ctx.fillText(f.k === 'reject' ? '非法操作' : f.k === 'healFx' || f.k === 'valFloat' ? '+' + f.n : '-' + f.n, f.x, f.y - 26 * t)
+        const ftxt = f.k === 'reject' ? '非法操作' : f.k === 'healFx' || f.k === 'valFloat' ? '+' + f.n : '-' + f.n
+        ctx.lineWidth = 3; ctx.strokeStyle = '#10151B'; ctx.lineJoin = 'round'; ctx.strokeText(ftxt, f.x, f.y - 26 * t) // 伤害/治疗/价值飘字深底描边=可读性双通道（GAMES-124 VIS，hud-standard §2.1 slg 战场先例）
+        ctx.fillText(ftxt, f.x, f.y - 26 * t)
         ctx.restore()
         if (f.k === 'dmg') fxDraw('F05')       // 伤害红字上飘（t0=冲击拍——前 120ms 以预飘位在场，首绘=事件后 1 帧）
         if (f.k === 'healFx') fxDraw('F09')
