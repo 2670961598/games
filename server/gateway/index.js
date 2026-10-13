@@ -28,6 +28,7 @@ import { elementDuelSim } from './sims/element-duel.js'
 import { snakeKingSim } from './sims/snake-king.js'
 import { speedKartSim } from './sims/speed-kart.js'
 import { tacticsDuelSim } from './sims/tactics-duel.js'
+import { miniMobaSim } from './sims/mini-moba.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -59,6 +60,7 @@ rooms.register(elementDuelSim)  // S5 回合权威本格首证（GAMES-88）
 rooms.register(snakeKingSim)    // S6 海量实体首证（GAMES-99，设计 §5.7）
 rooms.register(speedKartSim)    // S7 预测与和解首证（GAMES-109，设计 §5.1）
 rooms.register(tacticsDuelSim)  // S1+S5 双技术复用首款（GAMES-118，设计 §5）
+rooms.register(miniMobaSim)     // S2 状态同步第二款（GAMES-127，设计 §5 战场节奏×小镇管线）
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
@@ -70,6 +72,7 @@ bothost.register({ gameId: 'element-duel', minLive: 2, levels: ['casual', 'balan
 bothost.register({ gameId: 'snake-king', minLive: 2, levels: ['casual', 'balanced', 'competitive'], maxRooms: 2, swarm: 20 }) // 常驻巨房 2（casual 房+混编房，实体目标 20；设计 §5.7/§4.1）
 bothost.register({ gameId: 'speed-kart', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual 房+混编房，t-bay 轮换；设计 §5.8）
 bothost.register({ gameId: 'tactics-duel', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数，终局 3s 补房）
+bothost.register({ gameId: 'mini-moba', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })
