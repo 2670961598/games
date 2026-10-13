@@ -41,8 +41,8 @@
   const FXLIST = [
     ['F01', 'selRing', 'fb'],        // 单位选中高亮（脉冲双环）
     ['F02', 'movePath', 'fb'],       // 移动域行军蚁 + 悬停最短路箭头（§3.3 路径箭头）
-    ['F03', 'lunge', 'fb'],          // 攻方前冲 120ms（渲染期偏移，命中检测走原始格）
-    ['F04', 'hitShake', 'fb'],       // 受方顿帧震 60ms（冲击后一拍）
+    ['F03', 'lunge', 'fb'],          // 攻方前冲 120ms（渲染期偏移，命中检测走原始格）——攻击事件的 ≤80ms 反馈臂
+    ['F04', 'hitShake', 'state'],    // 受方顿帧震 60ms=前冲后一拍（§3.2 编排节拍 120ms，同 F06 反击 300ms 口径非反馈时延）
     ['F05', 'dmgFloat', 'fb'],       // 伤害红字上飘 400ms（§3.2）
     ['F06', 'counterAtk', 'state'],  // 反击演出：主结算 +300ms 接演（一来一回交锋感）
     ['F07', 'killShatter', 'fb'],    // 击杀碎裂 300ms + 价值飘字 +N + 克制图标弹跳
@@ -160,7 +160,7 @@
     const posOf = (id) => { const u = S.view && S.view.units && S.view.units.find((x) => x.id === id); if (!u) return null; const p = cellXY(u.cell); return { x: p.x + BOARD.cs / 2, y: p.y + BOARD.cs / 2 } }
     if (ev.k === 'attack' || ev.k === 'counter') {
       const a = posOf(ev.unit), d = posOf(ev.tgt), delay = ev.k === 'counter' ? 300 : 0
-      if (a && d) { const dd = Math.max(1, Math.hypot(d.x - a.x, d.y - a.y)); S.lunge.push({ id: ev.unit, dx: (d.x - a.x) / dd, dy: (d.y - a.y) / dd, t0: now + delay }) } // F03/F06 前冲（渲染期偏移）
+      if (a && d) { const dd = Math.max(1, Math.hypot(d.x - a.x, d.y - a.y)); S.lunge.push({ id: ev.unit, dx: (d.x - a.x) / dd, dy: (d.y - a.y) / dd, t0: now + delay, k: ev.k }) } // F03/F06 前冲（渲染期偏移；k=atk 臂落 F03/counter 臂落 F06）
       sfx.play(ev.k)
       if (ev.k === 'counter') fxTrig('F06')
       else { fxTrig('F03'); fxTrig('F04'); fxTrig('F05') } // 反馈类只记零延迟臂（反击 300ms 是设计节拍非反馈时延）
@@ -181,7 +181,7 @@
       const aseat = byU ? byU.seat : ((ev.by / 6) | 0), tn = S.view && S.view.turnNo
       if (S.killTurn.seat === aseat && S.killTurn.turnNo === tn) S.killTurn.n++
       else S.killTurn = { seat: aseat, turnNo: tn, n: 1 }
-      if (S.killTurn.n >= 2) { S.banners.push({ txt: (aseat === rs() ? '我方' : '敌方') + '连杀 ×' + S.killTurn.n, c1: aseat === 0 ? COL_A : COL_B, t0: now, sys: 1 }); fxTrig('F17') }
+      if (S.killTurn.n >= 2) { S.banners.push({ txt: (aseat === rs() ? '我方' : '敌方') + '连杀 ×' + S.killTurn.n, c1: aseat === 0 ? COL_A : COL_B, t0: now, sys: 1, combo: 1 }); fxTrig('F17') }
     }
     if (ev.k === 'move') {
       sfx.play('move')
@@ -197,7 +197,7 @@
     }
     if (ev.k === 'point') { S.flagFx.push({ cell: ev.cell, owner: ev.owner, t0: now }); fxTrig('F10'); sfx.play('point'); S.banners.push({ txt: (ev.owner === rs() ? '我方' : '敌方') + '占据据点', c1: ev.owner === 0 ? COL_A : COL_B, t0: now, sys: 1 }) }
     if (ev.k === 'turn') {
-      S.banners.push({ txt: S.spectator ? '玩家' + (ev.seat === 0 ? 'A' : 'B') + ' 的回合' : (ev.seat === S.seat ? '你的回合' : '对方回合'), c1: ev.seat === 0 ? COL_A : COL_B, t0: now, sys: 1 })
+      S.banners.push({ txt: S.spectator ? '玩家' + (ev.seat === 0 ? 'A' : 'B') + ' 的回合' : (ev.seat === S.seat ? '你的回合' : '对方回合'), c1: ev.seat === 0 ? COL_A : COL_B, t0: now, sys: 1, turn: 1 })
       fxTrig('F11'); sfx.play('turn')
       if (!S.spectator && ev.seat === S.seat) S.apLight = { t0: now } // 己方回合 AP 灯珠逐颗点亮 300ms
     }
@@ -619,18 +619,25 @@
       btn(BTN.skill.x, BTN.skill.w, selU && selU.type === 'mage' ? '火球' : selU && selU.type === 'healer' ? '治疗' : '技能', !!(selU && (selU.type === 'mage' || selU.type === 'healer') && !S.sel.skill))
       btn(BTN.end.x, BTN.end.w, '结束回合', myTurn, myTurn && turnSec < 5)
     }
-    /* fx 引擎（非阻塞 §3.2） */
+    /* fx 引擎（非阻塞 §3.2；GAMES-122：全类绘制+首绘落笔——台账口径=fxDraw 处即首绘帧） */
     S.fx = S.fx.filter((f) => now - f.t0 < 700)
     for (const f of S.fx) {
       const t = (now - f.t0) / 700
-      if (f.k === 'dmg' || f.k === 'healFx' || f.k === 'reject') {
+      if (f.k === 'dmg' || f.k === 'healFx' || f.k === 'reject' || f.k === 'valFloat') {
         ctx.save(); ctx.globalAlpha = 1 - t
-        ctx.fillStyle = f.k === 'healFx' ? '#6FE87C' : f.k === 'reject' ? '#FFD37A' : '#FF6B4A'
-        ctx.font = f.k === 'reject' ? F1(13) : F0(Math.round(19 * (t < 0.15 ? 1 + 0.25 * (1 - t / 0.15) : 1)))
+        ctx.fillStyle = f.k === 'healFx' ? '#6FE87C' : f.k === 'reject' ? '#FFD37A' : f.k === 'valFloat' ? '#8CE89A' : '#FF6B4A'
+        ctx.font = f.k === 'reject' ? F1(13) : f.k === 'valFloat' ? F1(12) : F0(Math.round(19 * (t < 0.15 ? 1 + 0.25 * (1 - t / 0.15) : 1)))
         ctx.textAlign = 'center'
-        ctx.fillText(f.k === 'reject' ? '非法操作' : f.k === 'healFx' ? '+' + f.n : '-' + f.n, f.x, f.y - 26 * t)
+        ctx.fillText(f.k === 'reject' ? '非法操作' : f.k === 'healFx' || f.k === 'valFloat' ? '+' + f.n : '-' + f.n, f.x, f.y - 26 * t)
         ctx.restore()
-      } else if (f.k === 'die') { ctx.save(); ctx.globalAlpha = 1 - t; ctx.fillStyle = f.seat === 0 ? COL_A : COL_B; for (let i = 0; i < 6; i++) { const a = i * 1.05, d = 26 * t; ctx.fillRect(f.x + Math.cos(a) * d - 2, f.y + Math.sin(a) * d - 2 + 12 * t * t, 4, 4) } ctx.restore() }
+        if (f.k === 'dmg') fxDraw('F05')       // 伤害红字上飘（t0=冲击拍——前 120ms 以预飘位在场，首绘=事件后 1 帧）
+        if (f.k === 'healFx') fxDraw('F09')
+      } else if (f.k === 'die') { ctx.save(); ctx.globalAlpha = 1 - t; ctx.fillStyle = f.seat === 0 ? COL_A : COL_B; for (let i = 0; i < 6; i++) { const a = i * 1.05, d = 26 * t; ctx.fillRect(f.x + Math.cos(a) * d - 2, f.y + Math.sin(a) * d - 2 + 12 * t * t, 4, 4) } ctx.restore(); fxDraw('F07') }
+      else if (f.k === 'beatBounce') { const q = (now - f.t0) / 500; if (q >= 0 && q < 1) { ctx.save(); ctx.globalAlpha = 1 - q; ctx.fillStyle = '#FFD37A'; const dy = Math.abs(Math.sin(q * Math.PI * 3)) * (1 - q) * 6; ctx.beginPath(); ctx.moveTo(f.x, f.y - 9 - dy); ctx.lineTo(f.x + 6, f.y + 2 - dy); ctx.lineTo(f.x - 6, f.y + 2 - dy); ctx.closePath(); ctx.fill(); ctx.restore(); fxDraw('F07') } } // 克制击杀三角弹跳（§3.2）
+      else if (f.k === 'bolt') { const q = (now - f.t0) / 240; if (q >= 0 && q < 1) { const bx = f.x0 + (f.x1 - f.x0) * q, by = f.y0 + (f.y1 - f.y0) * q; ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = '#E85D3D'; ctx.beginPath(); ctx.arc(f.x0 + (f.x1 - f.x0) * Math.max(0, q - 0.2), f.y0 + (f.y1 - f.y0) * Math.max(0, q - 0.2), 3.5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 0.95; ctx.fillStyle = '#FF8A3D'; ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#FFD37A'; ctx.beginPath(); ctx.arc(bx, by, 2.4, 0, Math.PI * 2); ctx.fill(); ctx.restore(); fxDraw('F08') } } // 火球弹道 240ms（§3.2）
+      else if (f.k === 'burst') { const q = (now - f.t0) / 360; if (q >= 0 && q < 1) { ctx.save(); ctx.globalAlpha = 1 - q; ctx.strokeStyle = '#E85D3D'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(f.x, f.y, 4 + 22 * q, 0, Math.PI * 2); ctx.stroke(); ctx.strokeStyle = '#E8C93D'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(f.x, f.y, 2 + 13 * q, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); fxDraw('F08') } } // 十字溅射格逐格爆裂
+      else if (f.k === 'trail') { const q = (now - f.t0) / 400; if (q >= 0 && q < 1) { ctx.save(); ctx.fillStyle = '#DCE6F0'; f.path.forEach((c, i) => { if (i === f.path.length - 1) return; const p = cellXY(c); ctx.globalAlpha = 0.42 * (1 - q) * (i + 1) / f.path.length; ctx.fillRect(p.x + 8, p.y + 8, BOARD.cs - 16, BOARD.cs - 16) }); ctx.restore(); fxDraw('F16') } } // 冲锋拖尾残影（moveSteps≥3）
+      else if (f.k === 'apPop') { const q = (now - f.t0) / 300; if (q >= 0 && q < 1) { const bx = 20 + f.idx * 22, by = 474; ctx.save(); ctx.globalAlpha = 1 - q; ctx.strokeStyle = '#FF9D85'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx, by, 7 + 10 * q, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); fxDraw('F12') } } // AP 耗一熄一·爆点环（灯珠位 x=20+i·22,y=474 同源）
       else if (f.k === 'boom') { ctx.save(); ctx.globalAlpha = 1 - t; ctx.strokeStyle = '#E85D3D'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(f.x, f.y, 5 + 30 * t, 0, Math.PI * 2); ctx.stroke(); ctx.strokeStyle = '#E8C93D'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(f.x, f.y, 3 + 18 * t, 0, Math.PI * 2); ctx.stroke(); ctx.restore() }
       else if (f.k === 'land') { ctx.save(); ctx.globalAlpha = 1 - t; ctx.strokeStyle = '#DCE6F0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, f.y, 6 + 16 * t, 0, Math.PI * 2); ctx.stroke(); ctx.restore() }
     }
@@ -639,10 +646,13 @@
     S.banners.forEach((b, i) => {
       const t = (now - b.t0) / 900
       ctx.save(); ctx.globalAlpha = t < 0.8 ? 1 : (1 - t) / 0.2
+      const slide = t < 0.17 ? (1 - t / 0.17) * -26 : 0 // 横幅首 150ms 滑入落定（§3.2 回合切换横幅）
       ctx.fillStyle = 'rgba(26,32,39,0.92)'; ctx.fillRect(0, 210 + i * 40, W, 36)
       ctx.fillStyle = b.c1; ctx.fillRect(0, 210 + i * 40, W, 3)
-      ctx.fillStyle = '#DCE6F0'; ctx.font = F1(13); ctx.textAlign = 'center'; ctx.fillText(b.txt, W / 2, 234 + i * 40)
+      ctx.fillStyle = '#DCE6F0'; ctx.font = F1(13); ctx.textAlign = 'center'; ctx.fillText(b.txt, W / 2, 234 + i * 40 + slide)
       ctx.restore()
+      if (b.turn) fxDraw('F11')
+      if (b.combo) fxDraw('F17')
     })
     /* 部署浮层底排：兵种条 + 出战钮 */
     if (v.phase === 'deploy' && !S.spectator) {
@@ -667,9 +677,22 @@
       const r = S.result
       const meWin = r.winner === (rs() === 0 ? 'A' : 'B')
       const verdict = r.winner === 'draw' ? '平局' : S.spectator ? '玩家' + r.winner + ' 胜利' : meWin ? '胜利' : '败北'
-      ctx.fillStyle = 'rgba(16,21,27,0.95)'; ctx.fillRect(0, 0, W, H)
+      const tin = Math.min(1, (now - S.overAt) / 450), eo = 1 - Math.pow(1 - tin, 3) // F14 落定 450ms easeOut
+      ctx.fillStyle = 'rgba(16,21,27,' + (0.95 * Math.min(1, tin * 1.8)).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H)
+      if (r.winner !== 'draw' && meWin && !S.spectator && eo < 1) { // 胜=光线绽放（12 道放射随落定外扩淡出；落定后停绘）
+        ctx.save(); ctx.translate(W / 2, 150); ctx.globalAlpha = 0.5 * (1 - Math.pow(tin, 2)); ctx.fillStyle = r.winner === 'A' ? COL_A : COL_B
+        for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6 + 0.26 * eo; ctx.rotate(Math.PI / 6); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a - 0.05) * (80 + 160 * eo), Math.sin(a - 0.05) * (80 + 160 * eo)); ctx.lineTo(Math.cos(a + 0.05) * (80 + 160 * eo), Math.sin(a + 0.05) * (80 + 160 * eo)); ctx.closePath(); ctx.fill() }
+        ctx.restore()
+      }
+      if (r.winner !== 'draw' && !meWin && !S.spectator && tin < 1) { // 败=边缘压暗渐浓（败北沉坠感；落定后停绘）
+        const vg = ctx.createRadialGradient(W / 2, 300, 120, W / 2, 300, 420)
+        vg.addColorStop(0, 'rgba(6,8,11,0)'); vg.addColorStop(1, 'rgba(6,8,11,' + (0.55 * tin).toFixed(3) + ')')
+        ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H)
+      }
       ctx.fillStyle = r.winner === 'draw' ? '#9FB0C0' : r.winner === 'A' ? COL_A : COL_B
-      ctx.font = F0(34); ctx.textAlign = 'center'; ctx.fillText(verdict, W / 2, 150)
+      ctx.save(); ctx.translate(W / 2, 150); ctx.scale(1.35 - 0.35 * eo, 1.35 - 0.35 * eo) // 大字缩放落定
+      ctx.font = F0(34); ctx.textAlign = 'center'; ctx.fillText(verdict, 0, 0); ctx.restore()
+      fxDraw('F14')
       ctx.font = F1(12); ctx.fillStyle = '#7C8B98'; ctx.fillText('reason: ' + r.reason + ' · ' + Math.ceil(S.view.turnNo / 2) + ' 回合', W / 2, 176)
       const sc = r.scores || {}
       ctx.font = F0(13); ctx.fillStyle = '#DCE6F0'
@@ -740,7 +763,25 @@
   window.__GAMES_DEBUG__.roomId = function () { return S.roomId }
   window.__GAMES_DEBUG__.seat = function () { return S.seat }
   window.__GAMES_DEBUG__.mode = function () { return S.offline ? 'offline' : 'net' }
-  window.__GAMES_DEBUG__.sfx = function () { return { groups: ['move', 'attack', 'skill', 'win'], calls: sfx.calls.slice(-64) } }
+  window.__GAMES_DEBUG__.sfx = function () { return { slots: sfx.slots, on: sfx.on, calls: sfx.calls.slice(-64) } }
+  /* GAMES-122 手感层取证面（snake-king GAMES-103 三件套同式）：fxLedger=时延表读数
+   * （fxTrig→fxDraw 双时戳差）；fxProbe=合成事件走同一条 onEvent 管线（台账同源）；
+   * fxScene=状态类场景注入；fps=rAF 计帧巡航读数。 */
+  window.__GAMES_DEBUG__.fxLedger = function () { return fxLedgerArr.map((e) => ({ id: e.id, n: e.n, lat: e.drawn ? Math.round(e.drawn - e.t0) : null })) }
+  window.__GAMES_DEBUG__.fxProbe = function (ev) { onEvent(ev) }
+  window.__GAMES_DEBUG__.fxScene = function (s) {
+    const v = S.view
+    if (s === 'calm') { S.fx = []; S.banners = []; S.lunge = []; S.shake = []; S.quake = null; S.hpTween = []; S.flagFx = []; S.apLight = null; return true } // 清演出态（识图冻结帧前置）
+    if (!v || !v.units || !v.units.length) return false
+    if (s === 'select-own') { const u = v.units.find((x) => x.seat === S.seat) || v.units[0]; S.sel = { unit: u.id }; fxSelect(u.id, false); return true }
+    if (s === 'select-foe') { const u = v.units.find((x) => x.seat !== S.seat) || v.units[0]; S.sel = { unit: u.id, foe: 1 }; fxSelect(u.id, true); return true }
+    if (s === 'ap') { const ap0 = v.ap || 0; apWatch({ phase: 'act', turn: v.turn, ap: ap0 + 1 }, { phase: 'act', turn: v.turn, ap: ap0 }); return true } // AP 耗一熄一（fabricated diff——只入演出层）
+    if (s === 'deploy') { sfx.play('deploy'); return true }
+    if (s === 'settle') { onMsg({ t: 'end', result: { winner: rs() === 0 ? 'A' : 'B', reason: 'score', scores: { A: { pts: 10, kills: 3, value: 130 }, B: { pts: 2, kills: 1, value: 60 } }, quip: 'FEEL 取证合成局' } }); return true }
+    if (s === 'settle-lose') { onMsg({ t: 'end', result: { winner: rs() === 0 ? 'B' : 'A', reason: 'wipe', scores: { A: { pts: 0, kills: 0, value: 0 }, B: { pts: 10, kills: 6, value: 130 } } } }); return true }
+    return false
+  }
+  window.__GAMES_DEBUG__.fps = function () { return fpsShown }
 
   report('boot', { slug: 'tactics-duel', version: '1.0.0', mode: q.get('debug') === '1' ? 'offline' : 'net' })
   if (q.get('debug') === '1' && SIM) offlineStart(1)
