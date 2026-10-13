@@ -184,6 +184,7 @@ const POLICIES = {
     if (!me || me.dead || me.rec) return NOOP
     const K = 1000
     const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+    const TOWER_R0 = 210 * K
     const fount = state.map.fountains[me.team]
     const inFount = d2(me, fount) <= fount.r ** 2
     const sess = state.sessions && state.sessions[seat]
@@ -191,36 +192,47 @@ const POLICIES = {
     if (state.tick < 400 && state.ents['tw-B2']) return { mx: 0, my: 0, cmd: { k: 'atk', entId: 'tw-B2' } }
     if (inFount) {
       if (me.hp / me.maxhp < 0.95) return NOOP // 泉水回满再走
-      if (sess && sess.gold >= 800) return { mx: 0, my: 0, cmd: { k: 'buy' } }
+      /* 路线 3 件购满后不再站桩买（reject 'full' 恒回→当拍移动被吞=永久卡泉根因） */
+      if (sess && sess.gold >= 800 && sess.items && sess.items.length < 3) return { mx: 0, my: 0, cmd: { k: 'buy' } }
     }
-    if (me.hp / me.maxhp < 0.3) return { mx: 0, my: 0, cmd: { k: 'recall' } }
-    const RANGE = 160 * K
+    if (me.hp / me.maxhp < 0.35) {
+      /* 撤离：先脱离敌塔射程再回城（引导受击打断 §1.6——塔下裸回城=死亡循环实测 8 死） */
+      const underTower = Object.values(state.ents).some((e) => (e.k === 'tw' || e.k === 'core') && e.team !== me.team && e.hp > 0 && d2(me, e) < (TOWER_R0 + 80 * K) ** 2)
+      if (!underTower) return { mx: 0, my: 0, cmd: { k: 'recall' } }
+      const fdx = fount.x - me.x, fdy = fount.y - me.y, fl = Math.hypot(fdx, fdy) || 1
+      return { mx: Math.round(fdx / fl * 100), my: Math.round(fdy / fl * 100) }
+    }
+    const RANGE = 160 * K, TOWER_R = 210 * K
     const foes = Object.values(state.ents).filter((e) => e.k === 'hero' && e.team !== me.team && !e.dead)
-    const foe = foes.filter((f) => d2(me, f) < (RANGE + 30 * K) ** 2).sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0]
-    if (foe && me.hp / me.maxhp > foe.hp / foe.maxhp - 0.1) {
-      if (me.cd && me.cd[1] <= 0 && d2(me, foe) < (300 * K) ** 2) {
-        return { mx: 0, my: 0, cmd: { k: 'skill', idx: 1, dir: { dx: foe.x - me.x, dy: foe.y - me.y } } }
-      }
-      return { mx: 0, my: 0, cmd: { k: 'atk', entId: foe.id } }
-    }
-    const cs = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team !== me.team && d2(me, e) < (RANGE + 40 * K) ** 2).sort((a, b) => a.hp - b.hp)
-    if (cs.length) return { mx: 0, my: 0, cmd: { k: 'atk', entId: cs[0].id } }
     const t1 = state.ents['tw-B1'], t2 = state.ents['tw-B2'], core = state.ents['core-B']
     const tgT = t1 && t1.hp > 0 ? t1 : t2 && t2.hp > 0 ? t2 : core
+    const mine = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team === me.team)
+    const front = mine.length ? mine.reduce((a, b) => (a.y < b.y ? a : b)) : null
+    /* 推塔相位（§6 剧本：兵进塔=推塔窗）：贴塔即攻——cmd 每拍一条，塔攻在推塔相
+     * 必须压过补刀/骚扰（网关 96-tick 轮询间隔下低优先级永远轮不到=旧版 0 塔伤根因） */
     if (tgT) {
-      const mine = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team === me.team)
-      const front = mine.length ? mine.reduce((a, b) => (a.y < b.y ? a : b)) : null
-      const waveNear = front && d2(front, tgT) < (260 * K) ** 2
-      const guarded = foes.some((f) => d2(f, tgT) < (350 * K) ** 2)
       const dT = Math.sqrt(d2(me, tgT))
-      const TOWER_R = 210 * K
-      /* 贴塔即攻（射程 150<塔 210=换血成本，30% 线 recall 循环兜底）；有守备无波时
-       * 退塔射程外 30px 等波，波至随波进（不再卡 RANGE..TOWER_R 的 270px 盲区） */
+      const waveNear = front && d2(front, tgT) < (280 * K) ** 2
+      const guarded = foes.some((f) => d2(f, tgT) < (350 * K) ** 2)
       if (dT < RANGE - 10 * K) return { mx: 0, my: 0, cmd: { k: 'atk', entId: tgT.id } }
-      const standR = guarded && !waveNear ? TOWER_R + 30 * K : RANGE - 20 * K
-      const ax = tgT.x + (me.x - tgT.x) / (dT || 1) * standR, ay = tgT.y + (me.y - tgT.y) / (dT || 1) * standR
+      if ((waveNear || !guarded) && state.tick > 900 && me.hp / me.maxhp > 0.5) { // 推塔相：随波进（贴到射程即攻；lv1 裸跳双塔区白送头 → 900 tick/50% HP 门槛）
+        const ax = tgT.x + (me.x - tgT.x) / (dT || 1) * (RANGE - 20 * K), ay = tgT.y + (me.y - tgT.y) / (dT || 1) * (RANGE - 20 * K)
+        const dx = ax - me.x, dy = ay - me.y, len = Math.hypot(dx, dy)
+        if (len > 12 * K) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
+        return NOOP
+      }
+      // 对线相（有守备无波）：塔射程外 30px 站位待兵+补刀+骚扰
+      const foe = foes.filter((f) => d2(me, f) < (RANGE + 30 * K) ** 2).sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0]
+      if (foe && me.hp / me.maxhp > foe.hp / foe.maxhp - 0.1) {
+        if (me.cd && me.cd[1] <= 0 && d2(me, foe) < (300 * K) ** 2) return { mx: 0, my: 0, cmd: { k: 'skill', idx: 1, dir: { dx: foe.x - me.x, dy: foe.y - me.y } } }
+        return { mx: 0, my: 0, cmd: { k: 'atk', entId: foe.id } }
+      }
+      const cs = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team !== me.team && d2(me, e) < (RANGE + 40 * K) ** 2).sort((a, b) => a.hp - b.hp)
+      if (cs.length) return { mx: 0, my: 0, cmd: { k: 'atk', entId: cs[0].id } }
+      const ax = tgT.x + (me.x - tgT.x) / (dT || 1) * (TOWER_R + 30 * K), ay = tgT.y + (me.y - tgT.y) / (dT || 1) * (TOWER_R + 30 * K)
       const dx = ax - me.x, dy = ay - me.y, len = Math.hypot(dx, dy)
       if (len > 12 * K) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
+      return NOOP
     }
     return NOOP
   },
