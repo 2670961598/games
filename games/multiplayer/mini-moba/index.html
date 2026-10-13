@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>迷你MOBA · 单道争锋</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0D1B22; height: 100%; overflow: hidden;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  #stage { position: relative; width: 375px; height: 667px; margin: 0 auto; overflow: hidden; }
+  canvas { position: absolute; inset: 0; display: block; }
+  #hint { position: absolute; top: 70px; left: 0; right: 0; text-align: center; color: #9FB8C4;
+    font-size: 11px; letter-spacing: 1px; pointer-events: none; z-index: 5; }
+  #fatal { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px; color: #E8A33D; font-size: 13px; z-index: 30; background: rgba(13,27,34,.94); }
+  #fatal button { background: #2E6E8C; color: #fff; border: 0; border-radius: 6px; padding: 8px 22px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="375" height="667"></canvas>
+  <div id="hint">迷你MOBA · 连接网关…</div>
+  <div id="fatal"><div id="fatal-msg"></div><button onclick="location.reload()">重试</button></div>
+</div>
+<script src="client.js"></script>
+</body>
+</html>

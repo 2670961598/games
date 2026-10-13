@@ -173,6 +173,111 @@ const POLICIES = {
       : { mx: 0, my: 0, cmd: { k: 'gather', entId: best.id, phase: 'start' } }
   },
   /**
+   * 推线取胜（mini-moba A2 能赢，设计书 §6 剧本策略）：API 席=游侠（缺省位）——
+   * 跟兵补刀 → 线过半随兵攻塔（T1→T2→水晶）→ 敌英雄入射程且 HP 劣则 pierce+普攻
+   * → 金 ≥800 且线在敌半场 recall+buy 归线；开局 400 tick 内每 40 tick 敲一次无敌
+   * T2（A6 取证：reject(invuln) 账本锚）。低血回城（不死太多次保推进节奏）。
+   */
+  'push-lane': (state, seat) => {
+    const NOOP = { mx: 0, my: 0 }
+    const me = state.ents && state.ents['h' + seat]
+    if (!me || me.dead || me.rec) return NOOP
+    const K = 1000
+    const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+    const TOWER_R0 = 210 * K
+    const fount = state.map.fountains[me.team]
+    const inFount = d2(me, fount) <= fount.r ** 2
+    const sess = state.sessions && state.sessions[seat]
+    /* A6 取证臂：开局对无敌 T2 点 atk（cmd 一次性语义，逐拍重发幂等）→ reject 账本 */
+    if (state.tick < 400 && state.ents['tw-B2']) return { mx: 0, my: 0, cmd: { k: 'atk', entId: 'tw-B2' } }
+    if (inFount) {
+      if (me.hp / me.maxhp < 0.95) return NOOP // 泉水回满再走
+      /* 路线 3 件购满后不再站桩买（reject 'full' 恒回→当拍移动被吞=永久卡泉根因） */
+      if (sess && sess.gold >= 800 && sess.items && sess.items.length < 3) return { mx: 0, my: 0, cmd: { k: 'buy' } }
+    }
+    if (me.hp / me.maxhp < 0.35) {
+      /* 撤离：先脱离敌塔射程再回城（引导受击打断 §1.6——塔下裸回城=死亡循环实测 8 死） */
+      const underTower = Object.values(state.ents).some((e) => (e.k === 'tw' || e.k === 'core') && e.team !== me.team && e.hp > 0 && d2(me, e) < (TOWER_R0 + 80 * K) ** 2)
+      if (!underTower) return { mx: 0, my: 0, cmd: { k: 'recall' } }
+      const fdx = fount.x - me.x, fdy = fount.y - me.y, fl = Math.hypot(fdx, fdy) || 1
+      return { mx: Math.round(fdx / fl * 100), my: Math.round(fdy / fl * 100) }
+    }
+    const RANGE = 160 * K, TOWER_R = 210 * K
+    const foes = Object.values(state.ents).filter((e) => e.k === 'hero' && e.team !== me.team && !e.dead)
+    const t1 = state.ents['tw-B1'], t2 = state.ents['tw-B2'], core = state.ents['core-B']
+    const tgT = t1 && t1.hp > 0 ? t1 : t2 && t2.hp > 0 ? t2 : core
+    const mine = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team === me.team)
+    const front = mine.length ? mine.reduce((a, b) => (a.y < b.y ? a : b)) : null
+    /* 推塔相位（§6 剧本：兵进塔=推塔窗）：贴塔即攻——cmd 每拍一条，塔攻在推塔相
+     * 必须压过补刀/骚扰（网关 96-tick 轮询间隔下低优先级永远轮不到=旧版 0 塔伤根因） */
+    if (tgT) {
+      const dT = Math.sqrt(d2(me, tgT))
+      const waveNear = front && d2(front, tgT) < (280 * K) ** 2
+      const guarded = foes.some((f) => d2(f, tgT) < (350 * K) ** 2)
+      if (dT < RANGE - 10 * K) return { mx: 0, my: 0, cmd: { k: 'atk', entId: tgT.id } }
+      if ((waveNear || !guarded) && state.tick > 900 && me.hp / me.maxhp > 0.5) { // 推塔相：随波进（贴到射程即攻；lv1 裸跳双塔区白送头 → 900 tick/50% HP 门槛）
+        const ax = tgT.x + (me.x - tgT.x) / (dT || 1) * (RANGE - 20 * K), ay = tgT.y + (me.y - tgT.y) / (dT || 1) * (RANGE - 20 * K)
+        const dx = ax - me.x, dy = ay - me.y, len = Math.hypot(dx, dy)
+        if (len > 12 * K) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
+        return NOOP
+      }
+      // 对线相（有守备无波）：塔射程外 30px 站位待兵+补刀+骚扰
+      const foe = foes.filter((f) => d2(me, f) < (RANGE + 30 * K) ** 2).sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0]
+      if (foe && me.hp / me.maxhp > foe.hp / foe.maxhp - 0.1) {
+        if (me.cd && me.cd[1] <= 0 && d2(me, foe) < (300 * K) ** 2) return { mx: 0, my: 0, cmd: { k: 'skill', idx: 1, dir: { dx: foe.x - me.x, dy: foe.y - me.y } } }
+        return { mx: 0, my: 0, cmd: { k: 'atk', entId: foe.id } }
+      }
+      const cs = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team !== me.team && d2(me, e) < (RANGE + 40 * K) ** 2).sort((a, b) => a.hp - b.hp)
+      if (cs.length) return { mx: 0, my: 0, cmd: { k: 'atk', entId: cs[0].id } }
+      const ax = tgT.x + (me.x - tgT.x) / (dT || 1) * (TOWER_R + 30 * K), ay = tgT.y + (me.y - tgT.y) / (dT || 1) * (TOWER_R + 30 * K)
+      const dx = ax - me.x, dy = ay - me.y, len = Math.hypot(dx, dy)
+      if (len > 12 * K) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
+      return NOOP
+    }
+    return NOOP
+  },
+  /**
+   * 圣所团战（mini-moba A7，设计书 §6 剧本策略，胜负不断言）：tick 2300 起移向
+   * 中场圣所广场参与团战——attack 仲裁目标+技能全交（CD 好即放）；圣所怪在场近身
+   * 打圣所；残血回泉补满再来。kill ruling 账本断言（bounty/respAt 复算）由
+   * mini-moba 专项块消费。
+   */
+  'teamfight': (state, seat) => {
+    const NOOP = { mx: 0, my: 0 }
+    const me = state.ents && state.ents['h' + seat]
+    if (!me || me.dead || me.rec) return NOOP
+    const K = 1000
+    const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+    const fount = state.map.fountains[me.team]
+    const inFount = d2(me, fount) <= fount.r ** 2
+    if (inFount && me.hp / me.maxhp < 0.95) return NOOP
+    if (me.hp / me.maxhp < 0.25) return { mx: 0, my: 0, cmd: { k: 'recall' } }
+    const RANGE = 160 * K
+    const foes = Object.values(state.ents).filter((e) => e.k === 'hero' && e.team !== me.team && !e.dead)
+    const foe = foes.filter((f) => d2(me, f) < (RANGE + 60 * K) ** 2).sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0]
+    if (foe) {
+      const rdy = [0, 1, 2].filter((i) => me.cd[i] <= 0 && (i < 2 || me.lv >= 6))
+      if (rdy.length) return { mx: 0, my: 0, cmd: { k: 'skill', idx: rdy[0], entId: foe.id, dir: { dx: foe.x - me.x, dy: foe.y - me.y } } }
+      return { mx: 0, my: 0, cmd: { k: 'atk', entId: foe.id } }
+    }
+    const shrine = state.ents['mshrine']
+    if (shrine && d2(me, shrine) < (RANGE + 60 * K) ** 2) return { mx: 0, my: 0, cmd: { k: 'atk', entId: 'mshrine' } }
+    if (state.tick >= 2300) {
+      const dx = 500 * K - me.x, dy = 850 * K - me.y, len = Math.hypot(dx, dy) || 1
+      if (len > 90 * K) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
+    }
+    const cs = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team !== me.team && d2(me, e) < RANGE ** 2)
+    if (cs.length) return { mx: 0, my: 0, cmd: { k: 'atk', entId: cs.sort((a, b) => a.hp - b.hp)[0].id } }
+    if (state.tick < 2300) { // 开局对线期：跟己方兵线走
+      const mine = Object.values(state.ents).filter((e) => e.k === 'creep' && e.team === me.team)
+      const front = mine.length ? mine.reduce((a, b) => (a.y < b.y ? a : b)) : null
+      const ty = front ? front.y + 40 * K : 1200 * K
+      const dy = ty - me.y
+      if (Math.abs(dy) > 30 * K) return { mx: 0, my: dy > 0 ? 100 : -100 }
+    }
+    return NOOP
+  },
+  /**
    * 几何解算（pool-physics A2/A6，设计 §6：脚本侧 ghost ball 反射几何核——
    * api-check 经 /api/test/state 读全量 state 合法，逐杆注入 shot；
    * ball-in-hand 时 place 在目标球-袋连线上直接摆位。零 rng——确定性双跑前提）。
@@ -1210,7 +1315,8 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           if (name === 'full20') stat.dies.push(99)
           break
         }
-        const winnerOk = r.result.winner === sc.expectWinner
+        /* expectWinner:'any'（GAMES-127 mini-moba clash）：胜负不断言、只断终态达成 */
+        const winnerOk = sc.expectWinner === 'any' ? ['A', 'B', 'draw'].includes(r.result.winner) : r.result.winner === sc.expectWinner
         const teams = (api.endState && api.endState.teams) || meta.net.teams
         const myTeam = teams && Object.entries(teams).find(([, seats]) => seats.includes(room.playerSeat))
         const detail = `winner=${r.result.winner}（期望 ${sc.expectWinner}） reason=${r.result.reason} scores=${JSON.stringify(r.result.scores)} tick=${r.tick}${myTeam ? ` API 席属 ${myTeam[0]} 队` : ''} ${durMs}ms`
@@ -1272,6 +1378,35 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           if (name === 'lose') {
             const myPos = r.result.scores && r.result.scores[room.playerSeat] && r.result.scores[room.playerSeat].pos
             ok('A3', 'S7 idle 泊发车格：API 席名次=末位', myPos === (meta.net.seats || 6), `pos=${myPos}/${meta.net.seats || 6}`)
+          }
+        }
+        /* S2-MOBA 专项断言（GAMES-127 设计 §6）：A6 推塔链（reject(invuln)+塔序+水晶终链）
+         * / A7 团战账本（kill ruling 结构+bounty/respAt 复算）——断言锚=ruling 账本（S2
+         * 确定性口径：无逐帧 hash 义务，§6） */
+        if (gameId === 'mini-moba') {
+          const twr = r.ledger.filter((e) => e.k === 'tower')
+          if (name === 'win') {
+            const rej = r.ledger.find((e) => e.k === 'reject' && e.op === 'atk' && e.why === 'invuln')
+            ok('A6', 'S2-MOBA 推塔链：T1 未破时攻 T2 → reject(invuln) 账本在场', !!rej, rej ? `frame ${rej.frame || ''} op=${rej.op} why=${rej.why}` : '未见 reject')
+            const chainBad = []
+            for (const team of ['A', 'B']) {
+              const seq = twr.filter((t) => t.team === team)
+              for (let i = 1; i < seq.length; i++) if (seq[i].tier <= seq[i - 1].tier) chainBad.push(`${team} 塔序 ${seq[i - 1].tier}→${seq[i].tier}`)
+            }
+            ok('A6', 'S2-MOBA 推塔链：ruling {k:tower} 账本与塔序一致（T1→T2）', chainBad.length === 0, chainBad.length ? chainBad[0] : `${twr.length} 塔破（${twr.map((t) => t.tid).join('→') || '无'}）`)
+            const coreEv = r.ledger.find((e) => e.k === 'core')
+            ok('A6', 'S2-MOBA 水晶终链：core ruling 或超时裁定闭环', !!coreEv || r.result.reason === 'timeout', coreEv ? `core-down（${coreEv.team} 方水晶告破）` : `reason=${r.result.reason}`)
+          }
+          if (name === 'clash') {
+            const kills = r.ledger.filter((e) => e.k === 'kill')
+            const bad = kills.filter((k) => !Number.isInteger(k.victim) || !Number.isInteger(k.killer) || !Array.isArray(k.assists)
+              || !Number.isInteger(k.streak) || !Number.isInteger(k.bounty) || !Number.isInteger(k.lv) || !Number.isInteger(k.respAt)
+              || k.respAt !== k.frame + (50 + 20 * k.lv)
+              || (k.killer >= 0
+                ? k.bounty !== Math.min(150 + 30 * Math.max(0, k.streak - 1), 300)   // 英雄击杀：赏金公式（连杀=击杀前计数）
+                : k.bounty !== 0 || k.streak !== 0))                                  // 世界击杀（塔/兵/泉）：killer=-1 无赏无连杀
+            ok('A7', 'S2-MOBA 团战账本：kill ruling ≥1 且 {victim,killer,assists,streak,bounty,lv,respAt} 结构完整', kills.length >= 1, `kill×${kills.length}（首例 v${kills[0] && kills[0].victim}→k${kills[0] && kills[0].killer}）`)
+            ok('A7', 'S2-MOBA 团战账本：bounty=150+30×(streak−1) 帽 300 / respAt=frame+(5+2×lv)s 复算一致', bad.length === 0, bad.length ? `${bad.length} 条违例（首例 bounty=${bad[0].bounty} streak=${bad[0].streak} respAt=${bad[0].respAt} 期望 ${bad[0].frame + (50 + 20 * bad[0].lv)}）` : `${kills.length} 条全对`)
           }
         }
       } finally {

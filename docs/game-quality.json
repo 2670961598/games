@@ -1121,6 +1121,19 @@
         "bot": "三档战棋 Bot（casual 随机合法拟人延时/balanced 整数 V+scratch 副本逐激活贪心 argmax 零随机/competitive 精确威胁图叠加封顶+击杀确认 +8 偏置+棋形三项+束宽 3 两 ply 前瞻）+托管三层（超时=casual 单回合代打/断线·主动=倾向继承 balanced：faceBias=0.5+attackOpRatio·pointBias=0.5+pointwardRatio 输入日志复算/主动 host op）+棋桌评语 quip 七优先级",
         "chain": "GAMES-117..125 九单链完整+FIX2 跳过（GAMES-123 QA2 五面退回 0 无修复对象）：117 设计书（S1+S5 复用首款）/118 DEV/119 QA1/120 FIX1/121 BOT/122 FEEL/123 QA2/124 VIS/125 STRESS"
       }
+    },
+    "multiplayer:mini-moba": {
+      "stage": "testing",
+      "perf": "pending",
+      "play": "pending",
+      "visual": "pending",
+      "iterations": 1,
+      "notes": "E6-W2-T2 状态同步轨第二款 DEV 交付（GAMES-127）：S2 战场节奏×小镇管线（10Hz 二式快照+AOI 即战争迷雾+草丛加层+ext.ack 预测和解）+战斗事件 ruling 化（死亡/击杀/推塔/圣所/终局 tick 末原子裁决账本）+Bot 优先级行为栈 P0-P8 三档。待 QA1/FIX 链。",
+      "net": {
+        "tech": "S2",
+        "bot": "三档 MOBA Bot（casual 站线兵：P0/P3'/P4/P8 无技能/balanced 补刀师傅：+P3 窗口+P5 换血+P6 营地/competitive 指挥官：全栈+连招序列+抱团集火+圣所游走）；断线托管=balanced（MOBA 挂机=送塔送赏金，设计附决策 7）",
+        "chain": "GAMES-126 设计书/GAMES-127 DEV"
+      }
     }
   }
 }
