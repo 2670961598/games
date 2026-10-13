@@ -187,8 +187,8 @@ const POLICIES = {
     const fount = state.map.fountains[me.team]
     const inFount = d2(me, fount) <= fount.r ** 2
     const sess = state.sessions && state.sessions[seat]
-    /* A6 取证臂：开局对无敌 T2 持续点 atk → 服务端 {k:'reject',why:'invuln'} 账本 */
-    if (state.tick < 400 && state.tick % 40 === 0 && state.ents['tw-B2']) return { mx: 0, my: 0, cmd: { k: 'atk', entId: 'tw-B2' } }
+    /* A6 取证臂：开局对无敌 T2 点 atk（cmd 一次性语义，逐拍重发幂等）→ reject 账本 */
+    if (state.tick < 400 && state.ents['tw-B2']) return { mx: 0, my: 0, cmd: { k: 'atk', entId: 'tw-B2' } }
     if (inFount) {
       if (me.hp / me.maxhp < 0.95) return NOOP // 泉水回满再走
       if (sess && sess.gold >= 800) return { mx: 0, my: 0, cmd: { k: 'buy' } }
@@ -213,11 +213,14 @@ const POLICIES = {
       const waveNear = front && d2(front, tgT) < (260 * K) ** 2
       const guarded = foes.some((f) => d2(f, tgT) < (350 * K) ** 2)
       const dT = Math.sqrt(d2(me, tgT))
-      if (dT < RANGE - 10 * K && (waveNear || !guarded)) return { mx: 0, my: 0, cmd: { k: 'atk', entId: tgT.id } }
-      const anchor = waveNear || !guarded ? tgT : (front || { x: 500 * K, y: Math.min(me.y, 950 * K) })
-      const dx = anchor.x - me.x, dy = anchor.y - me.y, len = Math.hypot(dx, dy) || 1
-      const stopR = anchor === tgT ? RANGE - 20 * K : 40 * K
-      if (len > stopR) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
+      const TOWER_R = 210 * K
+      /* 贴塔即攻（射程 150<塔 210=换血成本，30% 线 recall 循环兜底）；有守备无波时
+       * 退塔射程外 30px 等波，波至随波进（不再卡 RANGE..TOWER_R 的 270px 盲区） */
+      if (dT < RANGE - 10 * K) return { mx: 0, my: 0, cmd: { k: 'atk', entId: tgT.id } }
+      const standR = guarded && !waveNear ? TOWER_R + 30 * K : RANGE - 20 * K
+      const ax = tgT.x + (me.x - tgT.x) / (dT || 1) * standR, ay = tgT.y + (me.y - tgT.y) / (dT || 1) * standR
+      const dx = ax - me.x, dy = ay - me.y, len = Math.hypot(dx, dy)
+      if (len > 12 * K) return { mx: Math.round(dx / len * 100), my: Math.round(dy / len * 100) }
     }
     return NOOP
   },
@@ -1386,7 +1389,10 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
             const kills = r.ledger.filter((e) => e.k === 'kill')
             const bad = kills.filter((k) => !Number.isInteger(k.victim) || !Number.isInteger(k.killer) || !Array.isArray(k.assists)
               || !Number.isInteger(k.streak) || !Number.isInteger(k.bounty) || !Number.isInteger(k.lv) || !Number.isInteger(k.respAt)
-              || k.bounty !== Math.min(150 + 30 * Math.max(0, k.streak - 1), 300) || k.respAt !== k.frame + (50 + 20 * k.lv))
+              || k.respAt !== k.frame + (50 + 20 * k.lv)
+              || (k.killer >= 0
+                ? k.bounty !== Math.min(150 + 30 * Math.max(0, k.streak - 1), 300)   // 英雄击杀：赏金公式（连杀=击杀前计数）
+                : k.bounty !== 0 || k.streak !== 0))                                  // 世界击杀（塔/兵/泉）：killer=-1 无赏无连杀
             ok('A7', 'S2-MOBA 团战账本：kill ruling ≥1 且 {victim,killer,assists,streak,bounty,lv,respAt} 结构完整', kills.length >= 1, `kill×${kills.length}（首例 v${kills[0] && kills[0].victim}→k${kills[0] && kills[0].killer}）`)
             ok('A7', 'S2-MOBA 团战账本：bounty=150+30×(streak−1) 帽 300 / respAt=frame+(5+2×lv)s 复算一致', bad.length === 0, bad.length ? `${bad.length} 条违例（首例 bounty=${bad[0].bounty} streak=${bad[0].streak} respAt=${bad[0].respAt} 期望 ${bad[0].frame + (50 + 20 * bad[0].lv)}）` : `${kills.length} 条全对`)
           }

@@ -585,9 +585,10 @@
   }
 
   /* ---------- 主循环 ---------- */
-  var lastFrame = 0
+  var lastFrame = 0, perfCost = { n: 0, sum: 0, max: 0 }
   function frame(now) {
     requestAnimationFrame(frame)
+    var t0 = performance.now()
     var dt = Math.min(50, now - lastFrame || 16); lastFrame = now
     var e = me && me.ent
     // 本地移动预测（同式积分；速度=英雄基准×摇杆，§3.2 即时映射）
@@ -625,6 +626,9 @@
     drawControls(now)
     drawDead(now, tick)
     drawEnd()
+    /* 帧成本探针（games-118 范式：无头环境 rAF 被环境封顶时，perf 口径=帧成本） */
+    var c = performance.now() - t0
+    perfCost.n++; perfCost.sum += c; if (c > perfCost.max) perfCost.max = c
   }
   var snapTick = 0
 
@@ -640,5 +644,6 @@
     events: dbgEvents,
     state: function () { return { seat: mySeat, team: myTeam, room: ROOM, ents: Object.keys(ents).length, ended: ended } },
     ext: function () { return ext },
+    perf: function () { return { n: perfCost.n, avgMs: +(perfCost.sum / Math.max(1, perfCost.n)).toFixed(2), maxMs: +perfCost.max.toFixed(2) } },
   }
 })()
