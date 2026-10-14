@@ -131,7 +131,7 @@ const SKILLS = {
     { code: 'execute', w: 2, cd: 500, target: 'unit', range: PX(90), dmg: [90, 22], exec35: 512, ult: 6 },
   ],
 }
-const DEFAULT_HERO = ['ranger', 'shadow', 'mage', 'guard', 'guard', 'mage'] // A: 游侠/法师/铁卫；B: 影刃/铁卫/法师（§6 push-lane：API 席=游侠）
+const DEFAULT_HERO = ['ranger', 'shadow', 'mage', 'guard', 'guard', 'mage'] // A: 游侠/法师/铁卫；B: 影刃/铁卫/法师（§6 push-lane：API 席=游侠）。GAMES-133 席位对称性实验结论（留档）：双方远程数结构镜像（A=B={游侠,法师,铁卫}多重集，三种排布）下 bot-vs-bot 镜像局确趋于对称（cas-vs-cas=draw/胜负随换席翻转），但冻结剧本 A2 push-lane 静态真人被双远程 casual 稳定反推（0/23~5/13 滚雪球、B 收局，三种排布+席位迭代对称均红）——远程结构镜像与 A2 相克，本单不换英雄面，席位对称由 step/creepStep/towerStep 偶奇轮换迭代序承担；英雄配置不对称（A 双远程/B 单远程）为已知残项转后续（剧本面重写或真人侧补偿后镜像才可行）
 /* 装备（§2.7）：6 件一次性，泉水/死亡可购；叠加上限 CD −40%/攻速 −35% */
 const ITEMS = {
   boots: { name: '疾风之靴', cost: 800, spd: PX(25) / 10, cdr: 26 },
@@ -175,6 +175,7 @@ function create(seed, opts = {}) {
     shrine: { nextAt: SHRINE_FIRST },
     projs: [], zones: [], pings: [],
     bless: null, // 龟甲祝祷 {team,until}：对建筑伤 +25%（×288/256）
+    coreDown: null, // 水晶告破方（GAMES-133：rulingPass 同拍删实体后的终局旗）
     stats: { kills: { A: 0, B: 0 }, towers: { A: 0, B: 0 } },
   }
   for (const t of TOWERS) st.ents[t.id] = { id: t.id, k: 'tw', team: t.team, tier: t.tier, x: t.x, y: t.y, hp: t.hp, maxhp: t.hp, inv: t.need ? 1 : 0, ad: t.ad, atkT: 0, tg: null, agUntil: 0 }
@@ -393,11 +394,9 @@ function step(st, inputs, room) {
   /* 10. tick 末原子裁决：死亡/击杀/推塔/圣所（§5.3 裁决化四规则） */
   rulingPass(st, events, dirty)
 
-  /* 11. 终局判定 */
+  /* 11. 终局判定（coreDown 旗=rulingPass 同拍删除实体后的存活口径，GAMES-133） */
   let over = null
-  const cA = st.ents['core-A'], cB = st.ents['core-B']
-  if (cA && cA.hp <= 0) over = { winner: 'B', reason: 'core-down', scores: killScores(st) }
-  else if (cB && cB.hp <= 0) over = { winner: 'A', reason: 'core-down', scores: killScores(st) }
+  if (st.coreDown) over = { winner: ENEMY[st.coreDown], reason: 'core-down', scores: killScores(st) }
   else if (st.tick + 1 >= st.maxTicks) over = timeoutRuling(st)
   for (const p of st.pings) if (p.at + 50 <= st.tick) p.dead = true
   st.pings = st.pings.filter((p) => !p.dead)
@@ -1022,6 +1021,8 @@ function rulingPass(st, events, dirty) {
       events.push({ k: 'tower', frame: st.tick, team: e.team, tid: e.id, by: kSeat ?? -1, teamGold, tier: e.tier })
     } else if (e.k === 'core') {
       delete st.ents[e.id]
+      st.coreDown = e.team // GAMES-133 O5：终局旗——实体当拍已删，phase 11 按存在性查
+      // hp≤0 永不命中=core-down 终局从未触发（全剧本零 core-down 的底层根因）
       events.push({ k: 'core', frame: st.tick, team: e.team })
     }
   }
@@ -1322,16 +1323,30 @@ function brain(st, seat, level, rng, env) {
     const pastMid = mine && (my < 0 ? mine.y < PX(850) : mine.y > PX(850))
     /* 击杀窗判定（§1.1 复活缺席窗=推塔决策窗）：目标塔 500px 内无敌方存活英雄
      * （被击退/击杀/回城中）→ 裸推塔成立（兵抗塔 OR 守方缺席二选一即可贴塔） */
-    const towerOpen = tgT && !foes.some((f) => dist2(f.x, f.y, tgT.x, tgT.y) < PX(350) ** 2)
+    /* GAMES-133 O5：有效守备=目标 350px 内且在己泉外的敌英雄——旧口径把泉中回城/
+     * 挂机席也计为守备（泉水中心=水晶位，挂机席永坐泉边把 towerOpen 压死=T2 破后
+     * 4100 tick 零 core-down 的直接根因，QA2 O5）；守备须在泉外可交战位才成立。
+     * 收尾意识（closer）=balanced/competitive 档（casual=不会收局的散人：镜像
+     * casual 双方都收不了局=超时裁定（探针实测零塔破），也避免 A2 剧本 B 方 casual
+     * 反推平 push-lane 真人（首版实测 4816 tick B core-down 翻红门禁） */
+    const closer = level !== 'casual'
+    const towerOpen = tgT && !foes.some((f) => dist2(f.x, f.y, tgT.x, tgT.y) < PX(350) ** 2 && !(closer && tgT.k === 'core' && inFount(st, f, f.team)))
     /* GAMES-129 O2：击杀窗（mem.win）内只随兵贴塔（兵抗塔）——裸贴返场守军=塔下
      * 折损（对 casual 实测 kills 7:1→2:3）；窗内守方缺席本就常态，waveAtTower
-     * 即可成立，非窗保持原 pastMid&&(waveAtTower||towerOpen) 口径 */
-    const siegeOk = mem.win ? pastMid && waveAtTower : pastMid && (waveAtTower || towerOpen)
+     * 即可成立，非窗保持原 pastMid&&(waveAtTower||towerOpen) 口径。
+     * GAMES-133 O5 终局放宽（仅 closer 档）：目标=水晶（T2 已破）时胜利条件在场，
+     * pastMid 即推——远程贴泉沿 plink（停位=max(射程-10, 泉半径+12)：游侠 160 射程
+     * 白嫖、法师/近战泉沿压场随兵推进，泉烧 400/s 由停位半径挡在圈外）；塔段不变 */
+    const siegeOk = (closer && tgT && tgT.k === 'core') ? pastMid : (mem.win ? pastMid && waveAtTower : pastMid && (waveAtTower || towerOpen))
     if (tgT && st.tick > 600 && siegeOk) {
-      // 推塔窗（§2.8b）：贴兵线推进——兵进塔射程（兵抗塔）贴身打塔
+      // 推塔窗（§2.8b）：贴兵线推进——兵进塔射程（兵抗塔）贴身打塔；core 段停位
+      // 半径须 ≤ 攻击阈值（否则 152>150 死区=停在泉沿永不 plink，首版实测坑）
       const dT = Math.hypot(tgT.x - h.x, tgT.y - h.y)
-      if (dT <= myRange - PX(10)) out.cmd = { k: 'atk', entId: tgT.id }
-      else steer(tgT.x, tgT.y, Math.max(PX(30), myRange - PX(10)))
+      const coreStop = Math.max(FOUNT_R + PX(12), myRange - PX(10))
+      const stopR = tgT.k === 'core' ? coreStop : Math.max(PX(30), myRange - PX(10))
+      const plinkR = tgT.k === 'core' ? Math.max(coreStop, myRange - PX(2)) : myRange - PX(10)
+      if (dT <= plinkR) out.cmd = { k: 'atk', entId: tgT.id }
+      else steer(tgT.x, tgT.y, stopR)
     } else if (tgT && pastMid && st.tick > 600) {
       // 有守备：塔射程外 40px 待兵（等波比送头强）
       const dT = Math.hypot(tgT.x - h.x, tgT.y - h.y)
