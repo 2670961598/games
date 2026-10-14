@@ -1397,8 +1397,11 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       continue
     }
     /* GAMES-107 统计口径（见文件头注记）：S6 剧本局（win/hunt/full20）派生 seed {S,S+1,S+2} 各一局，
-       胜负=三局两胜、数值锚=三局中位；lose 与非 S6 游戏维持单局严格口径（行为不变） */
-    const statSeeds = (meta.net.tech === 'S6' && name !== 'lose') ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
+       胜负=三局两胜、数值锚=三局中位；lose 与非 S6 游戏维持单局严格口径（行为不变）。
+       S3+S4 并入（GAMES-140 复验红二发，PM 裁决 2026-10-15）：街头足球 2v2 bot 剧本局=同族混沌面
+       （GAMES-138 死代码修复+轮询 30ms 后 A2 仍换局翻红 5:4↔3:5——乌龙/折射分岔本质），
+       单局必胜断言与混沌不匹配；口径语义不变（能赢），三局两胜、任一 seed 全败仍红 */
+    const statSeeds = ((meta.net.tech === 'S6' || meta.net.tech === 'S3+S4') && name !== 'lose') ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
     const stat = { win: [], n: [], dies: [], notes: [] }
     /* GAMES-107 提速（2026-10-11 断路收官 PM 落笔）：三 seed 并行开房——串行峰值 622s 贴 600s 收割/复验
        闸窗两度 GATE-TIMEOUT（exit=124）；并行后剧本段墙钟≈最慢一局。判据零变动：房配置/剧本策略/
