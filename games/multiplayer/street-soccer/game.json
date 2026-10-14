@@ -69,5 +69,10 @@
       }
     }
   },
-  "bot": { "levels": 3, "takeOver": "balanced" }
+  "bot": {
+    "levels": 3,
+    "takeOver": "balanced",
+    "casual": { "passP": 0.15, "shootR": 90000, "jit": 3400, "powLo": 400, "powRange": 400, "tackleP": 0.30, "lead": 4 },
+    "mercy": { "min": 2, "hard": 4, "jit1": 1300, "jit2": 2600, "errP": 0.25, "powMul": 85 }
+  }
 }

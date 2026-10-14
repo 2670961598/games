@@ -215,7 +215,7 @@ Bot 走网关 Bot 宿主统一接口 `spawnBot('street-soccer', level)`，输出
 
 - **真人让位**：协议 §2 原样（seat 最大 bot 席让位，继承类/位置/体力/持球权）。
 - **断线托管**：10s+1 拍窗后转 **balanced 托管**（mini-moba 决策 #7 同源：体育挂机=空门放对手，casual 托管毁对局；casual 只存在于剧本房）。持球断线：托管 bot 首拍按 balanced 决策表处理球权——球权不因托管丢失。
-- **陪玩取向**：真人队缺员补位默认 balanced；competitive 让力模式（传球决策阈值上调/不扑抢节拍，GAMES-46 mercy 滞回先例）参数预留，BOT 深化单启用。
+- **陪玩取向**：真人队缺员补位默认 balanced；competitive 让力模式（传球决策阈值上调/不扑抢节拍，GAMES-46 mercy 滞回先例）参数预留，BOT 深化单启用。**GAMES-140 已启用**：信号源=META.pulseTeam（rooms.js 按队记真人连败，mini-moba GAMES-130 同式）——对席真人连败 ≥2（bot.mercy.min）=L1 让力（射门散布附加 jit1=1300 brads+力量 85%+失误注入 errP=0.25：射门改传球/扑抢收脚）；≥4（hard）=L2 重败（行为降档 comp→bal→cas+散布 jit2=2600）；同队真人连败=生态位让位（自由球真人更近时收步保护位不争抢+持球时真人队友豁空即让球权）。env 缺省/foeLose=0 全链不可达=回放器与 api 剧本逐字节零扰动（A8 口径）。casual 蜂群失误率同步参数化（bot.casual 七键：passP/shootR/jit/powLo/powRange/tackleP/lead，缺省=本表冻结值）。
 
 ## 5. S3+S4 协议细节（核心节）
 

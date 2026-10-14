@@ -12,9 +12,19 @@
  *   - 持球权 flag 服务器唯一裁决零预测（§5.1 归属表）；onSync 缺帧自救=全量一张。
  * ===================================================================== */
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const S = require('../../../games/multiplayer/street-soccer/sim.cjs')
+
+/* 陪玩放水/蜂群参数（GAMES-140，mini-moba GAMES-130 同式）：阈值入 game.json
+ * bot.mercy / bot.casual 可调；适配器 brain 出口包装注入 env（离线直调/回放器无 env
+ * → sim 内置缺省兜底，行为等价——默认值与 game.json 冻结值一致）。档位：L1 让力
+ * （射门散布附加+力量衰减+失误注入）/ L2 重败（行为降档+散布加倍）；casual 失误率
+ * （传球/射门/扑抢概率与散布）参数化。 */
+const GAME_CFG = JSON.parse(readFileSync(new URL('../../../games/multiplayer/street-soccer/game.json', import.meta.url), 'utf8'))
+const MERCY_CFG = (GAME_CFG.bot && GAME_CFG.bot.mercy) || null
+const CASUAL_CFG = (GAME_CFG.bot && GAME_CFG.bot.casual) || null
 
 const FULL_EVERY = 300   // 每 300 张强制全量（mmo 范式）
 
@@ -124,14 +134,23 @@ function onSync(room, ctx) {
  * 适配器出口（rooms.js 注册表形状 + S2 扩展 emit/onSync）
  * ===================================================================== */
 export const streetSoccerSim = {
-  META: S.META,           // tickMs=50、seats=4、roomPrefix='street'（§7 无冲突）
+  META: Object.assign({}, S.META, {
+    /* GAMES-140 团队作 pulse（放水链信号源，mini-moba GAMES-130 同式）：真人所在队
+     * 胜=断连败/负=连败++——rooms.js finish 按 META.pulseTeam(seat,winner) 记账；
+     * team=seat%2（偶席=A 攻上门，§2.1） */
+    pulseTeam: (seat, winner) => (seat % 2 === 0 ? 'A' : 'B') === winner,
+  }),
   LEVELS: S.LEVELS,
   url: '/games/multiplayer/street-soccer/index.html',
   create: (seed, opts = {}) => S.create(seed, {
     test: opts.test, maxTicks: opts.maxTicks, autopilot: opts.autopilot,
   }),
   step: (st, inputs, room) => S.step(st, inputs, room),
-  brain: (st, seat, level, rng, env) => S.brain(st, seat, level, rng, env),
+  /* brain 出口包装（GAMES-140 放水链）：网关 botEnv（kinds/foeLose）+game.json
+   * bot.mercy/bot.casual 经 env 注入（mini-moba/tactics 同式）；无 env（离线直调/
+   * 回放器 replayInputs）→ 原样透传，sim 内置缺省兜底零放水（A8 逐字节口径） */
+  brain: (st, seat, level, rng, env) => S.brain(st, seat, level, rng,
+    env ? Object.assign({}, env, { mercy: MERCY_CFG, casual: CASUAL_CFG }) : env),
   emit, onSync,
   hashState: (st) => S.hashState(st),
   welcomeExtra: () => ({ // S4 声明块复用（协议 §6 S4 实证位；§5.2 版本护栏）

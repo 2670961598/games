@@ -619,9 +619,29 @@
   /* =====================================================================
    * Bot 三档（§4：攻防角色分配器 BALL/OFF × 持球-防守-自由三情境；
    * rng 无状态=mulberry32(seed^seat^tick)，回放零流对账）
+   * GAMES-140 BOT 深化（按设计 §4 冻结方案骨架深化）：
+   *   - casual 失误率参数化（CASUAL 表；game.json bot.casual 经适配器 env 注入可调，
+   *     缺省值=DEV 冻结值——A2/A3 剧本路径逐字节不变）；
+   *   - balanced 传球选择：安全球（被压即出，冻结行为）vs 直塞（队友前插更近门+豁空+
+   *     传球线无封堵 → 提前出球到跑动路线，服务器 lead 引导点接手）；
+   *   - competitive 战术跑位：无球侧穿插（远门柱前插侧=球横向对侧，拉开传球走廊）+
+   *     二过一墙式配合（出球即前插 90000 攻击空当接 lead 回传，对席拿球即截断回防）+
+   *     一脚出球（刚得球且队友前插豁空 → 同拍即传，触球推跳过）；
+   *   - 放水链（§4.3 让力模式启用，mini-moba GAMES-130 同式）：env.foeLose[seat]=房内
+   *     其他真人最大连败（rooms.js pulse 台账→doFrame botEnv；META.pulseTeam 按队记）——
+   *     对席真人连败 → L1 让力（射门散布附加 jit1+力量衰减+失误注入射门改传球/扑抢收脚）
+   *     / L2 重败（行为降档+散布 jit2）；同队真人连败 → 生态位让位（自由球不与真人
+   *     争抢+让球权）。env 缺省（回放器/离线直调）或 foeLose=0（api 剧本房单局 pulse
+   *     恒 0）全链不可达 → 与在线逐字节等价（A8 口径）；噪声只耗本席 rng 流。
    * ===================================================================== */
   var BOT_EVERY = { casual: 10, balanced: 6, competitive: 4 };
-  function brain(st, seat, level, _rng, _env) {
+  /* casual 失误率参数表（§4.2 蜂群；缺省=DEV 冻结值，game.json bot.casual 可调） */
+  var CASUAL = { passP: 0.15, shootR: 90000, jit: 3400, powLo: 400, powRange: 400, tackleP: 0.30, lead: 4 };
+  /* 放水链参数表（§4.3 让力模式，GAMES-46 mercy 先例；game.json bot.mercy 可调）：
+   * min/hard=连败两档阈值；jit1/jit2=档内射门散布附加（brads）；errP=失误注入率
+   * （射门改传球/扑抢收脚）；powMul=让力射门力量 % */
+  var MERCY = { min: 2, hard: 4, jit1: 1300, jit2: 2600, errP: 0.25, powMul: 85 };
+  function brain(st, seat, level, _rng, env) {
     var P = st.players[seat];
     if (!P) return { mx: 0, my: 0 };
     var out = { mx: 0, my: 0, sp: 0 };
@@ -631,8 +651,25 @@
     var team = seat & 1;
     var mate = seat ^ 2;
     var rng = mulberry32((st.seed ^ Math.imul(seat + 11, 0x9e3779b9) ^ (st.tick * 0x45d9f3b)) >>> 0);
-    var M = st.mem[seat] || (st.mem[seat] = { dt: 0, role: 0, hys: 0 });
+    var M = st.mem[seat] || (st.mem[seat] = { dt: 0, role: 0, hys: 0, pc: 0, gago: 0, lastOwn: -2 });
     var G = atkGoal(team), OG = ownGoal(team);
+    /* 放水链扫描：对席真人=让力、同队真人=生态位让位（mate=seat^2 同队，余席皆对席） */
+    var mercyDeg = 0, humanFoe = false, mateHuman = false;
+    var MC = (env && env.mercy) || MERCY;
+    if (env && env.foeLose && (env.foeLose[seat] || 0) >= MC.min) {
+      mercyDeg = (env.foeLose[seat] || 0) >= MC.hard ? 2 : 1;
+      if (env.kinds) for (var ks = 0; ks < SEATS; ks++) {
+        if (ks === seat || env.kinds[ks] !== 'human') continue;
+        if (ks === mate) mateHuman = true; else humanFoe = true;
+      }
+      if (humanFoe && mercyDeg >= 2 && level !== 'casual') level = level === 'competitive' ? 'balanced' : 'casual'; // L2 重败降档
+    }
+    var mJit = humanFoe && mercyDeg >= 1 ? (mercyDeg >= 2 ? MC.jit2 : MC.jit1) : 0;
+    var mErr = humanFoe && mercyDeg >= 1;
+    var justGot = own === seat && M.lastOwn !== seat; // 本拍刚得球（一脚出球窗）
+    M.lastOwn = own;
+    if (M.pc > 0) M.pc--;        // 直塞冷却（防乒乓）
+    if (M.gago > 0) M.gago--;    // 二过一前插窗计时
     var steer = function (x, y, sp, stopR) {
       stopR = stopR || 8000;
       var dx = x - P.x, dy = y - P.y, d = isqrt(dx * dx + dy * dy);
@@ -656,20 +693,24 @@
     var angTo = function (x, y) { return atan2Q(x - B.x, y - B.y) & 8191; };
     var shoot = function (pow, jit) {
       var q = angTo(G.x, G.y);
-      if (jit) q = (q + (((rng() * 2 - 1) * jit) | 0)) & 8191; // 档内散布（casual ×2.5 量级）
+      var j2 = jit + mJit;
+      if (j2) q = (q + (((rng() * 2 - 1) * j2) | 0)) & 8191; // 档内散布（casual ×2.5 量级）+让力附加
+      if (mErr) pow = ((pow * MC.powMul) / 100) | 0;          // 让力：力量衰减
       out.cmd = { k: 'shot', ang: (q << 3) & 0xFFFF, pow: pow };
     };
     var tryTackle = function () { out.cmd = { k: 'tackle' }; };
 
     if (level === 'casual') {
-      /* 蜂群（§4.2）：双人都追球；持球直冲门心；距门近即射（散布大）；偶发传球/扑抢 */
+      /* 蜂群（§4.2）：双人都追球；持球直冲门心；距门近即射（散布大）；偶发传球/扑抢。
+       * GAMES-140：失误率参数化（CU 表；缺省=冻结值，行为逐字节不变） */
+      var CU = (env && env.casual) || CASUAL;
       if (own === seat) {
-        if (rng() < 0.15 && pm) { out.cmd = { k: 'pass' }; return out; }
-        if (distG < 90000) { shoot(400 + ((rng() * 400) | 0), 3400); return out; }
+        if (rng() < CU.passP && pm) { out.cmd = { k: 'pass' }; return out; }
+        if (distG < CU.shootR) { shoot(CU.powLo + ((rng() * CU.powRange) | 0), CU.jit); return out; }
         steer(G.x, G.y);
       } else {
-        steer(B.x + B.vx * 4, B.y + B.vy * 4);
-        if (own >= 0 && own % 2 !== team && dToB < 20000 && rng() < 0.30) tryTackle();
+        steer(B.x + B.vx * CU.lead, B.y + B.vy * CU.lead);
+        if (own >= 0 && own % 2 !== team && dToB < 20000 && rng() < CU.tackleP) tryTackle();
       }
       return out;
     }
@@ -701,18 +742,40 @@
     if (own === seat) {
       /* 持球（carrier 决策表） */
       var presser = nearFoe(P.x, P.y, 30000);
-      if (presser && pm && level === 'balanced') { out.cmd = { k: 'pass' }; return out; }
+      if (level === 'balanced' && pm) {
+        /* 传球选择（GAMES-140 深化，§4.2 压迫传导→两策）：
+         * 安全球=被压即出（冻结行为）/ 直塞=队友前插更近门+豁空+传球线无封堵 →
+         * 提前出球到跑动路线上（服务器 lead 引导点接手）；直塞带 10 拍冷却防乒乓。
+         * 让位追加：同队真人连败（mateHuman 放水档在）→ 让球权（队友豁空即让） */
+        var mateG = isqrt(d2(pm.x, pm.y, G.x, G.y));
+        var fwd = (G.x - pm.x) * pm.vx + (G.y - pm.y) * pm.vy > 0; // 队友跑向门
+        var mateOpen2 = !nearFoe(pm.x, pm.y, 36000);
+        if (presser || (mateHuman && mercyDeg >= 1 && mateOpen2)) { out.cmd = { k: 'pass' }; M.pc = 10; return out; }
+        if (M.pc <= 0 && mateG < distG - 20000 && mateOpen2 && (fwd || mateG < distG - 50000)
+          && !nearFoeLine(st, B.x, B.y, pm.x + pm.vx * 8, pm.y + pm.vy * 8, 22000, mate)) {
+          out.cmd = { k: 'pass' }; M.pc = 10; return out; // 直塞
+        }
+      }
       if (level === 'competitive') {
-        /* 期望值仲裁（§4.2）：射门质量/传球质量/带球 三算分取大；蓄力满段才射 */
+        /* 期望值仲裁（§4.2）：射门质量/传球质量/带球 三算分取大；蓄力满段才射。
+         * GAMES-140 深化：一脚出球（justGot 且队友前插豁空 → 同拍即传，触球推跳过）
+         * + 墙式配合（出球设 gago 前插窗；持球侧见队友在窗内+豁空 → 回传加成，
+         * 前场 distG<120k 仍优先射）+ 让力失误注入（射门改传球） */
         var open = !nearFoeLine(st, B.x, B.y, G.x, G.y, 26000);
         var shootQ = distG < 170000 && open ? (200000 - distG) + 60000 : -1;
-        var passQ = presser && pm && !nearFoe(pm.x, pm.y, 36000)
-          ? 50000 + (isqrt(d2(pm.x, pm.y, G.x, G.y)) < distG ? 60000 : 0) : -1;
+        var runner = pm && st.mem[mate] && st.mem[mate].gago > 0; // 队友在墙式前插窗
+        var passQ = pm && !nearFoe(pm.x, pm.y, 36000) && (presser || runner)
+          ? 50000 + (isqrt(d2(pm.x, pm.y, G.x, G.y)) < distG ? 60000 : 0) + (runner ? 30000 : 0) : -1;
+        if (mErr && rng() < MC.errP && pm) { out.cmd = { k: 'pass' }; M.gago = 14; return out; }
+        if (justGot && pm && !nearFoe(pm.x, pm.y, 36000) && isqrt(d2(pm.x, pm.y, G.x, G.y)) < distG - 20000) {
+          out.cmd = { k: 'pass' }; M.gago = 14; return out; // 一脚出球
+        }
         if (shootQ >= passQ && shootQ > 40000) { shoot(1000, 0); return out; }
-        if (passQ > 40000) { out.cmd = { k: 'pass' }; return out; }
+        if (passQ > 40000) { out.cmd = { k: 'pass' }; M.gago = 14; return out; }
         steer(G.x, G.y, distG > 120000);
         return out;
       }
+      if (mErr && rng() < MC.errP && pm) { out.cmd = { k: 'pass' }; return out; } // 让力失误注入
       if (distG < 140000 && !nearFoeLine(st, B.x, B.y, G.x, G.y, 25000)) {
         shoot(distG > 250000 ? 1000 : distG > 150000 ? 850 : 650, 0);
         return out;
@@ -720,18 +783,42 @@
       steer(G.x, G.y, distG > 120000);
       return out;
     }
+    /* 二过一前插窗（GAMES-140 墙式配合）：出球后不论球在飞/队友持球都持续前插
+     * （球-门连线前方 90000 攻击空当——接 lead 回传的跑位；吸引子 28000 兜住接球）；
+     * 对席拿球即截断回防。 */
+    if (level === 'competitive' && M.gago > 0 && own !== seat) {
+      if (own >= 0 && own % 2 !== team) M.gago = 0;
+      else {
+        var ggx = G.x - B.x, ggy = G.y - B.y, ggl = isqrt(ggx * ggx + ggy * ggy) || 1;
+        steer(clampI(B.x + ((ggx / ggl * 90000) | 0), 15000, W_M - 15000),
+          clampI(B.y + ((ggy / ggl * 90000) | 0), 15000, H_M - 15000), 1, 12000);
+        return out;
+      }
+    }
     if (own >= 0 && own % 2 === team && pm) {
       /* 己方持球、我是 OFF（support 表：接应线=持球者身后 60000 偏门侧） */
       var c2 = st.players[own];
       var bx = c2.x - G.x, by = c2.y - G.y, bl = isqrt(bx * bx + by * by) || 1;
       var sx2 = c2.x + ((bx / bl * 60000) | 0) + 24000 * (team === 0 ? 1 : -1);
       var sy2 = c2.y + ((by / bl * 60000) | 0);
-      if (level === 'competitive') { // 战术跑位：远门柱前插（重叠跑）
-        var far = { x: G.x + (team === 0 ? 1 : -1) * 42000, y: team === 0 ? 30000 : H_M - 30000 };
+      if (level === 'competitive') {
+        /* 战术跑位（GAMES-140 深化）：无球侧穿插+远门柱前插——穿插侧=球横向对侧
+         * （球在左半场我插右通道），拉开传球走廊+迫使防线横移；终点=远门柱接应 */
+        var side2 = B.x < (W_M >> 1) ? 1 : -1;
+        var far = { x: clampI(G.x + side2 * 42000, 15000, W_M - 15000), y: team === 0 ? 30000 : H_M - 30000 };
         steer(far.x, far.y, 1, 15000);
         return out;
       }
       steer(clampI(sx2, 15000, W_M - 15000), clampI(sy2, 15000, H_M - 15000));
+      return out;
+    }
+    /* 生态位让位（GAMES-140，QA1 O-1 决策面）：同队真人连败（mateHuman 且放水档在）→
+     * 自由球不与真人争抢——真人更近时收步到保护位（球→己门连线 40%，cover 同式），
+     * 真人先触球。席位让位在 rooms.js join（协议 §2 真人优先），此处是球权生态位让位；
+     * foeLose=0 不可达=回放器/api 剧本零扰动 */
+    if (mateHuman && mercyDeg >= 1 && own < 0 && pm && d2(pm.x, pm.y, B.x, B.y) < d2(P.x, P.y, B.x, B.y)) {
+      var yx = B.x + (((OG.x - B.x) * 2) / 5 | 0), yy = B.y + (((OG.y - B.y) * 2) / 5 | 0);
+      steer(clampI(yx, 15000, W_M - 15000), clampI(yy, 15000, H_M - 15000), dToB > 90000);
       return out;
     }
     if (M.role === 0) {
@@ -756,7 +843,7 @@
       var lungeOk = level === 'competitive'
         ? (own >= 0 && own % 2 !== team && dToB < 22000 && dToB > 8000 && rng() < 0.6) // 触球节拍扑抢（近似）
         : (own >= 0 && own % 2 !== team && dToB < 20000);
-      if (lungeOk && P.tackleCd <= 0) tryTackle();
+      if (lungeOk && P.tackleCd <= 0 && !(mErr && rng() < MC.errP)) tryTackle(); // 让力：扑抢收脚（失误注入）
       return out;
     }
     /* OFF=保护/预位（cover/anticipate 表） */
@@ -775,10 +862,12 @@
     steer(clampI(cov.x, 15000, W_M - 15000), clampI(cov.y, 15000, H_M - 15000), dToB > 90000);
     return out;
   }
-  /* 射门锥封堵检查（线上最近敌人距线 < r 即封堵） */
-  function nearFoeLine(st, x1, y1, x2, y2, r) {
+  /* 射门锥封堵检查（线上最近敌人距线 < r 即封堵）；excl=传球线目标席（免把接球
+   * 者自身计入封堵——直塞线终点即队友，GAMES-140） */
+  function nearFoeLine(st, x1, y1, x2, y2, r, excl) {
     var dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy || 1;
     for (var i = 0; i < SEATS; i++) {
+      if (i === excl) continue;
       var p = st.players[i];
       if (!p) continue;
       var t = ((p.x - x1) * dx + (p.y - y1) * dy);
