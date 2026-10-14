@@ -43,12 +43,24 @@
   var SKILL_DASH = { charge: 1, blink: 1 } // 位移系（音效位分槽用）
   var ITEM_NAME = { boots: '疾风靴', blade: '破军刃', plate: '玄武甲', frenzy: '狂战徽', leech: '噬血珠', tome: '贤者典' }
   var ITEMS_ORDER = ['boots', 'blade', 'plate', 'frenzy', 'leech', 'tome']
+  /* GAMES-135：旧实现 '13px 700px …'（size 前置+weight 带 px 单位）=非法 CSS font
+   * 简写，canvas 赋值被静默忽略——全 HUD 实际渲染 10px sans-serif 缺省字（QA1
+   * HF 登记/识图双双放行=登记表只记调用值不记生效值）。本单修正为 weight 前置
+   * 合法简写，并让 hudFonts() 附 __cls 分级下限 + __applied 生效往返自证。 */
   var HF_REGISTRY = {}
-  function HF(tag, px, weight) { var f = px + 'px ' + (weight || 600) + 'px -apple-system,"PingFang SC",sans-serif'; HF_REGISTRY[tag] = px; return f }
+  var HF_CLS = { P0: { min: 99, n: 0 }, P1: { min: 99, n: 0 }, P2: { min: 99, n: 0 } }
+  function HF(tag, px, weight, cls) {
+    var f = (weight || 600) + ' ' + px + 'px -apple-system,"PingFang SC",sans-serif'
+    HF_REGISTRY[tag] = px
+    var c = HF_CLS[cls] || (px >= 13 ? HF_CLS.P0 : px >= 11 ? HF_CLS.P1 : HF_CLS.P2)
+    if (px < c.min) c.min = px
+    c.n++
+    return f
+  }
   var F = {
-    p0: function () { return HF('p0', 13, 700) }, p0n: function () { return HF('p0n', 13, 600) },
-    p1: function () { return HF('p1', 11, 600) }, p2: function () { return HF('p2', 9, 500) },
-    p1b: function () { return HF('p1b', 11, 700) },
+    p0: function () { return HF('p0', 13, 700, 'P0') }, p0n: function () { return HF('p0n', 13, 600, 'P0') },
+    p1: function () { return HF('p1', 11, 600, 'P1') }, p2: function () { return HF('p2', 9, 500, 'P2') },
+    p1b: function () { return HF('p1b', 11, 700, 'P1') },
   }
   var dbgEvents = []
   function emitDbg(ev, payload) { dbgEvents.push({ event: ev, payload: payload, at: Date.now() }) }
@@ -71,6 +83,13 @@
   var kol = { graves: [] }
   var lastFoes = {}        // 敌方英雄上次可见位（F15 消失警示锚）
   var prevMe = null        // ext.me 上拍（金币/KDA 变动检测）
+  /* ---------- 观战导演（GAMES-135 · QA1 观察项兑现；协议面零改动） ----------
+   * 服务端已有导演镜头（kill/tower/shrine 8s 质心 __dirCam → 快照 ext.aoi 透出），
+   * 本单做呈现层：客户端镜头跟随 ext.aoi（自动热点）/手动跟焦点（AOI 圈内英雄
+   * 轮换，圈外自动回退）+ 团战热点标记 + KDA 面板（kill 事件客户端簿记
+   * killer/victim/assists，观战收全事件流=QA1 S5 已证）。 */
+  var SPECTATE = qs.get('spectate') === '1'
+  var spec = { kda: {}, focus: -1, lastHot: -1e9 }
 
   /* ---------- 手感层登记表（GAMES-131） ----------
    * FXLIST：[id, 名称, fb|state]——fb=反馈类（事件→首绘 ≤80ms 红线，台账断言），
@@ -150,7 +169,8 @@
   }
   function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)) }
   function join() {
-    if (ROOM) { sessionStorage.setItem('moba.room', ROOM); send({ t: 'join', roomId: ROOM, mode: 'play', name: '玩家' }) }
+    if (ROOM) { sessionStorage.setItem('moba.room', ROOM); send({ t: 'join', roomId: ROOM, mode: SPECTATE ? 'spectate' : 'play', name: '玩家' }) }
+    else if (SPECTATE) hint('观战需指定 ?room=（?spectate=1）')
     else send({ t: 'quick', gameId: 'mini-moba' })
   }
   function onWelcome(msg) {
@@ -213,11 +233,11 @@
       if (msg.ext.ack != null && msg.ext.ack >= 0) { /* ack：已处理输入序号（预测历史可弃，§5.5） */ }
     }
     /* F15 敌人消失警示：上拍可见的敌方英雄本拍不在 ents（AOI 收离/草丛隐身）
-     * → 小地图留 ? 标记 3s（末次可见位） */
+     * → 小地图留 ? 标记 3s（末次可见位）。观战席无「敌我」视角，跳过。 */
     var foesNow = {}
     for (var fid in ents) {
       var fe = ents[fid].ent
-      if (fe.k === 'hero' && fe.hp > 0 && fe.team !== myTeam) foesNow[fid] = { x: fe.x / K, y: fe.y / K }
+      if (mySeat >= 0 && fe.k === 'hero' && fe.hp > 0 && fe.team !== myTeam) foesNow[fid] = { x: fe.x / K, y: fe.y / K }
     }
     for (var pf in lastFoes) if (!foesNow[pf]) {
       var lr = lastFoes[pf]
@@ -230,6 +250,13 @@
   }
 
   /* ---------- 事件 → 表现（ruling 账本=juice 零 diff 触发，§5.3） ---------- */
+  function specLedger(ev) { // 观战 KDA 簿记（席→{k,d,a}；kill 事件 killer/victim/assists）
+    spec.lastHot = pnow()
+    var slot = function (s) { return spec.kda[s] || (spec.kda[s] = { k: 0, d: 0, a: 0 }) }
+    if (ev.killer >= 0) slot(ev.killer).k++
+    slot(ev.victim).d++
+    if (ev.assists) for (var i = 0; i < ev.assists.length; i++) slot(ev.assists[i]).a++
+  }
   function onEvent(ev) {
     if (ev.k === 'hit') {
       var r = ents[ev.vic]
@@ -256,6 +283,7 @@
     } else if (ev.k === 'kill') {
       var kn = (ev.killer >= 0 ? '席' + ev.killer : '防御塔') + ' ⚔ 席' + ev.victim
       var kTeam = ev.killer >= 0 ? (ev.killer % 2 === 0 ? 'A' : 'B') : 'W'
+      if (mySeat < 0) specLedger(ev) // 观战 KDA 簿记（killer/victim/assists）
       var vr = ents['h' + ev.victim], kx = vr ? vr.ent.x / K : cam.x, ky = vr ? vr.ent.y / K : cam.y
       fx.feed.push({ txt: kn, streak: ev.streak, at: pnow(), team: kTeam, rec: fxT('F03') })
       if (fx.feed.length > 3) fx.feed.shift()
@@ -274,6 +302,7 @@
       sfx('kill')
       if (ev.victim === mySeat) { deadOverlay = { respAt: ev.respAt }; sfx('death') }
     } else if (ev.k === 'tower') {
+      if (mySeat < 0) spec.lastHot = pnow() // 观战热点窗（团战节拍）
       fx.feed.push({ txt: (ev.team === 'A' ? 'A' : 'B') + ' 方 ' + (ev.tier === 1 ? '外塔' : '高地塔') + ' 告破', at: pnow(), team: ev.team === 'A' ? 'B' : 'A', rec: fxT('F05') })
       var tw = MAP.towers[ev.tid], tx = tw ? tw[0] : cam.x, ty = tw ? tw[1] : cam.y
       for (var ri = 0; ri < 16; ri++) fx.parts.push({ x: tx + (Math.random() - 0.5) * 30, y: ty - 10 - Math.random() * 26, vx: (Math.random() - 0.5) * 90, vy: -40 - Math.random() * 90, at: pnow(), dur: 620, col: '#8a94a0', sz: 2 + Math.random() * 2, g: 0.55 }) // F05 碎石雨
@@ -287,6 +316,7 @@
       sfx('core')
     }
     else if (ev.k === 'shrine') { // F12 圣所祝祷特效
+      if (mySeat < 0) spec.lastHot = pnow()
       fx.feed.push({ txt: ev.team + ' 队夺得圣所祝祷！', at: pnow(), team: ev.team, rec: fxT('F12') })
       fx.bless = { at: pnow(), team: ev.team, rec: fxT('F12') }
       sfx('shrine')
@@ -343,6 +373,7 @@
       var hitBtn = null
       for (var b = 0; b < btnZones.length; b++) if (Math.hypot(p.x - btnZones[b].x, p.y - btnZones[b].y) < btnZones[b].r) hitBtn = btnZones[b]
       if (hitBtn) { onBtn(hitBtn.id); continue }
+      if (mySeat < 0) { specCycle(1); continue } // 观战：任意触点=下一焦点
       if (p.x < W / 2) joyStart(p.x, p.y, t.identifier)
     }
   }, { passive: false })
@@ -359,7 +390,7 @@
   cv.addEventListener('touchend', tEnd); cv.addEventListener('touchcancel', tEnd)
   // 桌面调试：鼠标拖拽=摇杆
   var mDown = false
-  cv.addEventListener('mousedown', function (e) { var p = pos(e); if (p.x < W / 2) { mDown = true; joyStart(p.x, p.y, 'm') } else { var h = null; for (var b = 0; b < btnZones.length; b++) if (Math.hypot(p.x - btnZones[b].x, p.y - btnZones[b].y) < btnZones[b].r) h = btnZones[b]; if (h) onBtn(h.id) } })
+  cv.addEventListener('mousedown', function (e) { var p = pos(e); if (mySeat < 0) { var hb = null; for (var b2 = 0; b2 < btnZones.length; b2++) if (Math.hypot(p.x - btnZones[b2].x, p.y - btnZones[b2].y) < btnZones[b2].r) hb = btnZones[b2]; if (hb) onBtn(hb.id); else specCycle(1) } else if (p.x < W / 2) { mDown = true; joyStart(p.x, p.y, 'm') } else { var h = null; for (var b = 0; b < btnZones.length; b++) if (Math.hypot(p.x - btnZones[b].x, p.y - btnZones[b].y) < btnZones[b].r) h = btnZones[b]; if (h) onBtn(h.id) } })
   cv.addEventListener('mousemove', function (e) { if (mDown) joyMove(pos(e).x, pos(e).y) })
   window.addEventListener('mouseup', function () { mDown = false; joy.dx = 0; joy.dy = 0 })
   function pos(t) { var r = cv.getBoundingClientRect(); return { x: (t.clientX - r.left) * (W / r.width), y: (t.clientY - r.top) * (H / r.height) } }
@@ -372,6 +403,8 @@
       var hero = me && me.ent.hero
       if (hero && SKILL_UI[hero][idx].w > 0) windup = { idx: idx, until: pnow() + SKILL_UI[hero][idx].w }
     } else if (id === 'recall') sendCmd({ k: 'recall' })
+    else if (id === 'dirPrev') specCycle(-1) // 观战导演：跟焦点轮换
+    else if (id === 'dirNext') specCycle(1)
     else if (id === 'buy') sendCmd({ k: 'buy' })
     else if (id === 'again') location.href = location.pathname
   }
@@ -445,6 +478,12 @@
       ctx.fillStyle = tm === 'A' ? 'rgba(232,163,61,.10)' : 'rgba(61,200,232,.10)'
       ctx.beginPath(); ctx.arc(sx(f[0]), sy(f[1]), f[2], 0, Math.PI * 2); ctx.fill()
       ctx.strokeStyle = TEAM_DIM[tm]; ctx.setLineDash([6, 5]); ctx.stroke(); ctx.setLineDash([])
+    }
+    // 视野边界弧（GAMES-135 可读性：AOI 迷雾圈=快照 ext.aoi.r，出圈实体即不下发）
+    if (me || (mySeat < 0 && ext.aoi)) {
+      var vb = mySeat < 0 ? { x: ext.aoi.x / K, y: ext.aoi.y / K } : { x: pred.x, y: pred.y }
+      ctx.strokeStyle = 'rgba(220,235,240,.14)'; ctx.setLineDash([4, 8]); ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.arc(sx(vb.x), sy(vb.y), (mySeat < 0 ? ext.aoi.r : 320 * K) / K, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([])
     }
   }
   function sx(wx) { return wx - cam.x + W / 2 }
@@ -558,6 +597,12 @@
       ctx.strokeStyle = z.skill === 'star' ? 'rgba(232,99,61,.85)' : z.skill === 'stasis' ? 'rgba(157,111,232,.8)' : 'rgba(232,163,61,.8)'
       ctx.setLineDash([5, 4]); ctx.lineWidth = 2
       ctx.beginPath(); ctx.arc(sx(z.x), sy(z.y), z.r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([])
+      // 形状签名（GAMES-135 双编码第二通道）：星陨=三芒刺 / 静滞=内六边 / 箭雨=四象点
+      if (z.skill === 'star') {
+        ctx.lineWidth = 1.5
+        for (var si = 0; si < 3; si++) { var sa = si * Math.PI * 2 / 3 - Math.PI / 2; ctx.beginPath(); ctx.moveTo(sx(z.x) + Math.cos(sa) * z.r * 0.2, sy(z.y) + Math.sin(sa) * z.r * 0.2); ctx.lineTo(sx(z.x) + Math.cos(sa) * z.r * 0.62, sy(z.y) + Math.sin(sa) * z.r * 0.62); ctx.stroke() }
+      } else if (z.skill === 'stasis') { ctx.lineWidth = 1.5; shapePath(sx(z.x), sy(z.y), z.r * 0.4, 6, 0); ctx.stroke() }
+      else { ctx.fillStyle = 'rgba(232,163,61,.75)'; for (var qi = 0; qi < 4; qi++) { var qa = qi * Math.PI / 2 + Math.PI / 4; ctx.beginPath(); ctx.arc(sx(z.x) + Math.cos(qa) * z.r * 0.5, sy(z.y) + Math.sin(qa) * z.r * 0.5, 1.5, 0, Math.PI * 2); ctx.fill() } }
       ctx.font = F.p2(); ctx.fillStyle = ctx.strokeStyle; ctx.textAlign = 'center'
       ctx.fillText(z.skill === 'star' ? '星陨' : z.skill === 'stasis' ? '静滞' : '箭雨', sx(z.x), sy(z.y) - z.r - 4)
       fxD(z.rec)
@@ -591,7 +636,7 @@
       var age = Math.max(0, now - f.at)
       if (age > 700) return false
       var y = sy(f.y) - 18 - age / 700 * 26
-      ctx.font = f.gold ? HF('goldF', 12, 700) : F.p1b(); ctx.textAlign = 'center'
+      ctx.font = f.gold ? HF('goldF', 13, 700, 'P0') : HF('dmgF', 13, 700, 'P0'); ctx.textAlign = 'center'
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(6,10,12,.85)'
       ctx.strokeText(f.txt, sx(f.x), y)
       ctx.fillStyle = f.gold ? '#E8C46A' : f.magic ? '#B48CE8' : '#F2F2F2'
@@ -619,7 +664,7 @@
     }
     // F06 升级光环提示（金环由 rings 承担，此处 900ms 升 L 文案）
     if (fx.lvPop && now - fx.lvPop.at < 900) {
-      ctx.font = HF('lvP', 13, 700); ctx.textAlign = 'center'
+      ctx.font = HF('lvP', 13, 700, 'P0'); ctx.textAlign = 'center'
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(6,10,12,.85)'
       ctx.strokeText('升 L' + fx.lvPop.lv + '！', sx(pred.x), sy(pred.y) - 38)
       ctx.fillStyle = '#E8C46A'
@@ -632,7 +677,7 @@
       var ba = bt < 0.1 ? bt / 0.1 : 1 - Math.max(0, (bt - 0.75) / 0.25)
       ctx.fillStyle = 'rgba(127,232,208,' + (0.16 * ba).toFixed(3) + ')'
       ctx.fillRect(0, 96, W, 20)
-      ctx.font = HF('bless', 13, 700); ctx.textAlign = 'center'
+      ctx.font = HF('bless', 13, 700, 'P0'); ctx.textAlign = 'center'
       ctx.fillStyle = '#7FE8D0'; ctx.globalAlpha = ba
       ctx.fillText('◆ 圣所祝祷 · ' + fx.bless.team + ' 队 ◆', W / 2, 110)
       ctx.globalAlpha = 1
@@ -649,7 +694,7 @@
       var pop = gt < 0.12 ? 0.6 + gt / 0.12 * 0.5 : Math.min(1.1, 1.1 - (gt - 0.12) * 0.08)
       var btxt = (fx.badge.n >= 5 ? '超神' : fx.badge.n >= 3 ? '三杀' : '双杀') + ' ×' + fx.badge.n
       ctx.save(); ctx.translate(W / 2, 132); ctx.scale(pop, pop)
-      ctx.font = HF('badge', 15, 700); ctx.textAlign = 'center'
+      ctx.font = HF('badge', 15, 700, 'P0'); ctx.textAlign = 'center'
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(6,10,12,.9)'
       ctx.strokeText(btxt, 0, 0)
       ctx.fillStyle = fx.badge.team === 'W' ? '#9FB8C4' : TEAM_COL[fx.badge.team]
@@ -699,13 +744,23 @@
     ctx.beginPath(); ctx.arc(x0 + R0 / 2, y0 + R0 * 0.76, R0 * 0.72, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = '#6E6046'; ctx.fillRect(mx(440), my(0), mx(560) - mx(440), my(1700) - my(0))
     ctx.fillStyle = '#2E6E8C'; ctx.fillRect(mx(0), my(790), mx(1000) - mx(0), my(910) - my(790))
-    // 视野圈（AOI 即战争迷雾，§5.2）
+    // 视野圈（AOI 即战争迷雾，§5.2；观战=服务端导演镜头中心 ext.aoi）
+    var vc = mySeat < 0 && ext.aoi ? { x: ext.aoi.x / K, y: ext.aoi.y / K } : { x: pred.x, y: pred.y }
     ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1
-    ctx.beginPath(); ctx.arc(mx(pred.x), my(pred.y), R0 * 0.72 / 1000 * 640 * (1000 / 1700) * 1.7, 0, Math.PI * 2); ctx.stroke()
+    ctx.beginPath(); ctx.arc(mx(vc.x), my(vc.y), R0 * 0.72 / 1000 * 640 * (1000 / 1700) * 1.7, 0, Math.PI * 2); ctx.stroke()
+    if (mySeat < 0) { // 观战：主视口框（导演镜头位置）+ 兵线点（信息密度）
+      var vw = mx(cam.x + W / 2) - mx(cam.x - W / 2), vh = my(cam.y + H / 2) - my(cam.y - H / 2)
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'
+      ctx.strokeRect(mx(cam.x - W / 2), my(cam.y - H / 2), vw, vh)
+    }
     for (var id in ents) {
       var e = ents[id].ent
       if (e.hp <= 0) continue
-      if (e.k === 'hero') { ctx.fillStyle = TEAM_COL[e.team]; ctx.beginPath(); ctx.arc(mx(e.x / K), my(e.y / K), 2.5, 0, Math.PI * 2); ctx.fill() }
+      if (e.k === 'hero') {
+        ctx.fillStyle = TEAM_COL[e.team]; ctx.beginPath(); ctx.arc(mx(e.x / K), my(e.y / K), 2.5, 0, Math.PI * 2); ctx.fill()
+        if (mySeat < 0 && spec.focus === +String(id).slice(1)) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(mx(e.x / K), my(e.y / K), 4.5, 0, Math.PI * 2); ctx.stroke() }
+      }
+      else if (e.k === 'creep') { ctx.fillStyle = 'rgba(159,184,196,.55)'; ctx.fillRect(mx(e.x / K) - 0.75, my(e.y / K) - 0.75, 1.5, 1.5) } // 兵线动向（迷雾内可见者）
       else if (e.k === 'tw') { ctx.fillStyle = TEAM_COL[e.team]; ctx.fillRect(mx(e.x / K) - 2, my(e.y / K) - 2, 4, 4) }
     }
     // F15 敌人消失警示（末次可见位 ? 标记，3s 衰减脉冲）
@@ -743,7 +798,7 @@
       var gAge = now - fx.goldAt
       if (gAge < 350) {
         var bounce = Math.sin(Math.min(1, gAge / 350) * Math.PI) * 2
-        ctx.font = HF('goldB', 13 + Math.round(bounce), 700)
+        ctx.font = HF('goldB', 13 + Math.round(bounce), 700, 'P0')
         ctx.fillStyle = '#FFD97A'
         fxD(fx.goldRec)
       } else { ctx.font = F.p0n(); ctx.fillStyle = '#E8C46A' }
@@ -775,7 +830,78 @@
     // reject 红闪（非法 cmd 回流，§5.1）
     if (now - fx.rejectAt < 400) { ctx.fillStyle = 'rgba(232,63,61,' + (0.5 * (1 - (now - fx.rejectAt) / 400)) + ')'; ctx.fillRect(0, 0, W, H) }
   }
+  /* ---------- 观战导演镜头与 UI（GAMES-135） ---------- */
+  function specHeroes() { // 当前 AOI 内存活英雄席位（可跟焦集合）
+    var a = []
+    for (var s = 0; s < 6; s++) { var r = ents['h' + s]; if (r && r.ent && !r.ent.dead) a.push(s) }
+    return a
+  }
+  function specDirectorCam() {
+    var t = null
+    if (spec.focus >= 0) {
+      var r = ents['h' + spec.focus]
+      if (r && !r.ent.dead) { var p = lerpEnt(r, 120); t = { x: p.x, y: p.y } }
+      else spec.focus = -1 // 焦点出圈/阵亡 → 自动回退（AOI 外跟焦无实体可看）
+    }
+    if (!t && ext.aoi) t = { x: ext.aoi.x / K, y: ext.aoi.y / K } // 服务端导演镜头（事件质心）
+    if (!t) t = { x: 500, y: 850 } // 河道开局位
+    cam.x += (t.x - cam.x) * 0.08; cam.y += (t.y - cam.y) * 0.08 // 缓推（电影感 0.08）
+  }
+  function specCycle(dir) {
+    var list = specHeroes()
+    if (!list.length) { spec.focus = -1; return }
+    var i = list.indexOf(spec.focus)
+    spec.focus = list[(i + dir + list.length) % list.length]
+    sfx('skillDash')
+  }
+  function drawSpecUI(now) { // 观战位 HUD：导演条 + 团战热点标记 + KDA 面板（替代玩家操控）
+    btnZones = []
+    var hot = now - spec.lastHot < 6000
+    /* 导演条（底部） */
+    ctx.fillStyle = 'rgba(10,20,26,.9)'; ctx.fillRect(0, H - 34, W, 34)
+    ctx.textAlign = 'left'
+    ctx.fillStyle = hot ? '#E8633D' : '#7FE8D0'
+    ctx.font = F.p1b()
+    ctx.fillText(hot ? '⚔ 交战热点' : '● 观战中', 8, H - 12)
+    ctx.fillStyle = '#F2F2F2'; ctx.font = F.p1()
+    ctx.fillText(spec.focus >= 0 ? '跟焦 席' + spec.focus + '（' + specHeroLabel(spec.focus) + '）' : '自动热点追踪', 92, H - 12)
+    ctx.fillStyle = spec.focus >= 0 ? '#2E6E8C' : '#7A5C2E'
+    ctx.fillRect(W - 130, H - 28, 58, 22); ctx.fillRect(W - 66, H - 28, 58, 22)
+    ctx.fillStyle = '#fff'; ctx.font = F.p1(); ctx.textAlign = 'center'
+    ctx.fillText('◀ 上一', W - 101, H - 13); ctx.fillText('下一 ▶', W - 37, H - 13)
+    btnZones.push({ x: W - 101, y: H - 17, r: 30, id: 'dirPrev' })
+    btnZones.push({ x: W - 37, y: H - 17, r: 30, id: 'dirNext' })
+    /* KDA 面板（左右两列 A/B；英雄字形+阵营色+KDA 数字 P0） */
+    var py = H - 132
+    ctx.fillStyle = 'rgba(10,20,26,.72)'; ctx.fillRect(0, py - 18, W, 100)
+    for (var side = 0; side < 2; side++) {
+      var team = side === 0 ? 'A' : 'B'
+      var colX = side === 0 ? 14 : W - 14
+      ctx.fillStyle = TEAM_COL[team]; ctx.font = F.p1b(); ctx.textAlign = side === 0 ? 'left' : 'right'
+      ctx.fillText(team + ' 队', colX, py - 3)
+      for (var r3 = 0; r3 < 3; r3++) {
+        var seat = side + r3 * 2
+        var rec = ents['h' + seat], kd = spec.kda[seat] || { k: 0, d: 0, a: 0 }
+        var y = py + 16 + r3 * 26
+        var focusRow = spec.focus === seat
+        if (focusRow) { ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(side === 0 ? 6 : W - 118, y - 14, 112, 22) }
+        var hero = rec && rec.ent ? rec.ent.hero : null
+        ctx.fillStyle = TEAM_COL[team]
+        shapePath(side === 0 ? colX + 6 : colX - 6, y - 5, 6, HERO_SHAPE[hero] || 6, now / 1400); ctx.fill()
+        ctx.fillStyle = '#F2F2F2'; ctx.font = F.p1()
+        var nm = (hero ? HERO_NAME[hero] : '待入') + (rec && rec.ent ? ' L' + rec.ent.lv : '')
+        ctx.fillText(nm, side === 0 ? colX + 18 : colX - 18, y)
+        ctx.font = F.p0n(); ctx.fillStyle = focusRow ? '#FFD97A' : '#F2F2F2'
+        var kdaTxt = kd.k + '/' + kd.d + '/' + kd.a
+        ctx.fillText(kdaTxt, side === 0 ? colX + 84 : colX - 84, y)
+      }
+    }
+    ctx.textAlign = 'left'
+  }
+  function specHeroLabel(seat) { var r = ents['h' + seat]; return r && r.ent.hero ? HERO_NAME[r.ent.hero] : '—' }
+
   function drawControls(now) {
+    if (mySeat < 0) { drawSpecUI(now); return } // 观战位：玩家操控让位给导演 UI
     btnZones = []
     // 浮动摇杆
     if (joy.active) {
@@ -847,7 +973,7 @@
     if (fx.buyToast && now - fx.buyToast.at < 1500) {
       var bAge = now - fx.buyToast.at
       var bPop = bAge < 300 ? 12 + Math.round(Math.sin(bAge / 300 * Math.PI) * 2) : 12
-      ctx.fillStyle = '#E8C46A'; ctx.font = HF('buyP', bPop, 700); ctx.textAlign = 'center'
+      ctx.fillStyle = '#E8C46A'; ctx.font = HF('buyP', Math.max(13, bPop), 700, 'P1'); ctx.textAlign = 'center'
       ctx.fillText('已购 ' + (ITEM_NAME[fx.buyToast.item] || fx.buyToast.item), W / 2, H / 2 - 120)
       fxD(fx.buyToast.rec)
     }
@@ -857,7 +983,7 @@
     var e = me.ent
     var left = Math.max(0, Math.ceil((e.respAt - snapTick) / 10))
     ctx.fillStyle = 'rgba(6,10,12,.55)'; ctx.fillRect(0, 0, W, H)
-    ctx.fillStyle = '#F2F2F2'; ctx.font = HF('dead', 34, 700); ctx.textAlign = 'center'
+    ctx.fillStyle = '#F2F2F2'; ctx.font = HF('dead', 34, 700, 'P0'); ctx.textAlign = 'center'
     ctx.fillText('' + (left > 0 ? left : '…'), W / 2, H / 2 - 10)
     ctx.font = F.p1(); ctx.fillStyle = '#9FB8C4'
     ctx.fillText('复活倒计时（5+2×等级 秒）', W / 2, H / 2 + 18)
@@ -865,18 +991,29 @@
   function drawEnd() {
     if (!ended) return
     var r = ended.result || {}
-    ctx.fillStyle = 'rgba(6,10,12,.88)'; ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = 'rgba(6,10,12,.94)'; ctx.fillRect(0, 0, W, H) // .88→.94：识图复检发现底透 HUD 与结算文字叠印（fatal 同式 .94）
     var win = r.winner === myTeam
-    ctx.fillStyle = win ? TEAM_COL[myTeam] : '#9FB8C4'
-    ctx.font = HF('end', 30, 700); ctx.textAlign = 'center'
-    ctx.fillText(r.winner === 'draw' ? '平局' : win ? '胜利' : '败北', W / 2, 150)
+    ctx.font = HF('end', 30, 700, 'P0'); ctx.textAlign = 'center'
+    if (mySeat < 0) { // 观战：胜方中性呈现（阵营色+「X 方胜利」）
+      ctx.fillStyle = r.winner === 'draw' ? '#9FB8C4' : TEAM_COL[r.winner] || '#9FB8C4'
+      ctx.fillText(r.winner === 'draw' ? '平局' : r.winner + ' 方胜利', W / 2, 150)
+    } else {
+      ctx.fillStyle = win ? TEAM_COL[myTeam] : '#9FB8C4'
+      ctx.fillText(r.winner === 'draw' ? '平局' : win ? '胜利' : '败北', W / 2, 150)
+    }
     ctx.font = F.p1(); ctx.fillStyle = '#9FB8C4'
-    ctx.fillText('终局：' + (r.reason || ''), W / 2, 178)
+    ctx.fillText('终局：' + (r.reason || '') + ' · 用时 ' + fmtTime(snapTick), W / 2, 178)
+    /* 双队战绩行（GAMES-135 结算可读性：击杀/存塔分=超时裁定前二序） */
+    var et = ext.t || {}, ek = et.kills || { A: 0, B: 0 }, ew = et.towers || { A: 0, B: 0 }
+    ctx.font = F.p0n()
+    ctx.fillStyle = TEAM_COL.A; ctx.fillText('A ' + (ek.A || 0) + ' 杀 · 塔 ' + (ew.A || 0), 94, 208)
+    ctx.fillStyle = '#9FB8C4'; ctx.fillText('-', W / 2, 208)
+    ctx.fillStyle = TEAM_COL.B; ctx.fillText('B ' + (ek.B || 0) + ' 杀 · 塔 ' + (ew.B || 0), W - 94, 208)
     var m = ext.me
     if (m) {
       ctx.font = F.p0n(); ctx.fillStyle = '#F2F2F2'
-      ctx.fillText('KDA ' + m.k + '/' + m.d + '/' + m.a + ' · 等级 L' + m.lv, W / 2, 240)
-      ctx.fillText('装备 ' + (m.items || []).map(function (i) { return ITEM_NAME[i] || i }).join(' '), W / 2, 268)
+      ctx.fillText('KDA ' + m.k + '/' + m.d + '/' + m.a + ' · 等级 L' + m.lv, W / 2, 248)
+      ctx.fillText('装备 ' + (m.items || []).map(function (i) { return ITEM_NAME[i] || i }).join(' '), W / 2, 276)
     }
     ctx.fillStyle = '#2E6E8C'
     ctx.fillRect(W / 2 - 70, 320, 140, 40)
@@ -934,14 +1071,17 @@
     }
     if (me && !me.ent.dead) { cam.x += (pred.x - cam.x) * 0.25; cam.y += (pred.y - cam.y) * 0.25 }
     else if (me) { cam.x += (me.ent.x / K - cam.x) * 0.1; cam.y += (me.ent.y / K - cam.y) * 0.1 }
+    else if (mySeat < 0) specDirectorCam() // 观战导演镜头（跟焦点/AOI 热点，0.08 缓推）
     cam.x = Math.max(W / 2, Math.min(WORLD.w - W / 2, cam.x)); cam.y = Math.max(H / 2, Math.min(WORLD.h - H / 2, cam.y))
-    // F11 草丛进出检测（本地位置 vs 草丛圈；服务器视野规则不变）
-    var gi = false
-    for (var gI = 0; gI < MAP.grass.length; gI++) { var gg = MAP.grass[gI]; if (Math.hypot(pred.x - gg[0], pred.y - gg[1]) < 55) { gi = true; break } }
-    if (gi !== fx.grassIn) {
-      fx.grassIn = gi
-      fx.grassRec = fxT('F11')
-      if (gi) burst(pred.x, pred.y, '#7FC99F', 8, 55, 0.05) // 进草叶片
+    // F11 草丛进出检测（本地位置 vs 草丛圈；服务器视野规则不变；观战无己身跳过）
+    if (mySeat >= 0) {
+      var gi = false
+      for (var gI = 0; gI < MAP.grass.length; gI++) { var gg = MAP.grass[gI]; if (Math.hypot(pred.x - gg[0], pred.y - gg[1]) < 55) { gi = true; break } }
+      if (gi !== fx.grassIn) {
+        fx.grassIn = gi
+        fx.grassRec = fxT('F11')
+        if (gi) burst(pred.x, pred.y, '#7FC99F', 8, 55, 0.05) // 进草叶片
+      }
     }
     // F16/F13 金币与 KDA 变动（ext.me 逐拍比对）
     var mm = ext.me
@@ -984,7 +1124,26 @@
   inputTimer = setInterval(inputLoop, 100) // 10Hz（静止报 0,0 心跳，§5.1）
   requestAnimationFrame(frame)
   window.__GAMES_DEBUG__ = {
-    hudFonts: function () { return JSON.parse(JSON.stringify(HF_REGISTRY)) },
+    /* hudFonts：平铺 {tag:px}（GAMES-131 FE-4c/FE-1f 兼容）+ __cls 分级下限
+     * （P0≥13/P1≥11/P2≥9 自证源）+ __applied 生效往返自证（GAMES-135：旧 HF
+     * 非法简写被 canvas 静默忽略——登记表必须证「真的画出来了」）。 */
+    hudFonts: function () {
+      var o = JSON.parse(JSON.stringify(HF_REGISTRY))
+      var applied = false
+      try { var prev = ctx.font; ctx.font = HF('hfProbe', 13, 700, 'P0'); applied = /13px/.test(ctx.font); ctx.font = prev } catch (e) { applied = false }
+      o.__cls = {}; for (var c in HF_CLS) o.__cls[c] = { min: HF_CLS[c].min === 99 ? null : HF_CLS[c].min, samples: HF_CLS[c].n }
+      o.__applied = applied
+      return o
+    },
+    /* 观战导演探针（QA 取证：镜头/焦点/热点/KDA 簿记） */
+    dir: function () {
+      return { seat: mySeat, focus: spec.focus, heroes: specHeroes(), cam: { x: Math.round(cam.x), y: Math.round(cam.y) },
+        me: me && me.ent ? { x: Math.round(pred.x), y: Math.round(pred.y) } : null,
+        aoi: ext.aoi ? { x: Math.round(ext.aoi.x / K), y: Math.round(ext.aoi.y / K), r: Math.round(ext.aoi.r / K) } : null,
+        hot: pnow() - spec.lastHot < 6000, kda: JSON.parse(JSON.stringify(spec.kda)) }
+    },
+    entKinds: function () { var ks = {}; for (var id in ents) { var k = ents[id].ent.k; ks[k] = (ks[k] || 0) + 1 } return ks },
+    mockEnd: function (result) { if (!ended) ended = { result: result || { winner: 'A', reason: 'core-down' } }; return true }, // QA 识图：结算帧渲染路径取证（真终局仍由 end 消息驱动）
     events: dbgEvents,
     state: function () { return { seat: mySeat, team: myTeam, room: ROOM, ents: Object.keys(ents).length, ended: ended } },
     ext: function () { return ext },
