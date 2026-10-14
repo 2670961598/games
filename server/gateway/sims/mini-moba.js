@@ -54,6 +54,7 @@ const GCD = 2                  // 公共 CD 150ms→2 tick
 const ATKR = 2                 // 追击/交战记忆：敌英雄打我方英雄 → 塔/兵转火 3s
 
 const TEAM_OF = (seat) => seat % 2 === 0 ? 'A' : 'B'
+
 const ENEMY = { A: 'B', B: 'A' }
 
 /* 地图（§2.1：全图 180° 点对称，全固定不耗 seed） */
@@ -1069,6 +1070,16 @@ const RETREAT_HP = { casual: 0.25, balanced: 0.34, competitive: 0.34 }
 const COMBO = { // 英雄连招表（§4.1：competitive P1 序列）
   guard: ['s1', 'a', 'a'], ranger: ['s1', 'a', 'a', 's0'], mage: ['s0', 's1', 'a'], shadow: ['s0', 's1', 'a', 's2'],
 }
+function underSiege(st, team) { // 己方建筑 350px 内有敌方兵线（围攻态）：击杀窗不换线推塔，留守清防
+  for (const b of Object.values(st.ents)) {
+    if ((b.k !== 'tw' && b.k !== 'core') || b.team !== team || b.hp <= 0) continue
+    for (const o of Object.values(st.ents)) {
+      if (o.k !== 'creep' || o.team === team || o.hp <= 0) continue
+      if (dist2(o.x, o.y, b.x, b.y) < PX(350) ** 2) return true
+    }
+  }
+  return false
+}
 function brain(st, seat, level, rng, env) {
   const h = st.ents['h' + seat]
   const s = st.sessions[seat]
@@ -1107,6 +1118,7 @@ function brain(st, seat, level, rng, env) {
   if (mem.dt <= 0) {
     mem.dt = BOT_EVERY[level] || 6
     mem.cmd = null
+    mem.win = 0
     const foe = nearFoe(PX(420))
     const enemyT1 = st.ents[`tw-${ENEMY[h.team]}1`], enemyT2 = st.ents[`tw-${ENEMY[h.team]}2`], enemyCore = st.ents[`core-${ENEMY[h.team]}`]
     const pushTarget = enemyT1 && !enemyT1.hp <= 0 ? enemyT1 : enemyT2 || enemyCore // 推塔序
@@ -1116,6 +1128,16 @@ function brain(st, seat, level, rng, env) {
     if (hpPct < RETREAT_HP[level]) {
       mem.mode = 'retreat'; mem.tg = null
       if (level === 'competitive' && h.hero === 'ranger' && h.cd[0] <= 0) mem.cmd = { k: 'skill', idx: 0 } // wind 逃生
+    }
+    // P0.5 击杀窗推塔（GAMES-129 O2：敌队有阵亡=复活缺席窗 7-23s，推塔优先级提升——
+    // 压制 P1/P2/P6/P7（连招/游走抢占致 competitive 战损 7:1 而存塔 0:1 超时倒挂，
+    // QA1 §5））。窗口判据=目标体（敌塔序首活）350px 内无敌方存活英雄（同 lane 推塔
+    // towerOpen 半径）：敌人围着我不放行（战斗栈继续），敌人缺席/回撤即放行——复用
+    // lane 模式随波推塔（贴兵线/塔射程外待兵/复活即让位））
+    else if (level === 'competitive' && st.tick > 600 && foes.length < 3 && pushTarget &&
+             !foes.some((f) => dist2(f.x, f.y, pushTarget.x, pushTarget.y) < PX(350) ** 2) &&
+             !underSiege(st, h.team)) {
+      mem.mode = 'lane'; mem.tg = null; mem.atk = null; mem.win = 1
     }
     // P1 连招（competitive；目标仲裁=HP 最低英雄就近者优先——有效 HP×威胁分化位 §4.1）
     else if (level === 'competitive' && hpPct > 0.45) {
@@ -1151,16 +1173,19 @@ function brain(st, seat, level, rng, env) {
           if (hpPct > foeH + 0.15 || (level === 'competitive' && hpPct > foeH)) { mem.mode = 'harass'; mem.tg = foe.id }
         }
       }
-      // P6 资源（balanced+：空闲且 400px 内营地已刷）
+      // P6 资源（balanced+：空闲且附近营地已刷；competitive 收窄 400→260px——顺路才刷，
+      // 离线打野=兵线失护（GAMES-129 O2））
       if (mem.mode === '_' && level !== 'casual' && !foe) {
-        const mon = Object.values(st.ents).find((e) => e.k === 'mon' && e.camp !== 'shrine' && dist2(h.x, h.y, e.x, e.y) < PX(400) ** 2)
+        const campR = level === 'competitive' ? PX(260) : PX(400)
+        const mon = Object.values(st.ents).find((e) => e.k === 'mon' && e.camp !== 'shrine' && dist2(h.x, h.y, e.x, e.y) < campR ** 2)
         if (mon) { mem.mode = 'camp'; mem.tg = mon.id }
       }
-      // P7 游走（competitive：圣所 30s 内刷或队友交战）
+      // P7 游走（competitive）：圣所已刷才游走（GAMES-129 O2——旧"30s 内将刷"预判
+      // 令 3 人空站中场等刷=兵线失护被打空（QA1 实测 mineY=none 过半采样），游走
+      // 只在可立即收割时触发：mshrine 在场 → 走位贴打；队友交战支援保留）
       if (mem.mode === '_' && level === 'competitive') {
-        const soon = st.shrine.nextAt > 0 && st.shrine.nextAt - st.tick < 300
         const mateFight = mates.some((m) => foes.some((f) => dist2(m.x, m.y, f.x, f.y) < PX(300) ** 2))
-        if ((soon || mateFight) && !st.ents['mshrine']) { mem.mode = 'roam' }
+        if (st.ents['mshrine'] || mateFight) { mem.mode = 'roam' }
       }
       // P8 回城补给
       if (mem.mode === '_') {
@@ -1183,6 +1208,8 @@ function brain(st, seat, level, rng, env) {
     else if (inFount(st, tg, ENEMY[h.team])) { mem.dt = 0; mem.mode = 'lane' } // 不追进敌泉水（§2.1 防蹲泉）
     else {
       const d = Math.hypot(tg.x - h.x, tg.y - h.y)
+      if (level === 'competitive' && d > PX(860)) { mem.dt = 0; mem.mode = 'lane' } // GAMES-129 O2：深追逃敌越塔=塔伤+回撤节奏黑洞（QA1 y=439 实证），弃追归线（balanced harass 不动）
+      else {
       const want = myRange - PX(10)
       if (d > want) steer(tg.x, tg.y, want)
       else if (d < myRange * 0.5 && myRange > PX(80)) steer(h.x - (tg.x - h.x), h.y - (tg.y - h.y), 0) // 游侠拉距
@@ -1198,6 +1225,7 @@ function brain(st, seat, level, rng, env) {
         const rdy = [0, 1, 2].filter((i) => h.cd[i] <= 0 && (!SKILLS[h.hero][i].ult || h.lv >= SKILLS[h.hero][i].ult))
         if (rdy.length && dist2(h.x, h.y, tg.x, tg.y) < (SKILLS[h.hero][rdy[0]].range || myRange) ** 2 + CHASE_PAD ** 2) out.cmd = { k: 'skill', idx: rdy[0], entId: rdy[0] === 0 && h.hero === 'ranger' ? undefined : tg.id }
         else out.cmd = { k: 'atk', entId: tg.id }
+      }
       }
     }
   } else if (mem.mode === 'camp') {
@@ -1238,7 +1266,11 @@ function brain(st, seat, level, rng, env) {
     /* 击杀窗判定（§1.1 复活缺席窗=推塔决策窗）：目标塔 500px 内无敌方存活英雄
      * （被击退/击杀/回城中）→ 裸推塔成立（兵抗塔 OR 守方缺席二选一即可贴塔） */
     const towerOpen = tgT && !foes.some((f) => dist2(f.x, f.y, tgT.x, tgT.y) < PX(350) ** 2)
-    if (tgT && pastMid && st.tick > 600 && (waveAtTower || towerOpen)) {
+    /* GAMES-129 O2：击杀窗（mem.win）内只随兵贴塔（兵抗塔）——裸贴返场守军=塔下
+     * 折损（对 casual 实测 kills 7:1→2:3）；窗内守方缺席本就常态，waveAtTower
+     * 即可成立，非窗保持原 pastMid&&(waveAtTower||towerOpen) 口径 */
+    const siegeOk = mem.win ? pastMid && waveAtTower : pastMid && (waveAtTower || towerOpen)
+    if (tgT && st.tick > 600 && siegeOk) {
       // 推塔窗（§2.8b）：贴兵线推进——兵进塔射程（兵抗塔）贴身打塔
       const dT = Math.hypot(tgT.x - h.x, tgT.y - h.y)
       if (dT <= myRange - PX(10)) out.cmd = { k: 'atk', entId: tgT.id }
@@ -1278,6 +1310,30 @@ function grassHidden(cx, cy, e, known) {
   }
   return false
 }
+/* 实体线上视图（GAMES-129 O1）：快照只投影客户端消费字段——dmgLog/hitBy/lastHit/
+ * lastBy/hx/hy 等服务端簿记（伤害账本/营地记忆）不入线，falsy 瞬态（cd 全 0/buffs
+ * 空/cc 无/sh 0）省略（客户端 r.ent 整体替换语义下缺字段=falsy 默认，client.js 读取
+ * 均已守卫）。实测常态 13.4→6.2KB/s、1s 滑窗峰值 35.4→16.7KB/s（<25 §5.6 预算）。 */
+function entView(e) {
+  const v = { id: e.id, k: e.k, team: e.team, x: e.x, y: e.y, hp: e.hp, maxhp: e.maxhp }
+  if (e.k === 'hero') {
+    v.hero = e.hero; v.lv = e.lv; v.dir = e.dir
+    if (e.cd && (e.cd[0] > 0 || e.cd[1] > 0 || e.cd[2] > 0)) v.cd = e.cd
+    if (e.dead) { v.dead = 1; v.respAt = e.respAt }
+    if (e.cc) v.cc = e.cc
+    if (e.buffs && e.buffs.length) v.buffs = e.buffs
+    if (e.sh > 0) v.sh = e.sh
+  } else if (e.k === 'tw') {
+    v.tier = e.tier; if (e.inv) v.inv = e.inv
+  } else if (e.k === 'core') {
+    if (e.inv) v.inv = e.inv
+  } else if (e.k === 'creep') {
+    if (e.rng) v.rng = e.rng
+  } else if (e.k === 'mon') {
+    v.camp = e.camp
+  }
+  return v
+}
 function emitOne(room, ctxRec, r, opt = {}) {
   const st = room.state
   const b = connBook(ctxRec.ctx)
@@ -1315,11 +1371,11 @@ function emitOne(room, ctxRec, r, opt = {}) {
   if (own && keep.has(own.id)) sendIds.add(own.id)
   let full = opt.force || b.force || b.sinceFull >= FULL_EVERY || sendIds.size > FULL_DIRTY
   b.force = false
-  if (own && keep.has(own.id)) entsArr.push(own)
+  if (own && keep.has(own.id)) entsArr.push(entView(own))
   if (full) {
-    for (const c of cand) if (c.e !== own && keep.has(c.e.id)) entsArr.push(c.e)
+    for (const c of cand) if (c.e !== own && keep.has(c.e.id)) entsArr.push(entView(c.e))
   } else {
-    for (const id of sendIds) if ((!own || id !== own.id) && st.ents[id]) entsArr.push(st.ents[id])
+    for (const id of sendIds) if ((!own || id !== own.id) && st.ents[id]) entsArr.push(entView(st.ents[id]))
   }
   const seat = ctxRec.seat
   const sess = seat >= 0 ? st.sessions[seat] : null
