@@ -46,13 +46,19 @@
 - 本单四剧本自测：net 12 断言 + spec 7 断言全绿（首跑 2 红均为剧本口径缺陷已修：①D2a liveness 采样晚于超时裁定终局→改「tick 高于断点或 phase=ended」；②第 8 人 welcome 口径=role:'spectator'+seat 省略，非 seat:-1）。
 - **冻结验收命令 `node scripts/api-check.js mini-moba` 首跑 21/1 红**：A3「能输：剧本败方终态达成（timeout）」——当日 seed 20261014 下 winner=A（期望 B）scores 2:6/5:1，剧本败方队反超致超时裁定翻转。复跑结果见 §5.1。api-check 用日期 seed（seed=20261014），GAMES-130/131 当日（20261013 前）跑 22/22——高度疑似**日期 seed 相关的 A3 剧本脆弱性**（casual 档 bot 战力翻转），非本单改动引入（本单单测剧本纯增量，零游戏/网关代码改动）。
 - §5.1 复跑：**同红逐字节复现**（A3 winner=A scores 2:6/5:1 tick=7200 timeout 90734ms，报告 api-check-mini-moba-20261014043414.json）——日期 seed 确定性翻红，非抖动。A3 为单 seed 严格逐局断言（api-check.js:1282 lose 分支），seed 日期派生（20261013 当日绿/20261014 当日红）；本单分支零游戏/网关代码改动（diff 纯剧本+文档），红在 main@48b3873 同样可复现。冻结命令涉面不可自修，上报 PM 裁量（O4）。
+- §5.2 **attempt 1 修复（GATE-FAIL 退回重做后）**：
+  - **attempt 0 定性纠错**：seed 非「日期派生」——game.json `net.api.script.seed` 是 GAMES-127 建单时写死的字面量 `20261014`（git -L 追溯仅此一改），「明日自愈」预期不成立；红与跑测日期无关。
+  - **根因（剧本组合与断言意图相悖）**：lose 剧本 `botLevels=[null, competitive×5]` 给挂机方配了 2 名 competitive 队友（席位 2/4 属 A 队）——「能输」实测成了「能被队友躺赢」：A 侧 2 bot 推塔占优（超时裁定第一序=己方水晶 HP%，推塔方胜），对位 3×competitive 只杀人不推塔（kills 6:1 仍输裁定）。私口 :4416 探针 5 组组合矩阵：凡挂机方有队友（2×comp/2×casual 配对位 3×comp 或 3×casual）→ 恒 A 胜（3/3 组合）；独席（无队友）→ 恒 B 胜（对位 3×comp 与 3×casual 各 1 组，各 3 跑逐字节一致：塔 2:0、零 core-down、B 靠超时裁定存塔分胜）。
+  - **修复**（任务书纪律「可修单文件级」授权内）：`lose.botLevels` 改独席 `[null, competitive, null, competitive, null, competitive]`——与 net-tank（挂机方队友降档）/snake-king（独席对全场）的 lose 剧本房式一致，断言强度不降（同 seed、同单局严格胜负断言、expectWinner=B 不变）；assertions 文案与设计书 §6 镜像同步（含 idle 剧本叙事按 QA2 实测重写）。净改动 3 文件（game.json 2 行+设计书 3 处+本报告），零 sim/brain/网关/客户端代码。
+  - **验证**：冻结命令两跑 **22/22 全绿 exit=0**（api-check-mini-moba-20261014051944/20261014052447.json）；bot2-check 9/9（零漂移——net.api.script 仅 api-check 消费，grep 证）。
 
 ## §6 观察项清单
 
 | 编号 | 级别 | 项 | 处置 |
 |---|---|---|---|
 | O3 | 低 | 观战模式渲染玩家操作钮（导演 UI 未做，DEV 已披露） | 转 FIX2（导演镜头一并） |
-| O4 | 中 | api-check A3 日期 seed 脆弱性（20261014 翻红，见 §5） | 上报 PM 裁量（冻结命令涉面不可自修）；候选修法=A3 剧本固定 seed 或败方终态判据改绝对分差 |
+| O4 | 中 | api-check A3 剧本组合缺陷（attempt 0 误定性为「日期 seed 脆弱性」，实为挂机方带 competitive 队友致「能输」反向被躺赢，见 §5.2） | **attempt 1 已修复**（lose 剧本改独席，冻结命令 22/22 双跑绿） |
+| O5 | 中 | bot 推塔节奏：competitive 12 分钟对空场仅 2 塔、零 core-down，全部剧本局以超时裁定收局（设计 §6 预期 core-down tick 2400-5400 已放缓；且凡双方都有 bot 时 A 队（偶数席）结构性占优——5 组合探针 3 组队友在场全 A 胜） | 转 FIX2 候选（bot 击杀窗推塔权重/阵营均衡；涉 brain 调参与 bot2-check 逐字节基线重锚，非单文件级） |
 
 ## §7 环境事故披露
 
