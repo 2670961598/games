@@ -90,8 +90,15 @@ const POLICIES = {
       const dx = x - me.x, dy = y - me.y, d = Math.hypot(dx, dy) || 1
       return { mx: Math.round(dx / d * 100), my: Math.round(dy / d * 100) }
     }
+    const OG = team === 0 ? { x: 175 * K, y: 500 * K } : { x: 175 * K, y: 0 }
     const distG = dist(B.x, B.y, G.x, G.y)
     if (B.owner === seat) {
+      /* 门前拿球即解围（GAMES-138 attempt2 修复：原句写在下文防守段 owner!==seat 才可达处=死代码。
+         败因链=防守 goal-side 卡位驱动球员朝自家门跑→途中触散球即持球→120ms 轮询盲窗（19 tick
+         ≈950 游戏ms）内 LEASH 触球推仍朝自家门 dribble 越线——attempt1 交付次日复跑 3 连红皆
+         seat0 自摆乌龙×2 送 B 到 goal-cap；移到持球分支首位，并附朝前场移动向量：pass 无路径
+         fallback=朝向解围大脚 v5200，面朝自家门会把「解围」踢进自家网） */
+      if (dist(B.x, B.y, OG.x, OG.y) < 150 * K) return { mx: 0, my: team === 0 ? -100 : 100, cmd: { k: 'pass' } }
       let foe = null, bd = 20000 // 贴身判定 20px（25px 时蜂群贴脸即丢球权，传球窗过敏）
       for (const p of state.players) {
         if (!p || (p.seat & 1) === team) continue
@@ -106,11 +113,10 @@ const POLICIES = {
       return toward(G.x, G.y)
     }
     if (B.owner >= 0 && (B.owner & 1) !== team && dist(me.x, me.y, B.x, B.y) < 22000) return { mx: 0, my: 0, cmd: { k: 'tackle' } }
-    /* 防守第三段：卡球-己门连线 goal-side（不追进自家门口=乌龙/折射防护）；近门解围 */
-    const OG = team === 0 ? { x: 175 * K, y: 500 * K } : { x: 175 * K, y: 0 }
+    /* 防守第三段：卡球-己门连线 goal-side（不追进自家门口=乌龙/折射防护）；近门解围——
+       「拿球即解围」已上移持球分支首位（原句在此永不可达：owner===seat 已于上方短路） */
     const dOwn = Math.hypot(B.x - OG.x, B.y - OG.y)
     if (dOwn < 150 * K) {
-      if (B.owner === seat && distG > 200 * K) return { mx: 0, my: 0, cmd: { k: 'pass' } } // 门前拿球即解围（朝向=移动方向已指离门）
       const gx = B.x + (OG.x - B.x) * 0.25, gy = B.y + (OG.y - B.y) * 0.25
       return toward(gx, gy)
     }
@@ -973,10 +979,13 @@ const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech =
  * 吃速 1 节/s 达标但净长势全被死亡重置吃掉（score 222 而 n 峰 50，goal 双条件卡 n≥100）。
  * 15ms+密度回避实测：381 tick goal、0 死、10s 墙钟；tick 推进仅拖慢 ~2.4%（budgetMs
  * 有 +25s 缓冲）。60→15 不是越快越好——同 tick 重复注入约半数（幂等无害），再快只耗网关 */
-const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
+const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 : meta.net.tech === 'S3+S4' ? 30 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
 /* S7 同理 15ms（GAMES-109）：tick 墙钟=50ms/timeScale8=6.25ms，轮询一拍=输入冻结窗——
  * 120ms 时窗长 ~19 tick，转向指令陈旧 100ms+ 贴弯必跑宽；15ms≈2.4 tick 接近 bot 的
- * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。*/
+ * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。
+ * S3+S4=30ms（GAMES-138 attempt2）：同 tick 墙钟 6.25ms，缺省 120ms=输入冻结 19 tick——
+ * HTTP 帧取代理对 bot 每 tick 决策的采样劣势被放大（持球盲 dribble 朝向不可纠正是 A2
+ * 乌龙主源之一，另见 strike-rush 门前解围修复）；30ms≈5 tick，同族口径。*/
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
