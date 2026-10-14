@@ -213,7 +213,7 @@ const laneKBs = bps(snaps, 100, 700)
 let peakKBs = 0
 for (let i = 0; i + 10 <= snaps.length; i += 5) peakKBs = Math.max(peakKBs, bps(snaps, i, i + 10))
 const avgKBs = run.conn0.bytes / (run.ticks / 10) / 1024
-ok('S2-6', '常态带宽 10-16KB/s（§5.6 预算带内）', laneKBs >= 8 && laneKBs <= 18, `对线段实测 ${laneKBs.toFixed(1)}KB/s`)
+ok('S2-6', '常态带宽 4-16KB/s（§5.6 预算带内；GAMES-129 实体视图瘦身后下界 8→4 重校——带宽只设上界意图，瘦=更好）', laneKBs >= 4 && laneKBs <= 18, `对线段实测 ${laneKBs.toFixed(1)}KB/s`)
 ok('S2-6', '峰值带宽 <25KB/s（团战兜底）', peakKBs < 25, `1s 滑窗峰值 ${peakKBs.toFixed(1)}KB/s（全程均值 ${avgKBs.toFixed(1)}KB/s）`)
 
 /* ---------- S2-7 观战席（seat=-1 导演镜头） ---------- */
