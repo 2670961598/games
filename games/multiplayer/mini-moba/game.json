@@ -60,5 +60,6 @@
         }
       }
     }
-  }
+  },
+  "bot": { "mercy": { "minFoeLose": 2, "hardFoeLose": 4 } }
 }

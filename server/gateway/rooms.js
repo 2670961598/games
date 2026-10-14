@@ -426,6 +426,15 @@ export class RoomManager {
         if (pos <= room.sim.META.pulsePos) { rec.win++; rec.lose = 0 } else { rec.lose++; rec.win = 0 }
         this.pulse.set(s.conn, rec)
       }
+    } else if (room.sim.META.pulseTeam && result && (result.winner === 'A' || result.winner === 'B')) {
+      // GAMES-130 团队作 pulse（MOBA 放水链信号源）：真人所在队胜=断连败，负=连败++
+      // （队属判定由 sim META.pulseTeam(seat,winner) 声明；1v1/pulsePos 之外的口径）
+      for (const s of room.seats) {
+        if (s.kind !== 'human' || !s.conn) continue
+        const rec = this.pulse.get(s.conn) || { lose: 0, win: 0 }
+        if (room.sim.META.pulseTeam(s.seat, result.winner)) { rec.win++; rec.lose = 0 } else { rec.lose++; rec.win = 0 }
+        this.pulse.set(s.conn, rec)
+      }
     }
     if (this.onEnded) { try { this.onEnded(room, result) } catch { /* 钩子异常不拖垮房间 */ } }
   }
