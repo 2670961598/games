@@ -1123,16 +1123,16 @@
       }
     },
     "multiplayer:mini-moba": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 1,
-      "notes": "E6-W2-T2 状态同步轨第二款 DEV 交付（GAMES-127）：S2 战场节奏×小镇管线（10Hz 二式快照+AOI 即战争迷雾+草丛加层+ext.ack 预测和解）+战斗事件 ruling 化（死亡/击杀/推塔/圣所/终局 tick 末原子裁决账本）+Bot 优先级行为栈 P0-P8 三档。待 QA1/FIX 链。",
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 10,
+      "notes": "E6-W2-T2 状态同步轨第二款收官（单链 10/10 完整、无跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→FIX2→VIS→STRESS——平台第 10 条完整单链=E6 双位数里程碑+W2 波第二款收官）。STRESS 三组 PASS+无泄漏四件套（6 间 MOBA 3v3 测试房 8min ts2 实体量重载 churn/满编 3v3+第 7 人观战 spot/十游戏同网关混编全家福 E6 全在场+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/mini-moba-stress.md）。单链要目：DEV S2 状态同步第二款（10Hz 二式快照+AOI 即战争迷雾+草丛加层+ext.ack 预测和解+ruling 化战斗事件账本）；QA1 剧本口径三坑（lose 剧本 comp 队友「能输」成「被躺赢」/seed=建单字面量/裁定序水晶HP%→塔→击杀）；FIX1 entView 白名单先 grep 消费者+O2 半修；BOT 放水观测面塔杀污染（真人站中线安全位+kill 归因「被英雄杀」）；FEEL fx 时戳 Date.now/rAF 混用存量死码（飘字从未可见）；QA2 延迟/重连/满员预算版（tick=100ms 延迟锚 ms 级）；FIX2 O5 core-down 终局判定死码（rulingPass 同拍删实体×phase 按存在性查 hp 永不命中）+席位对称两候选实验留档回退；VIS HF 非法 CSS font 简写（'13px 700px' canvas 静默忽略=登记表只记调用值不记生效值）+观战导演 UI。实录=知识库草稿《迷你MOBA开发实录》",
       "net": {
         "tech": "S2",
-        "bot": "三档 MOBA Bot（casual 站线兵：P0/P3'/P4/P8 无技能/balanced 补刀师傅：+P3 窗口+P5 换血+P6 营地/competitive 指挥官：全栈+连招序列+抱团集火+圣所游走）；断线托管=balanced（MOBA 挂机=送塔送赏金，设计附决策 7）",
-        "chain": "GAMES-126 设计书/GAMES-127 DEV"
+        "bot": "三档 MOBA Bot（casual 站线兵：P0/P3'/P4/P8 无技能/balanced 补刀师傅：+P3 窗口+P5 换血+P6 营地/competitive 指挥官：全栈+连招序列+抱团集火+圣所游走）+终局收尾窗（closer：towerOpen 泉中回城/挂机席不计守备+core 远程停位防白嫖位死区）；断线托管=balanced（MOBA 挂机=送塔送赏金，设计附决策 7）",
+        "chain": "GAMES-126 设计书/GAMES-127 DEV/GAMES-128 QA1/GAMES-129 FIX1/GAMES-130 BOT/GAMES-131 FEEL/GAMES-132 QA2/GAMES-133 FIX2/GAMES-135 VIS/GAMES-136 STRESS（GAMES-134 为别单占用非本链）"
       }
     }
   }
