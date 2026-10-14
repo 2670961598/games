@@ -1,3 +1,12 @@
+import { readFileSync } from 'node:fs'
+
+/* 陪玩放水配置（GAMES-130，element GAMES-91/snake GAMES-102/tactics GAMES-121 同式）：
+ * 阈值入 game.json bot.mercy 可调；适配器出口包装注入 env.mercy（离线直调无 env 时
+ * brain 缺省兜底）。档位：L1 让力（免猎+换血阈值上调+不放连招）/ L2 重败（行为栈
+ * 降档+目标评估噪声）——§4.3 让力模式 v1 预留参数本单启用。 */
+const GAME_CFG = JSON.parse(readFileSync(new URL('../../../games/multiplayer/mini-moba/game.json', import.meta.url), 'utf8'))
+const MERCY_CFG = (GAME_CFG.bot && GAME_CFG.bot.mercy) || { minFoeLose: 2, hardFoeLose: 4 }
+
 /* =====================================================================
  * 迷你MOBA mini-moba 服务端 sim（GAMES-127 · E6/W2/T2）——S2 状态同步第二款
  * （战场节奏 × 小镇同步管线：10Hz 二式快照 + AOI 即战争迷雾 + 草丛加层 +
@@ -1086,6 +1095,22 @@ function brain(st, seat, level, rng, env) {
   if (!h || !s) return { mx: 0, my: 0 }
   const out = { mx: 0, my: 0 }
   if (h.dead) { s.mem.dt = 0; return out }
+  /* 放水链（GAMES-130，§4.3 让力模式启用）：敌队真人连败（rooms.js pulse→foeLose，
+   * 团队作信号源=META.pulseTeam 按队记）→ L1 让力 / L2 重败降档。bot 对 bot 全力
+   * （kinds 无 human 即零放水）——梯度剧本/冻结门禁零扰动；噪声只耗本席 rng 流
+   * （同 seed 同 env 同路径，确定性口径 §6 不破）。 */
+  const mercy = (env && env.mercy) || MERCY_CFG
+  const isHuman = env && env.kinds ? (x) => env.kinds[x] === 'human' : () => false
+  let mercyDeg = 0
+  if (env && env.foeLose) {
+    for (const e of Object.values(st.ents)) {
+      if (e.k !== 'hero' || e.dead || e.team === h.team || !isHuman(e.seat)) continue
+      const L = env.foeLose[e.seat] || 0
+      if (L >= mercy.hardFoeLose) mercyDeg = 2
+      else if (L >= mercy.minFoeLose && mercyDeg < 1) mercyDeg = 1
+    }
+  }
+  if (mercyDeg >= 2 && level !== 'casual') level = level === 'competitive' ? 'balanced' : 'casual' // L2 行为栈降档（让力可观测：决策间隔/撤退阈值/栈开放度随档）
   const mem = s.mem
   const my = h.team === 'A' ? -1 : 1 // 行进方向（A 向上）
   const fount = MAP.fountains[h.team]
@@ -1108,7 +1133,22 @@ function brain(st, seat, level, rng, env) {
   const nearFoe = (r) => {
     const inR = foes.filter((f) => dist2(h.x, h.y, f.x, f.y) < r * r)
     if (!inR.length) return null
-    return inR.sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0] // P2 目标仲裁：最低 HP（§4.1）
+    return inR.sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0] // P2 目标仲裁：最低 HP（§4.1；balanced/casual 路径，字节不动）
+  }
+  /* 目标评估（GAMES-130 深化，落设计 §4.1 competitive 分化位）：有效 HP（HP%÷(1+
+   * 近期受击×0.12)——30s 内挨打≈状态差）×威胁（等级高=carry 优先）加权取最小；
+   * L2 放水评估噪声 rng 扰动（让力观感=选目标失准）。免猎：L1 连败真人不作主动目标。 */
+  const pickFoe = (list) => {
+    let best = null, bestS = Infinity
+    for (const f of list) {
+      if (mercyDeg >= 1 && isHuman(f.seat)) continue
+      let hurt = 0
+      if (f.dmgLog) for (const d of f.dmgLog) if (d.t >= st.tick - 300) hurt++
+      let sc = (f.hp / f.maxhp) / (1 + hurt * 0.12) * (1 - 0.04 * (f.lv - 1))
+      if (mercyDeg >= 2) sc += (rng() - 0.5) * 0.3
+      if (sc < bestS) { bestS = sc; best = f }
+    }
+    return best
   }
   const myRange = heroStats(seat, s).range
   const hpPct = h.hp / h.maxhp
@@ -1139,46 +1179,55 @@ function brain(st, seat, level, rng, env) {
              !underSiege(st, h.team)) {
       mem.mode = 'lane'; mem.tg = null; mem.atk = null; mem.win = 1
     }
-    // P1 连招（competitive；目标仲裁=HP 最低英雄就近者优先——有效 HP×威胁分化位 §4.1）
+    // P1 连招（competitive；目标评估=有效 HP×威胁加权 pickFoe，GAMES-130 深化落 §4.1；
+    // L1 让力不放连招（§4.3）——同目标降级 harass 单技+普攻）
     else if (level === 'competitive' && hpPct > 0.45) {
       const inR = foes.filter((f) => dist2(h.x, h.y, f.x, f.y) < (myRange + PX(180)) ** 2)
-      const pick = inR.sort((a, b) => a.hp / a.maxhp - b.hp / b.maxhp)[0]
-      if (pick) { mem.mode = 'combo'; mem.tg = pick.id; mem.step = 0 }
+      const pick = pickFoe(inR)
+      if (pick) { mem.mode = mercyDeg >= 1 ? 'harass' : 'combo'; mem.tg = pick.id; mem.step = 0 }
       else mem.mode = '_'
     }
     // P2 集火（团战态：300px 内 ≥3 英雄）
     else if (level === 'competitive') {
       /* P2 集火：团战态（300px 内 ≥3 英雄）或集火 ping 或队友 600px 内交战（3 人抱团
-       * 快于 2 人——competitive 的团队滚动窗，§4.2 游走预判） */
+       * 快于 2 人——competitive 的团队滚动窗，§4.2 游走预判）；仲裁目标=pickFoe
+       * （GAMES-130：集火目标同 P1 评估口径，非纯最低 HP） */
       const crowd = [...foes, ...mates].filter((e) => dist2(h.x, h.y, e.x, e.y) < PX(300) ** 2).length
       const ping = st.pings.find((p) => p.mark === 'focus' && p.at >= st.tick - 50 && s.team === TEAM_OF(p.seat))
       const mateFight = mates.some((m) => foes.some((f) => dist2(m.x, m.y, f.x, f.y) < PX(600) ** 2))
-      if ((crowd >= 3 || ping || mateFight) && foe) { mem.mode = 'combo'; mem.tg = foe.id; mem.step = 0 }
+      const pick2 = pickFoe(foes.filter((f) => dist2(h.x, h.y, f.x, f.y) < PX(420) ** 2))
+      if ((crowd >= 3 || ping || mateFight) && pick2) { mem.mode = mercyDeg >= 1 ? 'harass' : 'combo'; mem.tg = pick2.id; mem.step = 0 }
       else mem.mode = '_'
     } else mem.mode = '_'
 
     if (mem.mode === '_') {
-      // P3/P3' 补刀（casual=随手打兵；窗口系数 ×1.0/×0.9，§4.2）
+      // P3/P3' 补刀（casual=随手打兵；窗口系数 ×1.0/×0.9，§4.2；L2 放水噪声=补刀窗
+      // 抖动 0.85-1.15×ad——让力观感，rng 只在放水路径消耗=确定性保持）
       mem.atk = null
       const cs = creeps(ENEMY[h.team]).filter((c) => dist2(h.x, h.y, c.x, c.y) < (myRange + PX(60)) ** 2)
       if (cs.length) {
         const low = cs.reduce((a, b) => (a.hp < b.hp ? a : b))
-        const win = level === 'casual' ? true : level === 'balanced' ? low.hp <= ad : low.hp <= Math.ceil(ad * 0.9)
+        const win = level === 'casual' ? true : level === 'balanced'
+          ? (mercyDeg >= 2 ? low.hp <= Math.ceil(ad * (0.85 + rng() * 0.3)) : low.hp <= ad)
+          : low.hp <= Math.ceil(ad * 0.9)
         if (win) mem.atk = low.id
       }
-      // P5 换血（balanced+：HP 优 15% 或 competitive 更主动）
+      // P5 换血（balanced+：HP 优 15% 或 competitive 更主动；L1/L2 让力阈值上调 0.30，
+      // §4.3「换血时机阈值上调」——bot 对 bot 零放水时 balanced 字节不动）
       if (mem.mode === '_' || mem.mode === 'lane') {
         if (level !== 'casual' && foe && dist2(h.x, h.y, foe.x, foe.y) < myRange ** 2) {
           const foeH = foe.hp / foe.maxhp
-          if (hpPct > foeH + 0.15 || (level === 'competitive' && hpPct > foeH)) { mem.mode = 'harass'; mem.tg = foe.id }
+          const edge = mercyDeg >= 1 ? 0.30 : (level === 'competitive' ? 0 : 0.15)
+          if (hpPct > foeH + edge) { mem.mode = 'harass'; mem.tg = foe.id }
         }
       }
       // P6 资源（balanced+：空闲且附近营地已刷；competitive 收窄 400→260px——顺路才刷，
-      // 离线打野=兵线失护（GAMES-129 O2））
+      // 离线打野=兵线失护（GAMES-129 O2））。生态位让位（GAMES-130）：营地 320px 内有
+      // 同队真人 → 让资源（真人进房成长期，camp 让位=solo 线权）
       if (mem.mode === '_' && level !== 'casual' && !foe) {
         const campR = level === 'competitive' ? PX(260) : PX(400)
         const mon = Object.values(st.ents).find((e) => e.k === 'mon' && e.camp !== 'shrine' && dist2(h.x, h.y, e.x, e.y) < campR ** 2)
-        if (mon) { mem.mode = 'camp'; mem.tg = mon.id }
+        if (mon && !mates.some((m) => isHuman(m.seat) && dist2(m.x, m.y, mon.x, mon.y) < PX(320) ** 2)) { mem.mode = 'camp'; mem.tg = mon.id }
       }
       // P7 游走（competitive）：圣所已刷才游走（GAMES-129 O2——旧"30s 内将刷"预判
       // 令 3 人空站中场等刷=兵线失护被打空（QA1 实测 mineY=none 过半采样），游走
@@ -1208,7 +1257,8 @@ function brain(st, seat, level, rng, env) {
     else if (inFount(st, tg, ENEMY[h.team])) { mem.dt = 0; mem.mode = 'lane' } // 不追进敌泉水（§2.1 防蹲泉）
     else {
       const d = Math.hypot(tg.x - h.x, tg.y - h.y)
-      if (level === 'competitive' && d > PX(860)) { mem.dt = 0; mem.mode = 'lane' } // GAMES-129 O2：深追逃敌越塔=塔伤+回撤节奏黑洞（QA1 y=439 实证），弃追归线（balanced harass 不动）
+      if (level === 'competitive' && hpPct < RETREAT_HP[level]) { mem.dt = 0; mem.mode = 'retreat' } // GAMES-130 连招链打磨：血崩即时断（不等决策拍 4 tick=塔下挨打窗，P0 语义前移）
+      else if (level === 'competitive' && d > PX(860)) { mem.dt = 0; mem.mode = 'lane' } // GAMES-129 O2：深追逃敌越塔=塔伤+回撤节奏黑洞（QA1 y=439 实证），弃追归线（balanced harass 不动）
       else {
       const want = myRange - PX(10)
       if (d > want) steer(tg.x, tg.y, want)
@@ -1236,10 +1286,17 @@ function brain(st, seat, level, rng, env) {
       if (dist2(h.x, h.y, mon.x, mon.y) < (myRange + PX(10)) ** 2) out.cmd = { k: 'atk', entId: mon.id }
     }
   } else if (mem.mode === 'roam') {
-    steer(PX(500), PX(850), PX(60))
+    /* GAMES-130 游走支援深化：有交战队友 → 向其位置支援（旧=固定中场点，支援意图
+     * 落空——mates 序确定，首个交战者）；无交战 → 圣所位。 */
+    const aim = mates.find((m) => foes.some((f) => dist2(m.x, m.y, f.x, f.y) < PX(600) ** 2))
+    if (aim) steer(aim.x, aim.y, PX(160))
+    else steer(PX(500), PX(850), PX(60))
     const foe = nearFoe(myRange + PX(60))
-    if (foe) { out.cmd = { k: 'atk', entId: foe.id }; mem.mode = 'combo'; mem.tg = foe.id; mem.step = 0 }
-    else if (st.ents['mshrine'] && dist2(h.x, h.y, PX(500), PX(850)) < (myRange + PX(80)) ** 2) out.cmd = { k: 'atk', entId: 'mshrine' }
+    if (foe) { out.cmd = { k: 'atk', entId: foe.id }; mem.mode = mercyDeg >= 1 ? 'harass' : 'combo'; mem.tg = foe.id; mem.step = 0 } // L1 让力：游走接敌同样不放连招
+    /* 圣所让位（GAMES-130 生态位让位）：同队真人距圣所不比我远 → 不抢（bless 归
+     * 真人，bot 只清场不收 buff） */
+    else if (st.ents['mshrine'] && dist2(h.x, h.y, PX(500), PX(850)) < (myRange + PX(80)) ** 2 &&
+             !mates.some((m) => isHuman(m.seat) && dist2(m.x, m.y, PX(500), PX(850)) <= dist2(h.x, h.y, PX(500), PX(850)))) out.cmd = { k: 'atk', entId: 'mshrine' }
   } else if (mem.mode === 'home') {
     if (!mem.recSent && !inFount(st, h, h.team) && !h.rec) { out.cmd = { k: 'recall' }; mem.recSent = true }
     if (h.rec) { /* 引导中：站定 */ }
@@ -1440,9 +1497,18 @@ export const miniMobaSim = {
     seats: 6, tickMs: TICK_MS, cmdInput: true,
     roomPrefix: 'moba', // feed 字典序 element<empire<moba<mmo（§7 房间参数，无冲突）
     takeOver: 'balanced', // 断线托管=balanced（§4.3：MOBA 挂机=送塔送赏金）
+    /* GAMES-130 团队作 pulse（放水链信号源）：真人所在队胜=断连败/负=连败++——
+     * rooms.js finish 按 META.pulseTeam(seat,winner) 记账（1v1/pulsePos 之外的
+     * 团队作口径，speed-kart pulsePos=GAMES-112 先例） */
+    pulseTeam: (seat, winner) => TEAM_OF(seat) === winner,
   },
   LEVELS: ['casual', 'balanced', 'competitive'],
   url: '/games/multiplayer/mini-moba/index.html',
-  create, step, brain, emit, onSync,
+  create, step,
+  /* brain 出口包装（GAMES-130 放水链）：网关 botEnv（kinds/foeLose）+game.json
+   * bot.mercy 经 env 注入（tactics GAMES-121 同式）；无 env（离线直调/api-check
+   * sim 级剧本）→ 原样透传，brain 缺省兜底零放水 */
+  brain: (st, seat, level, rng, env) => brain(st, seat, level, rng, env ? Object.assign({}, env, { mercy: MERCY_CFG }) : env),
+  emit, onSync,
   fnv1a32, mulberry32,
 }
