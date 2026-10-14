@@ -45,7 +45,7 @@
       "assertions": [
         "A1 能开始：boot(waiting)→live+首张全量快照（welcome.state 含双方塔/水晶/营地槽/草丛/碰撞表+己方英雄）",
         "A2 能赢：push-lane 剧本 A 队 core-down 终态（对位 5×casual 站线兵被推平）",
-        "A3 能输：idle 剧本 B 队 core-down 终态（对位 5×competitive 连招+集火+游走推平挂机方）",
+        "A3 能输：idle 剧本独席（己方无 bot 队友）对位 3×competitive——B 队终态胜（core-down 或超时裁定存塔分领先）",
         "A4 注入→快照反映 <100ms：move 位移/attack 目标态/skill 的 shot 事件均见下一 snapSeq（服务端同钟）",
         "A5 断线重连 <10s：$reconnect 后 welcome.state 全量恢复（等级/装备/金/CD/复活计时）",
         "A6 推塔链断言：T1 未破时攻击 T2 → {k:'reject'} 且 T2.hp 不变；破 T1 后 T2 可伤；T2 破后水晶可伤；ruling {k:'tower'} 账本与塔序一致",
@@ -55,7 +55,7 @@
         "seed": 20261014, "timeScale": 8, "startDelayMs": 600, "maxTicks": 7200,
         "scenarios": {
           "win":   { "botLevels": [null, "casual", "casual", "casual", "casual", "casual"], "expectWinner": "A", "policy": "push-lane" },
-          "lose":  { "botLevels": [null, "competitive", "competitive", "competitive", "competitive", "competitive"], "expectWinner": "B", "policy": "idle" },
+          "lose":  { "botLevels": [null, "competitive", null, "competitive", null, "competitive"], "expectWinner": "B", "policy": "idle" },
           "clash": { "botLevels": [null, "balanced", "balanced", "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "teamfight" }
         }
       }

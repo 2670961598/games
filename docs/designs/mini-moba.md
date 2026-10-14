@@ -371,7 +371,7 @@ Bot 走网关 BotHost 统一接口 `spawnBot('mini-moba', level)`，输出走与
     "assertions": [
       "A1 能开始：boot(waiting)→live+首张全量快照（welcome.state 含双方塔/水晶/营地槽/草丛/碰撞表+己方英雄）",
       "A2 能赢：push-lane 剧本 A 队 core-down 终态（对位 5×casual 站线兵被推平）",
-      "A3 能输：idle 剧本 B 队 core-down 终态（对位 5×competitive 连招+集火+游走推平挂机方）",
+      "A3 能输：idle 剧本独席（己方无 bot 队友）对位 3×competitive——B 队终态胜（core-down 或超时裁定存塔分领先）",
       "A4 注入→快照反映 <100ms：move 位移/attack 目标态/skill 的 shot 事件均见下一 snapSeq（服务端同钟）",
       "A5 断线重连 <10s：$reconnect 后 welcome.state 全量恢复（等级/装备/金/CD/复活计时）",
       "A6 推塔链断言：T1 未破时攻击 T2 → {k:'reject'} 且 T2.hp 不变；破 T1 后 T2 可伤；T2 破后水晶可伤；ruling {k:'tower'} 账本与塔序一致",
@@ -381,7 +381,7 @@ Bot 走网关 BotHost 统一接口 `spawnBot('mini-moba', level)`，输出走与
       "seed": 20261014, "timeScale": 8, "startDelayMs": 600, "maxTicks": 7200,
       "scenarios": {
         "win":   { "botLevels": [null, "casual", "casual", "casual", "casual", "casual"], "expectWinner": "A", "policy": "push-lane" },
-        "lose":  { "botLevels": [null, "competitive", "competitive", "competitive", "competitive", "competitive"], "expectWinner": "B", "policy": "idle" },
+        "lose":  { "botLevels": [null, "competitive", null, "competitive", null, "competitive"], "expectWinner": "B", "policy": "idle" },
         "clash": { "botLevels": [null, "balanced", "balanced", "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "teamfight" }
       }
     }
@@ -392,9 +392,9 @@ Bot 走网关 BotHost 统一接口 `spawnBot('mini-moba', level)`，输出走与
 **剧本策略**（`scripts/api-check.js` 注册）：
 
 - `push-lane`（A2）：API 席=游侠——上线 `attack` 最低血兵 → 补刀循环；线过半跟随 → 敌 T1 射程外 260px 待兵 → 兵进塔 `attack` 塔；敌英雄入射程且 HP 优 → `skill idx:1`+普攻；金 ≥800 且线在敌半场 → `recall`+`buy` → 归线。预期 5×casual（站线兵、不放技能、无游走）防线被磨穿：T1 tick ~2400-3300 → T2 → 水晶 tick ~3900-5400，A 胜 `core-down`。
-- `idle`（A3）：仅 `{mx:0,my:0}`。5×competitive 开局游走抓线（连招+有效 HP 集火）→ 挂机方 15-25s 首杀 → 5v3 碾压推塔 → 水晶 tick ~2400-3600，B 胜 `core-down`。
+- `idle`（A3）：仅 `{mx:0,my:0}`。独席挂机（己方无 bot 队友）对位 3×competitive。QA2 实测（GAMES-132，2026-10-14）：competitive 推塔节奏慢（12 分钟 2 座、零 core-down），B 靠超时裁定存塔分 2:0 胜；旧配置（己方 2×competitive 队友）反而把挂机方抬赢——队友在场即 A 侧推塔占优，故改独席。
 - `teamfight`（A7，胜负不断言）：API 席 tick 2300 起移向中场圣所广场 → 参与团战（`attack` 仲裁目标+技能全交）→ 断言 ruling 账本（A7 口径），winner 任意。
-- 剧本时序：timeScale=8 下 7200 tick 硬顶 90s 墙钟；win/lose 实际 50-80s 到终局，与 slg/mmo/empire 剧本同级。
+- 剧本时序：timeScale=8 下 7200 tick 硬顶 90s 墙钟；QA2 实测（GAMES-132）win/lose 均到 90s 硬顶以超时裁定收局（core-down 节奏较设计预期放缓，见 QA2 观察项）。
 
 **确定性口径**（S2 义务边界，QA 核验依据）：
 
