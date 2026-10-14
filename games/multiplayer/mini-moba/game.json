@@ -28,64 +28,18 @@
     "api": {
       "spec": 1,
       "ops": {
-        "move": {
-          "ws": "input",
-          "keys": [
-            "mx",
-            "my"
-          ],
-          "desc": "移动向量 {mx,my}∈[-100,100] 整数，10Hz 持续上报（静止报 0,0）；input.frame 在 S2 语义=客户端输入序号 seq（预测和解 ack 锚点，mmo 先例）"
-        },
-        "attack": {
-          "ws": "input",
-          "keys": [
-            "cmd"
-          ],
-          "desc": "普攻：{k:'atk',entId?}——设定攻击目标（缺省=仲裁最优目标：射程内英雄优先）；持续攻击至目标死亡/超 240px；服务器逐 tick 校验射程"
-        },
-        "skill": {
-          "ws": "input",
-          "keys": [
-            "cmd"
-          ],
-          "desc": "技能：{k:'skill',idx:0|1|2,entId?,dir?}——idx2=大招（L6 解锁）；单位技带 entId、方向技带 dir{dx,dy}（缺省=摇杆方向或最近敌）；服务器校验 CD/射程/前摇，非法 {k:'reject'} 事件回流"
-        },
-        "recall": {
-          "ws": "input",
-          "keys": [
-            "cmd"
-          ],
-          "desc": "回城：{k:'recall'}——4s 引导（移动/受击打断）传送回泉水"
-        },
-        "buy": {
-          "ws": "input",
-          "keys": [
-            "cmd"
-          ],
-          "desc": "买装：{k:'buy',item?}——缺省=推荐路线下一件；仅泉水/死亡时可购，每件限 1"
-        }
+        "move":    { "ws": "input", "keys": ["mx","my"], "desc": "移动向量 {mx,my}∈[-100,100] 整数，10Hz 持续上报（静止报 0,0）；input.frame 在 S2 语义=客户端输入序号 seq（预测和解 ack 锚点，mmo 先例）" },
+        "attack":  { "ws": "input", "keys": ["cmd"], "desc": "普攻：{k:'atk',entId?}——设定攻击目标（缺省=仲裁最优目标：射程内英雄优先）；持续攻击至目标死亡/超 240px；服务器逐 tick 校验射程" },
+        "skill":   { "ws": "input", "keys": ["cmd"], "desc": "技能：{k:'skill',idx:0|1|2,entId?,dir?}——idx2=大招（L6 解锁）；单位技带 entId、方向技带 dir{dx,dy}（缺省=摇杆方向或最近敌）；服务器校验 CD/射程/前摇，非法 {k:'reject'} 事件回流" },
+        "recall":  { "ws": "input", "keys": ["cmd"], "desc": "回城：{k:'recall'}——4s 引导（移动/受击打断）传送回泉水" },
+        "buy":     { "ws": "input", "keys": ["cmd"], "desc": "买装：{k:'buy',item?}——缺省=推荐路线下一件；仅泉水/死亡时可购，每件限 1" }
       },
-      "ctlOps": [
-        "$disconnect",
-        "$reconnect",
-        "$sync"
-      ],
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
       "endState": {
         "phase": "ended",
         "result": "end 消息同形（协议 §4.2）",
         "winner": "'A'=偶数席队(0,2,4) ｜ 'B'=奇数席队(1,3,5) ｜ 'draw'",
-        "teams": {
-          "A": [
-            0,
-            2,
-            4
-          ],
-          "B": [
-            1,
-            3,
-            5
-          ]
-        },
+        "teams": { "A": [0, 2, 4], "B": [1, 3, 5] },
         "reason": "core-down（水晶告破） ｜ timeout（7200 tick 比水晶HP%→存塔分→击杀→draw） ｜ abandon"
       },
       "assertions": [
@@ -98,55 +52,14 @@
         "A7 团战账本断言：clash 剧本（圣所首刷 3v3 遭遇）产生 kill ruling ≥1，且每条 {victim,killer,assists,streak,bounty} 结构完整、bounty=150+30×streak 复算一致、victim 死亡态 respAt=5+2×lv 复算一致"
       ],
       "script": {
-        "seed": 20261014,
-        "timeScale": 8,
-        "startDelayMs": 600,
-        "maxTicks": 7200,
+        "seed": 20261014, "timeScale": 8, "startDelayMs": 600, "maxTicks": 7200,
         "scenarios": {
-          "win": {
-            "botLevels": [
-              null,
-              "casual",
-              "casual",
-              "casual",
-              "casual",
-              "casual"
-            ],
-            "expectWinner": "A",
-            "policy": "push-lane"
-          },
-          "lose": {
-            "botLevels": [
-              null,
-              "competitive",
-              "competitive",
-              "competitive",
-              "competitive",
-              "competitive"
-            ],
-            "expectWinner": "B",
-            "policy": "idle"
-          },
-          "clash": {
-            "botLevels": [
-              null,
-              "balanced",
-              "balanced",
-              "balanced",
-              "balanced",
-              "balanced"
-            ],
-            "expectWinner": "any",
-            "policy": "teamfight"
-          }
+          "win":   { "botLevels": [null, "casual", "casual", "casual", "casual", "casual"], "expectWinner": "A", "policy": "push-lane" },
+          "lose":  { "botLevels": [null, "competitive", "competitive", "competitive", "competitive", "competitive"], "expectWinner": "B", "policy": "idle" },
+          "clash": { "botLevels": [null, "balanced", "balanced", "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "teamfight" }
         }
       }
     }
   },
-  "bot": {
-    "mercy": {
-      "minFoeLose": 2,
-      "hardFoeLose": 4
-    }
-  }
+  "bot": { "mercy": { "minFoeLose": 2, "hardFoeLose": 4 } }
 }
