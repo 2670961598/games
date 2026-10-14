@@ -140,7 +140,7 @@ Bot 输入由服务端 Bot 宿主逐帧生成（`spawnBot(gameId, level)` 接口
 | 扩展 | 预留位 | 状态 |
 |---|---|---|
 | S2 状态同步 | 消息 `t:'snapshot'`（`{frame, base, ents:[…]}` 全量/增量二式）；`frame.ext.snapSeq` | **已实证**（mmo-township，GAMES-52） |
-| S3 混合 | `frame.ext.layer:'build'\|'battle'` 分层标记 | **已实证**（empire-sprout，GAMES-68） |
+| S3 混合 | `frame.ext.layer:'build'\|'battle'` 分层标记 | **已实证**（empire-sprout，GAMES-68）｜street-soccer（GAMES-138）：**单流双域型**——S3 行「混合同步」语义=同一对局两种同步域并存，承载形态由各作设计书冻结；本作球员域+球域合于同一 `snapshot` 流（实时体育无静默期），`ext.layer` 不需要（设计 §5.1 文档化） |
 | S4 物理权威 | `welcome.room.physics:{engine,hash}` 声明块；`snapshot.ext.physics` | **已实证**（pool-physics，GAMES-78；payload：`physics={engine:'pool-int-v1', hash:fnv1a32(TRIG16+ATAN8+常量表)}`；`snapshot.ext.physics={engine,hash,sub}`——球动期 10Hz，`balls:[[id,x,y,pot],…]` 全量/`[id,x,y]` 增量二式、`snapSeq` 每 300 张强制全量；静止期事件驱动零快照。hash 不符 → 客户端回退插值渲染模式（版本护栏）） |
 | S5 回合权威 | 消息 `t:'op'`（玩家操作上行）/ `t:'ruling'`（裁决下行）；`frame.ext.turn` | **上行 `t:'op'` 与下行 `t:'ruling'` 已实证**（pool-physics 复用承载，GAMES-78；`op{shot\|place\|concede}` 一次性指令经 sim 权威校验（非法 `{k:'reject'}` 事件回流）；`ruling={t,frame,turn,phase:'aim'\|'motion',timerMs,openTable,groups,ballInHand,shot?,events,state}`——`shot` 携带确定性重演全部输入（客户端本地 60fps 重演同款 sim，快照逐字节校验锚））；**S5 本格实证**（element-duel，GAMES-88：回合状态机 pick→mulligan→play 全事件化 ruling、每 op 附**全量个性化 state**（迷雾下发：己方牌面/对方张数/观战双隐藏，sim 可声明 `personalize(room,ctx,msg)` 钩子由 rooms 广播层逐连接换视图——目录首款按角色裁剪）、零快照纯事件驱动（无 snapshot 消息）、`welcome.room.duel={engine,hash}` 版本护栏、超时托管（casual 单回合/牌组风格持续/`op{host}` 主动托管）、断线重连 welcome 全量个性化恢复、回放器=重放 `{seed,picks,ops}` 输入日志==在线终态 stateHash——确定性红线首证）；**S1+S5 双技术复用首款**（tactics-duel，GAMES-118：S1 纪律底座+S5 壳合体——确定性引擎两端同跑，客户端 classic script 载**同源 sim.cjs**（UMD 双出口）做 0ms 本地预演（移动域 BFS/射程目标/伤害预演 `max(1,atk−def)` 同式复算），服务器逐 op 权威裁决为唯一事实；`welcome.room.duel={engine:'tactics-int-v1',hash}`（hash=fnv1a32(兵种表+四图+常量表)）；**个性化双面**：部署相位密置（对方布置不可见）+ 对手回合批量披露 turn-commit（对手整回合动作在其 endTurn 一次下发——悔棋 `op{undo}`=turnStart 快照整体回滚≤1次/回合，零信息泄漏）；AP 行动点激活态机（idle→moved→done，首触 idle 的 op 扣 1 AP）；托管三层（超时=casual 单回合代打/断线·主动=倾向继承 balanced：`faceBias=0.5+attackOpRatio`、`pointBias=0.5+pointwardRatio` 从输入日志复算/`op{host}` 主动开关）；回放器=重放 `{seed,deploys,ops}`==在线终态 stateHash——A6 双跑+回放三等首证）；`frame.ext.turn` 未用（回合态在 ruling 内） |
 | S6 海量实体 | `snapshot.ext.aoi:{x,y,r}` 兴趣域声明 | 预留 |
@@ -252,6 +252,7 @@ HOST=0.0.0.0 nohup node server/gateway/index.js > server/data/gateway.log 2>&1 &
 | 版本 | 日期 | 单据 | 变更 |
 |---|---|---|---|
 | （无版本变更） | 2026-10-12 | GAMES-118 | §6 S5 行回填 tactics-duel 实证（S1+S5 双技术复用首款：同源 sim 两端复算/部署密置+turn-commit 批量披露/undo 快照回滚/倾向继承托管；消息类型零新增——op/ruling/welcome.room.duel 均既有扩展位）。**纯口径披露，不触发版本号 +1** |
+| （无版本变更） | 2026-10-14 | GAMES-138 | §6 S3 行追加 street-soccer 实证注记（S3+S4 双技术复用第三款：单流双域——球员状态域+球物理域同一 snapshot 流、持球权 flag 服务器唯一裁决零预测、input 面新增持续键 sp 冲刺开关=§6 input 扩展口径第三例 a/boost/st 后继）。**纯口径披露，不触发版本号 +1** |
 | （无版本变更） | 2026-09-28 | GAMES-74 | §4.3 新增：welcome 帧锚语义文档化（join 锚=当前 tick 而非局首；欠帧跳账致推算锚恒值平移的取证警示）。**既有字段/语义零改动**，纯口径披露，不触发版本号 +1 |
 | v1.1 | 2026-09-26 | GAMES-41 | 新增 §8 测试 API（仅回环鉴权的测试房管理端点/框架控制 op/net.api 声明规范/api-check 与 net-check 分工）；房间管理器支持 seed/test/timeScale，测试房隔离（不进 feed/quick/BotHost 配额）。v1 全部既有语义不变（timeScale=1 逐字节一致） |
 | v1 | 2026-09-26 | GAMES-40 | 首版冻结：生命周期/feed/WS/S1 帧协议/S2-S7 预留/SDK/运维 |

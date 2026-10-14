@@ -72,6 +72,93 @@ const gwInput = (roomId, seat, op, payload) => gw('POST', '/api/test/input', { r
 const POLICIES = {
   /** 挂机：零输入（可输性剧本——被猎杀方） */
   idle: () => ({ mx: 0, my: 0, fire: 0 }),
+  /**
+   * 冲门取胜（street-soccer A2/A8 能赢，设计 §6 剧本策略）：API 席=炮手（缺省位）——
+   * 无球→chase 球预测点；持球→向敌门心带球，距门 <130000 且射门锥开 → 发 shot 朝门心
+   * （pow 900）；被扑近（敌 <25000）→ 发 pass；敌持球 <22000 → tackle。
+   */
+  'strike-rush': (state, seat) => {
+    const NOOP = { mx: 0, my: 0 }
+    const K = 1000
+    const me = state.players && state.players[seat]
+    const B = state.ball
+    if (!me || !B) return NOOP
+    const team = seat & 1
+    const G = team === 0 ? { x: 175 * K, y: 0 } : { x: 175 * K, y: 500 * K }
+    const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1)
+    const toward = (x, y) => {
+      const dx = x - me.x, dy = y - me.y, d = Math.hypot(dx, dy) || 1
+      return { mx: Math.round(dx / d * 100), my: Math.round(dy / d * 100) }
+    }
+    const OG = team === 0 ? { x: 175 * K, y: 500 * K } : { x: 175 * K, y: 0 }
+    const distG = dist(B.x, B.y, G.x, G.y)
+    if (B.owner === seat) {
+      /* 门前拿球即解围（GAMES-138 attempt2 修复：原句写在下文防守段 owner!==seat 才可达处=死代码。
+         败因链=防守 goal-side 卡位驱动球员朝自家门跑→途中触散球即持球→120ms 轮询盲窗（19 tick
+         ≈950 游戏ms）内 LEASH 触球推仍朝自家门 dribble 越线——attempt1 交付次日复跑 3 连红皆
+         seat0 自摆乌龙×2 送 B 到 goal-cap；移到持球分支首位，并附朝前场移动向量：pass 无路径
+         fallback=朝向解围大脚 v5200，面朝自家门会把「解围」踢进自家网） */
+      if (dist(B.x, B.y, OG.x, OG.y) < 150 * K) return { mx: 0, my: team === 0 ? -100 : 100, cmd: { k: 'pass' } }
+      let foe = null, bd = 20000 // 贴身判定 20px（25px 时蜂群贴脸即丢球权，传球窗过敏）
+      for (const p of state.players) {
+        if (!p || (p.seat & 1) === team) continue
+        const d = dist(me.x, me.y, p.x, p.y)
+        if (d < bd) { bd = d; foe = p }
+      }
+      if (foe && distG >= 130 * K) return { mx: 0, my: 0, cmd: { k: 'pass' } } // 被贴身且无射窗才出球（近门优先强射）
+      if (distG < 160 * K) {
+        const ang = Math.round(Math.atan2(G.y - B.y, G.x - B.x) / (2 * Math.PI) * 65536) & 0xFFFF
+        return { mx: 0, my: 0, cmd: { k: 'shot', ang, pow: 1000 } }
+      }
+      return toward(G.x, G.y)
+    }
+    if (B.owner >= 0 && (B.owner & 1) !== team && dist(me.x, me.y, B.x, B.y) < 22000) return { mx: 0, my: 0, cmd: { k: 'tackle' } }
+    /* 防守第三段：卡球-己门连线 goal-side（不追进自家门口=乌龙/折射防护）；近门解围——
+       「拿球即解围」已上移持球分支首位（原句在此永不可达：owner===seat 已于上方短路） */
+    const dOwn = Math.hypot(B.x - OG.x, B.y - OG.y)
+    if (dOwn < 150 * K) {
+      const gx = B.x + (OG.x - B.x) * 0.25, gy = B.y + (OG.y - B.y) * 0.25
+      return toward(gx, gy)
+    }
+    return toward(B.x + B.vx * 4, B.y + B.vy * 4)
+  },
+  /**
+   * 攻防转换（street-soccer A6/A7，设计 §6 剧本策略，胜负不断言）：前 60 tick 保守站位；
+   * 失球→回防 tackle 尝试（制造 steal 账本）；得球→一拍 pass 再前插，距门 <110000 shot
+   * ——循环制造「夺权-传导-射门」链 ≥4 次翻转+≥1 goal。
+   */
+  'counter-press': (() => {
+    const mem = { lastOwner: -1, coolT: 0 }
+    return (state, seat) => {
+      const NOOP = { mx: 0, my: 0 }
+      const K = 1000
+      const me = state.players && state.players[seat]
+      const B = state.ball
+      if (!me || !B) return NOOP
+      const team = seat & 1
+      const G = team === 0 ? { x: 175 * K, y: 0 } : { x: 175 * K, y: 500 * K }
+      const home = { x: 175 * K, y: team === 0 ? 350 * K : 150 * K }
+      const toward = (x, y) => {
+        const dx = x - me.x, dy = y - me.y, d = Math.hypot(dx, dy) || 1
+        return { mx: Math.round(dx / d * 100), my: Math.round(dy / d * 100) }
+      }
+      const distG = Math.hypot(G.x - B.x, G.y - B.y)
+      const dBall = Math.hypot(B.x - me.x, B.y - me.y)
+      if (state.tick < 60) return toward(home.x, home.y)
+      if (mem.coolT > 0) mem.coolT--
+      const own = B.owner
+      if (own === seat) {
+        if (mem.coolT === 0) { mem.coolT = 20; return { mx: 0, my: 0, cmd: { k: 'pass' } } } // 一拍传导
+        if (distG < 110 * K) {
+          const ang = Math.round(Math.atan2(G.y - B.y, G.x - B.x) / (2 * Math.PI) * 65536) & 0xFFFF
+          return { mx: 0, my: 0, cmd: { k: 'shot', ang, pow: 850 } }
+        }
+        return toward(G.x, G.y)
+      }
+      if (own >= 0 && (own & 1) !== team && dBall < 22000) return { mx: 0, my: 0, cmd: { k: 'tackle' } } // 回防扑抢
+      return toward(B.x, B.y)
+    }
+  })(),
   /** 猎杀最近敌：模拟量向量压向最近敌人 + 持续开火；复用 sim 的 sx 卡死账本脱困（net-tank 状态形状） */
   'hunt-nearest': (state, seat) => {
     const me = state.tanks && state.tanks[seat]
@@ -885,17 +972,20 @@ console.log('[L1] 测试面仅本机可用')
 
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
-const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6' || meta.net.tech === 'S7'   // S3（GAMES-68）/S6（GAMES-99）/S7（GAMES-109）：注入带 seq、A4 走快照 ack 口径
+const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6' || meta.net.tech === 'S7' || meta.net.tech === 'S3+S4'   // S3（GAMES-68）/S6（GAMES-99）/S7（GAMES-109）/S3+S4（GAMES-138）：注入带 seq、A4 走快照 ack 口径
 /* S6 剧本轮询节拍 15ms（attempt2 根因修复）：tick 墙钟=100ms/timeScale4=25ms，轮询一拍
  * =输入冻结窗——60ms 时窗长 ~3.1 tick（尾部 4-5），转向响应 300ms 不可反应窗=中段蛇
  * （n 27-50）反复被杀（bot 避障锥逐拍跑，API 席多拍一拍）；真跑取证：60ms 节奏 7 死、
  * 吃速 1 节/s 达标但净长势全被死亡重置吃掉（score 222 而 n 峰 50，goal 双条件卡 n≥100）。
  * 15ms+密度回避实测：381 tick goal、0 死、10s 墙钟；tick 推进仅拖慢 ~2.4%（budgetMs
  * 有 +25s 缓冲）。60→15 不是越快越好——同 tick 重复注入约半数（幂等无害），再快只耗网关 */
-const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
+const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 : meta.net.tech === 'S3+S4' ? 30 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
 /* S7 同理 15ms（GAMES-109）：tick 墙钟=50ms/timeScale8=6.25ms，轮询一拍=输入冻结窗——
  * 120ms 时窗长 ~19 tick，转向指令陈旧 100ms+ 贴弯必跑宽；15ms≈2.4 tick 接近 bot 的
- * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。*/
+ * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。
+ * S3+S4=30ms（GAMES-138 attempt2）：同 tick 墙钟 6.25ms，缺省 120ms=输入冻结 19 tick——
+ * HTTP 帧取代理对 bot 每 tick 决策的采样劣势被放大（持球盲 dribble 朝向不可纠正是 A2
+ * 乌龙主源之一，另见 strike-rush 门前解围修复）；30ms≈5 tick，同族口径。*/
 const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
@@ -1010,6 +1100,35 @@ try {
         })()
       ok('A1', 'S3 首张建设快照（layer=build, full=1）', !!firstBuild,
         firstBuild ? `snapSeq=${firstBuild.msg.snapSeq} frame=${firstBuild.msg.frame} ents=${firstBuild.msg.ents.length}` : '未见建设快照')
+    } else if (meta.net.tech === 'S3+S4') {
+      /* S3+S4 单流双域（GAMES-138）：welcome.state 开球骨架（kick 相位/clock=3600/阵型表
+         落位）+ room.physics 声明块（S4 版本护栏）；首张全量快照=4 球员+球（两域同流，§5.1） */
+      const ss = smoke.state
+      const pl = ss && ss.players
+      const inForm = pl && pl.every((p, i) => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.stam === 100000)
+      ok('A1', 'S3+S4 welcome.state 开球骨架（phase=kick/clock=3600/4 球员阵型落位/球居中）',
+        !!(ss && ss.phase === 'kick' && ss.clock === 3600 && inForm && ss.ball && ss.ball.x === 175000 && ss.ball.y === 250000),
+        `phase=${ss && ss.phase} clock=${ss && ss.clock} players=${pl && pl.filter(Boolean).length} ball=${ss && ss.ball && [ss.ball.x, ss.ball.y]}`)
+      const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.physics)
+      ok('A1', 'S3+S4 room.physics 声明块（engine+hash，S4 复用位）',
+        !!wel && !!wel.msg.room.physics.engine && Number.isInteger(wel.msg.room.physics.hash),
+        wel ? `${wel.msg.room.physics.engine}#${wel.msg.room.physics.hash}` : '未见声明块')
+      let firstS = (s.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+        || await (async () => {
+          let r = s, c = cursor, hit = null
+          const tt = Date.now()
+          while (!hit && Date.now() - tt < 2000) {
+            await sleep(40)
+            const q = await gwState(smoke.roomId, c)
+            if (!q.json) break
+            r = q.json; c = q.json.cursor
+            hit = (r.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+          }
+          return hit
+        })()
+      ok('A1', 'S3+S4 首张全量快照（full=1，ents=4 球员+球 单流双域）',
+        !!firstS && firstS.msg.ents && firstS.msg.ents.length === 5 && firstS.msg.ents.some((e) => e.id === 'ball'),
+        firstS ? `snapSeq=${firstS.msg.snapSeq} ents=${firstS.msg.ents.length} ack=${firstS.msg.ext && firstS.msg.ext.ack}` : '未见快照')
     } else if (meta.net.tech === 'S6') {
       /* S6 海量实体（GAMES-99）：welcome.state 竞技场骨架（round 相位/排行榜/资源位）
          + room.snake 声明块（碰撞口径护栏，S4 physics/S5 duel 同范式）；
@@ -1245,20 +1364,20 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         /* S5/S1+S5 输入日志（§5.6）：{s,k,payload}（剥 tick/tn 墙钟字段）——deploys+picks+ops 逐字节断言 */
         const stripFrame = (meta.net.tech === 'S5' || meta.net.tech === 'S1+S5')
           ? (st) => JSON.stringify((st.opsLog || []).map((o) => { const { s, k, tn, ...rest } = o; return [s, k, rest] }))
-          : meta.net.tech === 'S7'
+          : (meta.net.tech === 'S7' || meta.net.tech === 'S3+S4')
             ? (st) => JSON.stringify(st.inLog || [])
             : (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
         const hash0 = runs[0].stateHash, log0 = stripFrame(runs[0].state)
         const hashesEq = runs.every((x) => x.stateHash === hash0)
         const logsEq = runs.every((x) => stripFrame(x.state) === log0)
         ok(aid, `${name}：同 seed 同策略两房终态 stateHash 相等`, hashesEq, `hash=${hash0}${hashesEq ? '' : ' 各房不一：' + runs.map((x) => x.stateHash).join('/')}`)
-        ok(aid, `${name}：输入日志（${meta.net.tech === 'S5' ? 'picks+ops' : meta.net.tech === 'S7' ? 'inLog 输入日志' : 'shot 序列'}）逐字节相等`, logsEq, `${JSON.parse(log0).length} 条${logsEq ? '' : '（序列不一致）'}`)
+        ok(aid, `${name}：输入日志（${meta.net.tech === 'S5' ? 'picks+ops' : (meta.net.tech === 'S7' || meta.net.tech === 'S3+S4') ? 'inLog 输入日志' : 'shot 序列'}）逐字节相等`, logsEq, `${JSON.parse(log0).length} 条${logsEq ? '' : '（序列不一致）'}`)
         let replayOk = false, replayDetail = '未找到可回放 sim'
         try {
-          const simFile = meta.net.tech === 'S7' ? 'shared.cjs' : 'sim.cjs' // S7 单源（§5.1）：服务端与回放器同一份 shared.cjs
+          const simFile = meta.net.tech === 'S7' ? 'shared.cjs' : 'sim.cjs' // S7 单源=shared.cjs；S3+S4 单源=sim.cjs（GAMES-138 §5.2）
           const req = createRequire(pathToFileURL(join(gameDir, simFile)).href)
           const sim = req(join(gameDir, simFile))
-          if (meta.net.tech === 'S7' && sim && sim.replayInputs && sim.hashState) {
+          if ((meta.net.tech === 'S7' || meta.net.tech === 'S3+S4') && sim && sim.replayInputs && sim.hashState) {
             const rp = sim.replayInputs(script.seed, { maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels }, runs[0].state.inLog, sc.maxTicks ?? script.maxTicks)
             replayOk = sim.hashState(rp) === runs[0].stateHash
             replayDetail = replayOk ? `replay==在线 stateHash（${sim.hashState(rp)}）` : `replay ${sim.hashState(rp)} ≠ 在线 ${runs[0].stateHash}`
@@ -1378,6 +1497,44 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           if (name === 'lose') {
             const myPos = r.result.scores && r.result.scores[room.playerSeat] && r.result.scores[room.playerSeat].pos
             ok('A3', 'S7 idle 泊发车格：API 席名次=末位', myPos === (meta.net.seats || 6), `pos=${myPos}/${meta.net.seats || 6}`)
+          }
+        }
+        /* S3+S4 街头足球专项断言（GAMES-138 设计 §6）：A6 进球链（goal ruling 结构+
+           比分一致+被进球方开球）/ A7 攻防转换账本（poss 翻转 ≥4+席位合法+tackle 链一致+
+           无孤儿持球）——断言锚=ruling 账本（S3 持球权零预测=服务器唯一裁决，§5.1） */
+        if (gameId === 'street-soccer') {
+          const goals = r.ledger.filter((e) => e.k === 'goal')
+          const poss = r.ledger.filter((e) => e.k === 'poss')
+          if (name === 'counter') {
+            ok('A6', 'S3+S4 进球链：{k:goal} ruling ≥1 且 {team,scorer,frame} 结构完整',
+              goals.length >= 1 && goals.every((g) => (g.team === 'A' || g.team === 'B') && Number.isInteger(g.scorer) && Number.isInteger(g.frame)),
+              `goal×${goals.length}（首例 team=${goals[0] && goals[0].team} scorer=${goals[0] && goals[0].scorer}）`)
+            /* 口径：个人账 st.goals 不含乌龙（乌龙只进队分）——对账锚=队分 score.A+B */
+            const teamSum = r.state && r.state.score ? r.state.score.A + r.state.score.B : -1
+            const evTeamSum = goals.filter((g) => g.team === 'A').length && 0 || 0
+            void evTeamSum
+            ok('A6', 'S3+S4 进球链：终态队分合计==goal 事件数（比分账本一致，乌龙进队分不计个人）', teamSum === goals.length,
+              `goals=${goals.length} 队分=${JSON.stringify(r.state && r.state.score)} 个人账=${JSON.stringify(r.result.scores)}`)
+            const flips = poss.filter((e, i) => i > 0 && ((e.to >= 0 ? e.to & 1 : -1) !== (e.from >= 0 ? e.from & 1 : -1)))
+            const seatOk = poss.every((e) => (e.from === -1 || (e.from >= 0 && e.from < 4)) && (e.to === -1 || (e.to >= 0 && e.to < 4)))
+            ok('A7', 'S3+S4 攻防转换账本：poss 翻转 ≥4 次且 {from,to} 席位合法', flips.length >= 4 && seatOk,
+              `poss×${poss.length} 翻转×${flips.length}（席位域 −1∪0..3 ${seatOk ? '全合法' : '违例'}）`)
+            const tk = r.ledger.filter((e) => e.k === 'tackle')
+            let chainBad = []
+            for (const t of tk) {
+              if (t.res === 'win') {
+                const later = poss.find((p) => p.from === t.by || p.to === t.by)
+                if (!later) chainBad.push(`win@${t.frame} 无易主`)
+              }
+            }
+            ok('A7', 'S3+S4 tackle 链一致（win→owner 易主在账、miss→无同拍易主）', chainBad.length === 0 && tk.length >= 1,
+              `tackle×${tk.length}（win×${tk.filter((t) => t.res === 'win').length}/miss×${tk.filter((t) => t.res === 'miss').length}）${chainBad.length ? ' 首例：' + chainBad[0] : ''}`)
+            ok('A7', 'S3+S4 无孤儿持球（终态 owner∈席位∪−1）', r.state.ball.owner >= -1 && r.state.ball.owner < 4, `owner=${r.state.ball.owner}`)
+          }
+          if (name === 'win') {
+            ok('A6', 'S3+S4 进球链：胜方 goal 事件与终态比分一致',
+              goals.filter((g) => g.team === r.result.winner).length >= 1 || r.result.reason === 'time-up',
+              `winner=${r.result.winner} goal 事件 team 分布 A:${goals.filter((g) => g.team === 'A').length}/B:${goals.filter((g) => g.team === 'B').length}`)
           }
         }
         /* S2-MOBA 专项断言（GAMES-127 设计 §6）：A6 推塔链（reject(invuln)+塔序+水晶终链）

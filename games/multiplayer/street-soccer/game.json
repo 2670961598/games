@@ -1,0 +1,73 @@
+{
+  "slug": "street-soccer",
+  "title": "街头足球",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 210,
+  "scoring": {
+    "win": "进球多于对方（5 球封顶/计时/金球）",
+    "lose": "进球少于对方或超时裁定负",
+    "s2": "进球时间轴+射正+控球%（结算战报）",
+    "s3": "超时裁定链：射正→控球→先得分→draw"
+  },
+  "description": "围板反弹不出界，3 分钟定胜负：抢球、盘带、墙传、爆射。金球加时一球定生死，Bot 秒配队友",
+  "net": {
+    "tech": "S3+S4",
+    "gameId": "street-soccer",
+    "mode": "2v2-street",
+    "seats": 4,
+    "teams": { "A": [0, 2], "B": [1, 3] },
+    "api": {
+      "spec": 1,
+      "ops": {
+        "move":   { "ws": "input", "keys": ["mx","my","sp"], "desc": "移动向量 {mx,my}∈[-100,100] 整数+冲刺位 sp∈{0,1}，20Hz 持续上报（静止报 0,0,0 保活）；input.frame=输入序号 seq（预测和解 ack 锚点，S2 语义）" },
+        "shoot":  { "ws": "input", "keys": ["cmd"], "desc": "射门：cmd={k:'shot',ang:0..65535,pow:0..1000}——ang uint16 brads(>>3 量化)、pow 蓄力值；仅持球者受理（无球权 {k:'reject'}）；辅助吸附锥 ±2458 brads 后按类散布；回执 events {k:'shot'} + 球段重演起点" },
+        "pass":   { "ws": "input", "keys": ["cmd"], "desc": "传球：cmd={k:'pass'}——零瞄准参数（2v2 队友唯一）；服务器算 lead 引导点+接球吸引子 28000；无路径=朝向解围 v=5200；回执 events {k:'pass',from,to}" },
+        "tackle": { "ws": "input", "keys": ["cmd"], "desc": "扑抢：cmd={k:'tackle'}——朝球 3×速冲刺 250ms；触球进入抢断仲裁（力量+情境公式），扑空自绊 300ms；回执 events {k:'tackle',by,res:'win'|'miss'}" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）",
+        "winner": "'A'=偶数席队(0,2) ｜ 'B'=奇数席队(1,3) ｜ 'draw'",
+        "teams": { "A": [0, 2], "B": [1, 3] },
+        "reason": "goal-cap（先得 5 球） ｜ time-up（常规计时尽比分/OT 尽裁定链：射正→控球→先得分→draw） ｜ golden（金球） ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live + welcome.state（kickoff 阵型表/phase=kick/clock=3600/physics 声明块）+ 首张全量快照（4 球员+球）",
+        "A2 能赢：strike-rush 剧本 A 队终态胜（time-up 比分或 goal-cap；对位 3×casual 蜂群）",
+        "A3 能输：idle 剧本 B 队终态胜（己方 mate=casual 站不住，对位 2×competitive 预判+扑抢节拍）",
+        "A4 注入→快照反映 <100ms：move 位移/shot 的 shot 事件/tackle 事件均见下一 snapSeq（服务端同钟）",
+        "A5 断线重连 <10s：$reconnect 后 welcome 全量恢复（比分/比赛钟/体力/持球权）",
+        "A6 进球断言：drive-goal 段（持球带至门前 shot）→ ruling {k:'goal',team,scorer} 比分 +1 → phase goalBanner(60t) → kickoff 阵型表复位 → kick team=被进球方",
+        "A7 攻防转换剧本断言：counter 剧本 possession 账本翻转 ≥4 次且每次 {from,to} 席位合法；tackle 事件 res 与 steal/touch 后续链一致（win→owner 易主、miss→无易主）；无孤儿持球（owner∈席位∪null 恒真）",
+        "A8 确定性双跑：同 seed 同策略两房终态 stateHash 相等 && 输入日志逐字节相等 && stateHash==回放器重放 hash（S4 纪律红线）"
+      ],
+      "script": {
+        "seed": 20261015, "timeScale": 8, "startDelayMs": 600, "maxTicks": 6000,
+        "scenarios": {
+          "win":  { "botLevels": [null, "casual", "casual", "casual"], "expectWinner": "A", "policy": "strike-rush" },
+          "lose": { "botLevels": [null, "competitive", "casual", "competitive"], "expectWinner": "B", "policy": "idle" },
+          "counter": {
+            "botLevels": [null, "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "counter-press",
+            "assert": "A6+A7 账本断言（进球链+攻防转换账本），胜负不断言"
+          },
+          "deterministic": {
+            "runs": 2, "autopilot": true, "botLevels": [null, "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "strike-rush",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志逐字节相等 && stateHash == replayHash（服务器节拍 autopilot，HTTP 注入墙钟抖动不可逐字节——kart A6 先例）"
+          }
+        }
+      }
+    }
+  },
+  "bot": { "levels": 3, "takeOver": "balanced" }
+}

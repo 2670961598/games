@@ -42,6 +42,9 @@ const sanitizeKeys = (k) => {
   if (k && Number.isFinite(k.st)) out.st = n(k.st)
   if (k && Number.isFinite(k.th)) out.th = Math.max(-1, Math.min(1, Math.trunc(k.th)))
   if (k && k.dr !== undefined) out.dr = k.dr ? 1 : 0
+  // S3+S4 连续冲刺键（GAMES-138 street-soccer 先例，协议 §6 input 面扩展）：
+  // sp=冲刺开关 0|1——持续态键（lastInput 宽限沿用）
+  if (k && k.sp !== undefined) out.sp = k.sp ? 1 : 0
   return out
 }
 
