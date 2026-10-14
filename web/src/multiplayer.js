@@ -19,7 +19,7 @@ const CATALOG = [
   { name: '迷你 MOBA', track: 'T2 状态同步', tech: 'S2' },
   { name: '缩圈大逃杀', track: 'T2 状态同步', tech: 'S2' },
   { name: '帝国萌芽', track: 'T3 混合', tech: 'S3', on: true, url: '/games/multiplayer/empire-sprout/index.html' },
-  { name: '街头足球', track: 'T3 混合', tech: 'S3+S4' },
+  { name: '街头足球', track: 'T3 混合', tech: 'S3+S4', on: true, url: '/games/multiplayer/street-soccer/index.html' },
   { name: '极限接力', track: 'T3 混合', tech: 'S3' },
   { name: '八球台球', track: 'T4 物理', tech: 'S4', on: true, url: '/games/multiplayer/pool-physics/index.html' },
   { name: '苍穹争锋', track: 'T4 物理', tech: 'S4' },

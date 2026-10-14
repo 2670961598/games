@@ -1134,6 +1134,14 @@
         "bot": "三档 MOBA Bot（casual 站线兵：P0/P3'/P4/P8 无技能/balanced 补刀师傅：+P3 窗口+P5 换血+P6 营地/competitive 指挥官：全栈+连招序列+抱团集火+圣所游走）+终局收尾窗（closer：towerOpen 泉中回城/挂机席不计守备+core 远程停位防白嫖位死区）；断线托管=balanced（MOBA 挂机=送塔送赏金，设计附决策 7）",
         "chain": "GAMES-126 设计书/GAMES-127 DEV/GAMES-128 QA1/GAMES-129 FIX1/GAMES-130 BOT/GAMES-131 FEEL/GAMES-132 QA2/GAMES-133 FIX2/GAMES-135 VIS/GAMES-136 STRESS（GAMES-134 为别单占用非本链）"
       }
+    },
+    "multiplayer:street-soccer": {
+      "stage": "dev",
+      "perf": "pending",
+      "play": "pass",
+      "visual": "pending",
+      "iterations": 1,
+      "notes": "E6-W2-T3 混合轨第三款 DEV 交付（单链 2/10+）：S3+S4 双技术复用平台第三款（empire S3 单流双域先例的实时体育变体+pool S4 定点物理球/TRIG16 跨作复用）。api-check 27/27 绿（A1-A8：开球骨架/能赢能输/ack 反映 19ms/重连/进球链/攻防账本/确定性双跑三等）。托管=balanced、roomPrefix='street'。FEEL/VIS/QA 后续单深化"
     }
   }
 }
