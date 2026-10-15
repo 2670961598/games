@@ -45,6 +45,10 @@ const sanitizeKeys = (k) => {
   // S3+S4 连续冲刺键（GAMES-138 street-soccer 先例，协议 §6 input 面扩展）：
   // sp=冲刺开关 0|1——持续态键（lastInput 宽限沿用）
   if (k && k.sp !== undefined) out.sp = k.sp ? 1 : 0
+  // S4 炮塔瞄准键（GAMES-148 iron-torrent 先例，协议 §6 input 面扩展）：
+  // tur=炮塔目标角 uint16（8192 档 brads<<3，sim 侧 >>3 量化）——持续态键（lastInput
+  // 宽限沿用）；不带该键的游戏零感知
+  if (k && Number.isFinite(k.tur)) out.tur = Math.max(0, Math.min(65535, Math.trunc(k.tur)))
   return out
 }
 

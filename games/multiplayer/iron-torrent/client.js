@@ -58,7 +58,7 @@
   var snapState = { phase: 'play', clock: C.MAX_TICKS, capBar: 0, capTeam: -1, lives: [5, 5], map: 'm-cross', wind: { mag: 0, ang: 0 } };
   var tiles = null;                        // 掩体耐久档（全量快照/增量脏 tile）
   var tileTypes = null;                    // 掩体类型（全量）
-  var seq = 0, inRing = [];
+  var srvFrame = -1, srvAt = 0, lastQ = -1, inRing = [];   // 快照锚（F1 修复，GAMES-148）：frame 推算基准
   var fx = { muzzle: [], booms: [], crumbs: [], floats: [], shake: 0, recols: {}, deadBanner: null };
 
   function hint(t) { hintEl.textContent = t; hintEl.style.display = t ? 'block' : 'none' }
@@ -107,6 +107,7 @@
   /* ---------- 快照（二式）+ 预测和解 ---------- */
   function onSnapshot(msg) {
     var ack = msg.ext && msg.ext.ack;
+    if (typeof msg.frame === 'number') { srvFrame = msg.frame; srvAt = now() } // F1 锚点：每快照重校准（对定时器节流/时钟漂移免疫）
     if (msg.full) { tanks = {}; projsLocal = [] }
     for (var i = 0; i < (msg.ents || []).length; i++) {
       var e = msg.ents[i], si = parseInt(e.id.slice(1), 10);
@@ -248,12 +249,26 @@
   function uiEnd(id) { delete held[id] }
   function sendCmd(cmd) { pendingCmd = cmd }
   var pendingCmd = null;
-  /* 20Hz 输入上报（静止保活） */
+  /* 20Hz 输入上报（静止保活）。F1 修复（GAMES-148，修法①客户端锚定）：
+   * frame 不再自计数（seq++ 自由钟在浏览器定时器节流/起始偏移下漂移 room.frame——
+   * 名义同 20Hz、实钟不同源，接房 ~0.8s 后恒越网关预约窗 (room.frame, room.frame+8]，
+   * 离散 cmd 落宽限通道被后续心跳覆写=静默丢，QA1 F1）。改锚定快照推算：
+   * estFrame=srvFrame+Δ/TICK_MS（每快照重校准，S7 kart ack 锚同族），预约 estFrame+1
+   * ——input delay=1 语义不变、对任意节流/漂移免疫；ack 序号天然单调（随墙钟推进）。
+   * cmd 必须塞 keys 内（网关只解析 msg.keys.cmd，顶层字段不透传=F1 第二层根因）且
+   * 只随锚定帧走：预约帧是 cmd 唯一执行通道（GAMES-51 一次性语义），首快照前/锚过期
+   * (>1s) 持有不上送。inRing 每帧值一条（同帧去重——预测重放节奏=tick 节拍）。 */
   setInterval(function () {
     if (!ws || ws.readyState !== 1 || mySeat < 0 || ended) return;
-    var o = { t: 'input', frame: seq++, keys: { mx: input.mx, my: input.my, tur: input.tur } };
-    if (pendingCmd) { o.cmd = pendingCmd; pendingCmd = null }
-    inRing.push({ q: seq - 1, mx: input.mx, my: input.my });
+    var keys = { mx: input.mx, my: input.my, tur: input.tur };
+    var o = { t: 'input', keys: keys };
+    if (srvFrame >= 0) {
+      var f = srvFrame + Math.round((now() - srvAt) / C.TICK_MS) + 1;
+      if (f <= lastQ) f = lastQ + 1; // 发送序严格单调（浏览器定时器只迟不早，双保险钳）
+      lastQ = f; o.frame = f;
+      inRing.push({ q: f, mx: input.mx, my: input.my });
+      if (pendingCmd && now() - srvAt < 1000) { keys.cmd = pendingCmd; pendingCmd = null }
+    }
     if (inRing.length > 64) inRing.shift();
     send(o);
   }, 50);

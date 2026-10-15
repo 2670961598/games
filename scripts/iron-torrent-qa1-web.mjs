@@ -85,7 +85,10 @@ let myFire = null, tTap = 0, rejects = []
    Bot 揪打），客户端 uiTap 门 !alive||cd>0 静默不发 op（无 reject 属设计）。对策=入房
    初期（坦克近满血）密集重试 12×700ms——CD_FIRE=50 tick=5s 窗内必有 cd=0 落点 */
 for (let attempt = 0; attempt < 12 && !myFire; attempt++) {
-  tTap = Date.now()
+  /* tTap 取页内 performance.now（与 emitDbg 的 at 同钟——GAMES-148：原 Date.now 纪元钟
+   * 与页原点钟恒 tTap>at，fire 在页也被判无=F1 之外第 4 处测试面缺陷，修复后 receipts
+   * 在页须可判） */
+  tTap = await page.evaluate(() => performance.now())
   await touch('touchStart', [{ x: 309, y: 605 }])
   await sleep(80)
   await touch('touchEnd', [])

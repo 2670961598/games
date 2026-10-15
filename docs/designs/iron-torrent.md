@@ -279,7 +279,7 @@ Bot 走网关 Bot 宿主统一接口 `spawnBot('iron-torrent', level)`，输出�
 
 ### 5.3 输入上行与快照下行
 
-- **上行**（单通道 keys 壳，street 同式）：`input={t:'input', frame:<seq>, keys:{mx,my,tur}, cmd?}`——mx/my∈[-100,100]、tur uint16（服务器 >>3 量化）；`cmd` 至多 1 条/tick：`{k:'fire',ammo:0|1}`（**零瞄准参数**：弹向=服务器当前权威炮塔角——fire 带角度会绕过炮塔转速上限的战术约束，锁死于服务器角；客户端乐观开炮用本地预测角，权威事件携实际角校准，§5.4）/`{k:'swap',ammo}`。20Hz 持续上报（静止报 0,0,tur 保活）；服务器逐 tick 校验（CD 期 fire→reject、弹药 0→reject），非法 `{k:'reject',seat,op,why}` 事件回流。
+- **上行**（单通道 keys 壳，street 同式）：`input={t:'input', frame:<锚定帧>, keys:{mx,my,tur,cmd?}}`——mx/my∈[-100,100]、tur uint16（服务器 >>3 量化）；`cmd` 至多 1 条/tick 且**必须置于 keys 壳内**（网关 sanitizeKeys 只解析 `msg.keys.cmd`，顶层 cmd 字段不透传——GAMES-148 F1 第二层根因；设计 v1 原文 `…keys:{mx,my,tur}, cmd?}` 顶层形状即此错位）：`{k:'fire',ammo:0|1}`（**零瞄准参数**：弹向=服务器当前权威炮塔角——fire 带角度会绕过炮塔转速上限的战术约束，锁死于服务器角；客户端乐观开炮用本地预测角，权威事件携实际角校准，§5.4）/`{k:'swap',ammo}`。20Hz 持续上报（静止报 0,0,tur 保活）；`frame`=**快照锚定推算**（estFrame=最近快照 frame+Δ/tickMs，预约 estFrame+1——GAMES-148 F1 修复：自计数 seq 自由钟在浏览器定时器节流/起始偏移下漂移 room.frame，~0.8s 后恒越网关预约窗 (room.frame,room.frame+8]，离散 cmd 静默丢；锚定法对任意漂移免疫，S7 kart ack 锚同族）；服务器逐 tick 校验（CD 期 fire→reject、弹药 0→reject），非法 `{k:'reject',seat,op,why}` 事件回流。
 - **下行快照**（10Hz=每 2 tick）：全量（join/reconnect/sync/每 300 张）`{t:'snapshot',frame,base,full:1,snapSeq,ext:{ack,hash},state:{phase,clock,capBar,capTeam,lives,ammo,warn},ents:[4 坦克全字段],projs:[活动弹道{id,seat,x,y,z,ammo}],tiles:[掩体全图耐久档]}`；增量只带脏实体（坦克 {id,x,y,h,tur,hp} 恒带+弹药/类变才带；弹道列表恒带（≤8 弹×~20B）；脏 tile {id,hp} 变才带）+events。**增量阈值**：脏 >6 实体或增量 >全量×0.7 → 退化全量。
 - **事件账本**（juice/结算/断言三用）：`{k:'fire',seat,ammo,ang,x,y,vx,vy,vz}`（**确定性重演起点：含最终出射角 ang 与出膛点/初速分量——客户端零推导零 rng**）/`{k:'hit',seat,victim,dmg,angIn,part:'front'|'side'|'rear'}`/`{k:'splash',seat,x,y} `/`{k:'crumble',tile}`/`{k:'kill',seat,victim} `/`{k:'respawn',seat,x,y} `/`{k:'capTick',team,bar}`（占点进度变更每 10 tick 聚合）/`{k:'reject',op,why}`。
 - **tick 内结算序**（固定，红线）：`inputs 应用（cmd 校验+CD 计时）→ 相位机（占点/重生队列/终局判定）→ 坦克移动积分+车体转向 → 炮塔限速转向 → 坦克推挤（seat 升序）→ 弹道子步 ×5（§2.3 序；命中→HP/耐久改写→kill/crumble 判定）→ 脏标记 → 快照组包（每 2 tick）`。
@@ -316,7 +316,7 @@ Bot 走网关 Bot 宿主统一接口 `spawnBot('iron-torrent', level)`，输出�
     "spec": 1,
     "ops": {
       "move":  { "ws": "input", "keys": ["mx","my"],
-                 "desc": "驾驶向量 {mx,my}∈[-100,100] 整数，20Hz 持续上报（静止保活）；input.frame=seq（预测和解 ack 锚点）。本地预测同式零等待" },
+                 "desc": "驾驶向量 {mx,my}∈[-100,100] 整数，20Hz 持续上报（静止保活）；input.frame=快照锚定推算帧（GAMES-148 F1 修复口径：预测和解 ack 锚点+网关预约帧双语义同一字段，自计数 seq 已废）。本地预测同式零等待" },
       "aim":   { "ws": "input", "keys": ["tur"],
                  "desc": "炮塔目标角 tur uint16 brads（服务器 >>3 量化 0.044°）；炮塔以类内转速上限（75-90°/s）渐转——权威角是唯一开炮弹向" },
       "fire":  { "ws": "input", "keys": ["cmd"],
@@ -432,3 +432,5 @@ Bot 走网关 Bot 宿主统一接口 `spawnBot('iron-torrent', level)`，输出�
 11. **tick=50ms+弹道子步 10ms（street 两级时钟同构）**——坦克按 tick 步进（速度 ≤130px/s，整数粒度足）、弹道按 5×子步细分（反隧道余量 4.5×）；20Hz 实时驾驶档与 kart/street 统一，快照 10Hz 与平台 S2 口径对齐。
 12. **TRIG16 跨作复用第三作**——pool 首证→street 二作→本作三作引同一份 `trig16.cjs`：S4 确定性工具族（烘焙表/段重演/输入日志回放/hash 哨兵）的边际成本逐作递减，本作新物理语义只有 z 轴积分与高度分层两张表——轨道复利第三次兑现。
 13. **全览 1:1 战场（340×500）**——4 坦克+弹道+掩体密度单屏可读；弹道预览线全场可见=识图/观战/API 坐标断言零漂移；坦克战的「绕侧」是公开走位博弈（信息全明、博弈在预判），无迷雾设计（v1 收窄，休闲匿名制无作弊威胁面——empire 附决策 8 先例）。
+14. **F1 修复=客户端锚定（修法①）+cmd 入 keys 壳+网关 tur 键透传（GAMES-148）**——三层根因裁决：QA1 定案的「预约窗丢弃」只是第一层（客户端自计数 seq 漂移 room.frame 恒越窗）；第二层=cmd 挂消息顶层而网关只解析 `msg.keys.cmd`（越不越窗都到不了 sim——QA1 探针复刻的正是此形状故归因偏了一层）；第三层=tur 键不在网关 sanitizeKeys 白名单（真人瞄准从未抵达服务器，服务端臂因 testapi 剧本直读服务器炮塔角而假绿）。修法①（客户端锚定）优于②（服务端宽容）：②动共享投递语义、且单独修不好第二层；①+cmd 入壳把离散 cmd 稳定送上预约帧通道（GAMES-51 一次性语义原生位），网关仅增 tur 键（加法式、不带该键游戏零感知）。宽限通道对 20Hz 心跳的 cmd 覆写竞态（50ms 心跳 vs 100ms 消费拍）即「cmd 必须走预约帧」的机制论证。
+15. **QA1 观察项口径（GAMES-148 处置记录）**——O-1 quick 并入在打房（接手中途 Bot 坦克）：让位语义设计内，入场保护/观战转场归 VIS/FEEL 议题，v1 不改；O-2 断线窗开阔地弹着无事件补发：§5.6 设计态（弹着无持久状态、重连不补发事件），掩体弹着有耐久归账可证，非缺陷；O-3 hp 对账观测缺档（hit 在账而 hp 快照拆批）：增量快照相邻批把 hp 降与 hit 拆批的观测缝隙，记账面守恒成立（QA1 S4-4 分段守恒式已证），非缺陷；O-4 web 臂测试面缺陷：QA1 run2 已修 3 处，GAMES-148 复跑再修第 4 处（fire 断言 tTap=Date.now 与 emitDbg at=performance.now 异钟恒假——F1 之外测试件独立缺陷，与产品修复解耦）。
