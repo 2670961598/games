@@ -112,11 +112,18 @@ const POLICIES = {
       }
       return toward(G.x, G.y)
     }
-    if (B.owner >= 0 && (B.owner & 1) !== team && dist(me.x, me.y, B.x, B.y) < 22000) return { mx: 0, my: 0, cmd: { k: 'tackle' } }
+    /* 门线看守抢断（GAMES-143 合并验证红加固，PM 落笔 2026-10-15）：MERGE-VERIFY A2 三局
+       仅 1/3——红源=A 队 casual 队友自摆（乌龙进 B 队分，GAMES-138 取证链）而旧 tackle 仅
+       对敌方持球者生效，API 席只能目送。口径：球入己方门区 180k 内时对任意持球者（含队友）
+       开抢断仲裁——胜则球权到手即触发上方「拿球即解围」大脚；负则 300ms 自绊，代价远小于
+       目送乌龙。剧本侧纯状态函数，确定性不受影响（无时钟引用）。 */
+    const dOwn0 = Math.hypot(B.x - OG.x, B.y - OG.y)
+    if (B.owner >= 0 && dist(me.x, me.y, B.x, B.y) < 22000 && ((B.owner & 1) !== team || dOwn0 < 180 * K)) return { mx: 0, my: 0, cmd: { k: 'tackle' } }
     /* 防守第三段：卡球-己门连线 goal-side（不追进自家门口=乌龙/折射防护）；近门解围——
-       「拿球即解围」已上移持球分支首位（原句在此永不可达：owner===seat 已于上方短路） */
+       「拿球即解围」已上移持球分支首位（原句在此永不可达：owner===seat 已于上方短路）；
+       半径 150k→180k 同步放宽（反应窗提前，与看守抢断同界） */
     const dOwn = Math.hypot(B.x - OG.x, B.y - OG.y)
-    if (dOwn < 150 * K) {
+    if (dOwn < 180 * K) {
       const gx = B.x + (OG.x - B.x) * 0.25, gy = B.y + (OG.y - B.y) * 0.25
       return toward(gx, gy)
     }
