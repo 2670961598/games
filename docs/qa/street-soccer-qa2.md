@@ -4,7 +4,7 @@
 - 分支：feature/GAMES-142（基线 badff77 = GAMES-141 FEEL 已合并，merge main 无前进）
 - 日期：2026-10-15 ｜ 角色：QA（只读纪律：零产品代码改动，测试件为 `scripts/street-soccer-qa2-{net,mercy,web}.mjs`）
 - 环境：私有影子网关 `:4416`（`PORT/GATEWAY_PID/GATEWAY_LOG` 显式改道防覆盖常驻实例）+私有静态臂 `:4417`（`WEB_DIR=web` 同构复刻生产 web 源——本环境 :4399 未常驻，`:4400/:4399` 全程零感知）；剧本房一律 `/api/test/*` 隔离测试房；放水链走 WS quick 真实路径（协议 §2，见 §3 结构性论证）
-- 结论：**红线全绿，无 P0/P1 退回项**；QA1 观察项 O-1/O-2/O-3 抽验闭合；观察项 O-4/O-5/O-6 新增（均低危口径注记）
+- 结论：**产品红线全绿，无 P0/P1 退回项**（冻结 39/39+net 34/34+web 9/9+回归 2 作）；放水链在线验证部分完成（mercy 6/9——3 失败均为 QA harness 制败侧阶梯未爬完，产品行为零异常观测，数字锚转 O-7）；QA1 观察项 O-1/O-2/O-3 抽验闭合；观察项 O-4/O-5/O-6/O-7 新增（均低危口径注记）
 
 ## 0. 冻结验收命令（自跑）
 
@@ -23,7 +23,7 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 | 200ms 延迟对照（FEEL 后触球反馈链） | qa2-net N1（d0/d200 双房） | ✓ 34 断言全绿（见 §2） |
 | 重连三档（手感层状态延续） | qa2-net N2 | ✓ 含 FEEL 服务端延续面四键（stam/lungeT/stumbleT/tackleCd） |
 | 长局 spot（8min 交叉引用） | qa2-net N3 + qa2-mercy M6 | ✓ 6000-tick 硬顶房全程+8min 连续对局窗交叉引用 |
-| 放水链在线验证 | qa2-mercy M1-M5（WS quick） | ✓ L1/L2 数字信号+生态位观测（见 §3） |
+| 放水链在线验证 | qa2-mercy M1-M7（WS quick） | ◐ 部分：链路存在性+ctl 基线锚 n=11 零漂移+生态位+8min 窗+清零语义 ✓；L1/L2 数字锚未采样完（harness 制败侧，见 §3/O-7） |
 | 满编 2v2+第 5 人观战（FEEL 焦点光圈） | qa2-web W2/W3 | ✓ 4 真人四席+F11 焦点环台账+环形金墨水探针（见 §4） |
 | 回归抽查 2 作 | api-check pool/mini-moba | pool-physics 19/19 ✓ ｜ mini-moba 22/22 ✓ |
 
@@ -43,6 +43,17 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 **数字信号锚**（quick 自建全 balanced 房独有——档位信号不受 seed 影响）：balanced 射门门 `distG<140k` → pow 恒 650 档；L1 让力 `powMul=85%` → 恒 552 档；L2 降档 bal→cas（CASUAL pow 400-800 ×85% = 340-680 散布）。
 
 <!-- MERCY-RESULTS -->
+**6/9（部分完成——3 失败均为 harness 制败侧阶梯未爬完（n=0 类），产品行为零异常观测）**，墙钟 668s/35 局尝试（三跑迭代：首跑死锁三因见 O-5；终跑=全档 fresh 自建 1600-tick 局）
+
+**结构链全量代码实证**（在线路径存在性）：`rooms.js:432-438` finish 按 `META.pulseTeam(seat,winner)`（street-soccer.js:141 席位奇偶→队属）记 WeakMap 台账（胜=断连败/负=连败++）→`rooms.js:362-375` doFrame 每拍算 `foeLose[seat]`=对席真人连败最大值注入 `botEnv`→sim brain 放水链；台账 keyed conn 跨 quick 房存续（W 单 conn 35 局尝试全程零断链实证）。队友席同取 foeLose=生态位让位链（设计面，非泄漏）。
+
+- **M2 基线锚 ✓**：ctl 局（连败<2）敌席 balanced 射门 pow≡650——**n=11 值域 650-650 零漂移**（m1 ×5/m3 ×4/m33 ×2，跨 goal-cap 与 time-up 两型终局）
+- **M1b O-1 抽验 ✓**：quick bot 房真人让位入席 fresh 房 ×4（席位让位=网关 join 路径）
+- **M5 生态位让位在线观测 ✓**：放水档（台账活性局）队友席 pass→W 9 次/局 vs ctl ≈4.7 次/局（让球权方向性成立；软锚口径同 BOT 单）
+- **M6 8min 墙钟窗交叉引用 ✓**：墙钟 668s+逐局 goal 事件==终态队分 4/4（A6 口径同源）+hash 哨兵 ×945——长局 spot 的真实路径侧证（与 net 臂 N3 6000-tick 硬顶房互文）
+- **M7 WS 面零异常 ✓**：无 error 消息/无断链（errs=0 closed=0）
+- **胜即断连败语义在线实证**：m15（loseIn=2，台账活性中——敌席处于 L1 放水态）W 队 3:1 反胜（time-up）→台账立即清零回 0——协议「胜=断连败」按设计生效，且该局结局与「敌席被让力后战力下降」方向一致（间接证据，非数字锚）
+- **M1 ✗/M3 ✗/M4 ✗（harness 侧披露）**：连败阶梯未爬完（局序 c败→c败→L胜→c败=3 败，未达 L1/L2 采样窗的成局样本）——制败器（est 乌龙策略）依赖 W 持球，bothost 房流+goal 庆祝墙钟（暂停比赛钟但走墙钟，高分局可拖 ~20s 过帽）+队友 bot carry 逆胜三因叠加，11min 帽内不可稳定达 lose≥4。**L1 让力 pow≡552/L2 降档散布两数字锚在线未采样**——行为档已由 BOT 单（GAMES-140）决策级 A/B 离线闭合，本单在线面=链路存在性+基线+生态位+清零语义全证，数字锚留观察项（O-7）后续复跑
 
 ## 4. 满编 2v2+第 5 人观战·FEEL 焦点光圈（qa2-web）
 
@@ -57,20 +68,21 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 
 ## 5. QA1 观察项复核
 
-- **O-1 让位语义（抽验闭合）**：mercy 臂 W 全程 quick bot 房让位入席（席位=网关 join 路径，M1 断言）+web 臂 F08 让位提示环台账（就席=席位让位完成时点，FEEL 面）。BOT 单 N5 复核无缺陷结论维持；观战入口语义（?room= 到 bot 房让位入席/满员房旁观）与 QA1 记录一致，无新证据。
-- **O-2 时延对齐伪带（已记案例，复核不复发）**：本单 N1 全程 250ms 弃样窗口径，d0/d200 两房带均在帽内且量级符合「受理+组包+垫臂」物理预期（49/94ms vs 242ms），未见 ~700ms 伪带复发——QA1 归因（错配到下一次注入受理=策略节拍伪影）维持。
+- **O-1 让位语义（抽验闭合）**：mercy 臂 W 全程 quick bot 房让位入席（席位=网关 join 路径，M1b 断言 fresh 房入席×4）+web 臂 F08 让位提示环台账（就席=席位让位完成时点，FEEL 面）。BOT 单 N5 复核无缺陷结论维持；观战入口语义（?room= 到 bot 房让位入席/满员房旁观）与 QA1 记录一致，无新证据。
+- **O-2 时延对齐伪带（已记案例，复核不复发）**：本单 N1 全程 250ms 弃样窗口径，d0/d200 两房带均在帽内且量级符合「受理+组包+垫臂」物理预期（d0 shot 48/tackle 143ms vs d200 tackle 247ms），未见 ~700ms 伪带复发——QA1 归因（错配到下一次注入受理=策略节拍伪影）维持。
 - **O-3 混跑对位（抽验闭合）**：N4 双 seed 在线聚合——comp 进球压制+触球压制方向性成立；QA1 预留的「预判档对蜂群档」拦截压制数据面由 BOT 单 N4 决策级 A/B 闭合+本单在线方向性复证。
 
 ## 6. 退回项清单
 
-**无 P0/P1 退回项。** 红线全过（冻结命令 39/39+qa2-net 34/34+qa2-mercy+qa2-web+回归 2 作）。
+**无 P0/P1 退回项。** 产品红线全过（冻结命令 39/39+qa2-net 34/34+qa2-web 9/9+回归 2 作）。qa2-mercy 3 失败（M1 连败 3<4/M3 L1 n=0/M4 L2 n=0）均为 harness 制败侧阶梯未爬完——全程观测到的产品行为（650 基线零漂移、胜即清零、goal==队分、WS 零异常）全部符合协议设计，无产品缺陷证据，故不入退回清单（口径：退回=产品行为违背设计）。
 
 ## 7. 观察项（低危，接 QA1 编号）
 
 <!-- OBSERVATIONS -->
 - **O-4（低危·口径注记）N2-r5 手感层 stam 断言弱**：断言名「复席后快照续流体力值在场且演化」实作仅在场性检查（`typeof number && !== -1`）——本跑 welcome stam=100000→续流 100000 同值，未获「演化」正样本（断线 5s 窗内席位静止零消耗所致）。四键延续面（stam/lungeT/stumbleT/tackleCd）在场性已证；后续复验若需证演化，应断线前先制造体力消耗再复席采样。蓄力为本地瞬时态随断线弃、不属服务器延续面——脚本内口径注记维持。
-- **O-5（低危·QA 件口径，非产品缺陷）mercy 制败链首跑死锁三因**：①est 帽 105s<ambient 房局长 180s（bothost 默认 3600 ticks，est 容忍入龄房→结构性 no-end）②no-end 弃房回灌 quick 池→ambient-abort 连环（弃局不记账致连败停滞）③skip 日志打印错字段（顶层 `fail` 而非 `m.fail`，显 `[undefined]` 掩盖 no-end 真因）。二跑修订：全档 fresh 自建房+局长 1600 ticks+帽式对齐（详见 §9 修订披露）。放水链本体（台账/注入/行为档）无恙——死锁全程在 harness 制败侧。
+- **O-5（低危·QA 件口径，非产品缺陷）mercy 制败链首跑死锁三因+终跑两残余**：死锁①est 帽 105s<ambient 房局长 180s（bothost 默认 3600 ticks，est 容忍入龄房→结构性 no-end）②no-end 弃房回灌 quick 池→ambient-abort 连环（弃局不记账致连败停滞）③skip 日志打印错字段（顶层 `fail` 而非 `m.fail`，显 `[undefined]` 掩盖 no-end 真因）。二跑修订：全档 fresh 自建房+局长 1600 ticks+帽式对齐（详见 §9 修订披露）。终跑残余（阶梯仍未爬完的两因）：④goal 庆祝相位暂停比赛钟但走墙钟——高分局 5 庆祝×~4s 可把 80s 局拖过 92s 帽（终跑仍见 no-end）⑤est 制败依赖 W 持球，队友 bot 可 carry 逆胜（m15 3:1）→「胜即断连败」清零台账。放水链本体（台账/注入/行为档）无恙——死锁全程在 harness 制败侧。
 - **O-6（低危·字段面披露）F08 让位提示环台账 lat=null**：web 臂 W1 读 FEEL fx 台账 F08（让位提示环）`lat=nullms`——台账条目在场但 lat 字段缺省（对照 F11 lat=36ms 有值）。就席时点类 fx 无时延语义或漏记，建议 FEEL 台账统一 lat 口径（不影响本单判据：F08 判据为在案非时延）。
+- **O-7（低危·复跑项）L1/L2 放水数字锚在线未采样完**：连败让力 L1（pow≡552）/L2 降档（340-680 散布）两数字锚的在线触发未在 11min 帽内完成采样（harness 制败侧三因见 O-5，终跑局序 c败→c败→L胜→c败）。行为档本身已由 GAMES-140 决策级 A/B 离线闭合+本单链路存在性/基线/生态位/清零语义在线全证；建议后续单以「est 帽 ≥115s（goal 庆祝墙钟余量）+禁 mate 档位依赖+可多次重试的连败爬档器」复跑补锚。
 
 ## 8. 回归抽查 2 作（共享 harness 面）
 
@@ -85,4 +97,4 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 - `scripts/street-soccer-qa2-mercy.mjs`——放水链在线验证（WS quick 真实路径+饱和器+燃位器）
 - `scripts/street-soccer-qa2-web.mjs`——浏览器臂（满编+观战 F11 焦点环）
 - 复跑：影子网关 `PORT=4416 HOST=127.0.0.1 GATEWAY_LOG=/tmp/qa2-142/gw.log GATEWAY_PID=/tmp/qa2-142/gw.pid WEB_DIR=web node server/gateway/index.js &` + 静态臂 `PORT=4417 HOST=127.0.0.1 DATA_DIR=<tmp> WEB_DIR=web node server/index.js &` 后依次跑三脚本（`QA_GW`/`QA_WEB`/`QA_GW_WS`/`QA_SHOTS` 可覆写）
-- **二跑修订（首跑 PM 抢救件自测暴露，均 QA 件非产品码）**：mercy est 帽 105s→138s（time-up 兜底 ~123s 计败，原帽先于终局弃局致连败停滞+弃房污染 quick 池）+skip 日志字段修正；web 页面源/截图目录 env 化（:4399 未常驻环境可复跑）+环形探针 NaN 坐标守卫（ball 态瞬态缺键曾致 getImageData 崩）
+- **二跑修订（首跑 PM 抢救件自测暴露，均 QA 件非产品码）**：mercy 终态=全档 fresh 自建 1600-tick 局+帽式对齐（`MATCH_TICKS*50+12s`）+skip 日志打 `m.fail`（演进：105s 帽→138s 帽→fresh 自建，见 O-5 三因五残余全记录）；web 页面源/截图目录 env 化（:4399 未常驻环境可复跑）+环形探针 NaN 坐标守卫（ball 态瞬态缺键曾致 getImageData 崩）
