@@ -1136,12 +1136,17 @@
       }
     },
     "multiplayer:street-soccer": {
-      "stage": "dev",
-      "perf": "pending",
+      "stage": "accepted",
+      "perf": "pass",
       "play": "pass",
-      "visual": "pending",
-      "iterations": 1,
-      "notes": "E6-W2-T3 混合轨第三款 DEV 交付（单链 2/10+）：S3+S4 双技术复用平台第三款（empire S3 单流双域先例的实时体育变体+pool S4 定点物理球/TRIG16 跨作复用）。api-check 27/27 绿（A1-A8：开球骨架/能赢能输/ack 反映 19ms/重连/进球链/攻防账本/确定性双跑三等）。托管=balanced、roomPrefix='street'。FEEL/VIS/QA 后续单深化"
+      "visual": "pass",
+      "iterations": 8,
+      "notes": "E6-W2-T3 混合轨第三款收官（单链 8/8 预算版、FIX1/FIX2 零退回跳过：设计书→DEV→QA1→BOT→FEEL→QA2→VIS→STRESS——平台第 11 条完整单链=W2 波第三款收官+E6 11/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间街头足球 2v2 测试房 8min ts2 churn+观战锚/满编 2v2+第 5 人观战 spot/十一游戏同网关混编全家福 street 第 11 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/street-soccer-stress.md）。单链要目：DEV S3+S4 双技术复用第三款（单流双域：球员域 tick 步进+球域 Q16 子步；empire 分帧型的实时体育单流变体+pool 定点物理/TRIG16 跨作复用）；持球权零预测=谁带球谁预测的另一半（状态归属表落地）；QA1 测试房 WS 面隔离/观战须 4 真人反证/HTTP 时延伪带（n0 计数+250ms 弃样窗）；BOT 传球线封堵 excl 坑（终点=队友自身恒封堵→直塞死代码）/放水链回放零扰动/生态位让位两层；FEEL 终局探针两段式坑（ended 后世界层停绘）/SND.fired 持久集/rAF 首帧播种死码；QA2 mercy 制败死锁三因（ambient 局长 180s>帽/弃房回灌/skip 错字段）+庆柷墙钟帽余量——终跑 6/9 结构链代码实证；VIS HF 非法 font 简写 canvas 静默忽略首证（全 HUD 10px 缺省字）+双编码像素核法+识图 v2 九探针。实录=知识库草稿《街头足球开发实录》",
+      "net": {
+        "tech": "S3+S4",
+        "bot": "两档街头 Bot（casual 街坊：基础移动+随机射门/balanced 老鸟：站位+传球线+门线看守抢断）+放水链（L1 让力 pow≡552/L2 降档散布 340-680，game.json bot.mercy/bot.casual 可调）+团队作 pulse（META.pulseTeam seat%2）；断线托管=balanced（挂机=空门放对手，设计 §4.3）",
+        "chain": "GAMES-137 设计书/GAMES-138 DEV/GAMES-139 QA1/GAMES-140 BOT/GAMES-141 FEEL/GAMES-142 QA2/GAMES-143 VIS/GAMES-144 STRESS（FIX1/FIX2 零退回跳过未占单号）"
+      }
     }
   }
 }
