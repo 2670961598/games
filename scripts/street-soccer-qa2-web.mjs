@@ -11,10 +11,10 @@
 import { chromium } from 'playwright'
 import { mkdir } from 'node:fs/promises'
 
-const WEB = 'http://127.0.0.1:4399'
+const WEB = process.env.QA_WEB || 'http://127.0.0.1:4399'
 const GWWS = process.env.QA_GW_WS || 'ws://127.0.0.1:4416'
 const PAGE_URL = `${WEB}/games/multiplayer/street-soccer/index.html`
-const SHOTS = '/Volumes/xieqingxin/Studio/kernel/workers/GAMES-142-shots'
+const SHOTS = process.env.QA_SHOTS || '/Volumes/BigDisk/Studio/kernel/workers/GAMES-142-shots'
 let passed = 0, failed = 0
 const ok = (cond, name, detail = '') => {
   if (cond) { passed++; console.log(`  ✓ ${name}${detail ? '（' + detail + '）' : ''}`) }
@@ -39,8 +39,9 @@ const ringProbe = (page) => page.evaluate(() => {
   let hits = 0, tot = 0
   for (let r = 10; r <= 18; r += 2) for (let a = 0; a < 12; a++) {
     const x = Math.round(bx + Math.cos(a / 12 * 6.283) * r), y = Math.round(by + Math.sin(a / 12 * 6.283) * r)
-    if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) continue
-    const d = ctx2.getImageData(x, y, 1, 1).data
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= cv.width || y >= cv.height) continue
+    let d
+    try { d = ctx2.getImageData(x, y, 1, 1).data } catch { continue }
     tot++
     if (d[0] >= 135 && d[0] <= 235 && d[1] >= 110 && d[1] <= 215 && d[2] <= 130 && d[0] - d[2] >= 45) hits++
   }
@@ -109,9 +110,9 @@ if (roomId) {
     ok(f11.length >= 1, 'W3 F11 观战焦点球光圈台账在案（FEEL 面：spectator→球光圈脉动=导演锚）', `F11×${f11.length} lat=${f11[0] && f11[0].lat}ms`)
     /* 环形金墨水探针：3 帧持续命中（脉动圈持续在绘）+球员页同环对照近零 */
     let frames = 0, specHits = []
-    for (let i = 0; i < 3; i++) { const r = await ringProbe(p5); if (r && r.hits >= 3) frames++; if (r) specHits.push(`${r.hits}/${r.tot}`); await sleep(260) }
+    for (let i = 0; i < 3; i++) { const r = await ringProbe(p5).catch(() => null); if (r && r.hits >= 3) frames++; if (r) specHits.push(`${r.hits}/${r.tot}`); await sleep(260) }
     let ctlHits = 'n/a'
-    if (pages[0]) { const r = await ringProbe(pages[0]); if (r) ctlHits = `${r.hits}/${r.tot}` }
+    if (pages[0]) { const r = await ringProbe(pages[0]).catch(() => null); if (r) ctlHits = `${r.hits}/${r.tot}` }
     ok(frames >= 2, 'W3 焦点环页内墨水：球周环形金晕持续命中（r10-18×36 采样×3 帧≥2 帧≥3 命中；F03 拖尾为瞬态被持续帧滤除）', `观战帧命中 ${specHits.join(' ')}｜对照=球员页同环 ${ctlHits}`)
     await p5.screenshot({ path: `${SHOTS}/qa2-spectate-focus.png` })
   }

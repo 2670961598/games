@@ -27,7 +27,7 @@
 const GW_HTTP = process.env.QA_GW || 'http://127.0.0.1:4416'
 const GW_WS = (process.env.QA_GW || 'http://127.0.0.1:4416').replace('http', 'ws')
 const DEADLINE_MS = 11 * 60 * 1000   // 硬墙钟帽
-const MATCH_TICKS = 2400             // 单局 120s 帽（timeScale=1 真秒——真实路径）
+const MATCH_TICKS = 1600             // 单局 80s 帽（timeScale=1 真秒——真实路径；自建 fresh 房专用，缩短爬档墙钟）
 
 let passed = 0, failed = 0
 const ok = (id, name, cond, detail = '') => {
@@ -199,9 +199,10 @@ async function playMatch(W, loseIn, needObs) {
   const elapsed = me ? me.elapsedMs : -1
   const fresh = elapsed >= 0 && elapsed < 6000
   const botsBalanced = W.roster.filter((s) => s.kind === 'bot').every((s) => s.level === 'balanced')
-  /* OBS 需 fresh 全 balanced 自建房；est 容忍新刷 ambient（<90s）但弃残局尾窗——
+  /* 全档 fresh 自建房（1600 ticks=80s 局长，cap 帽内必到终局）——ambient 房局长不可控
+     （bothost 默认 3600 ticks=180s>任何合理帽，首跑 no-end 连环弃局的真因）；
      弃局走 abandon/续跑，无 pulse 记账污染（finish 只记 kind=human&&conn 在场，W 已 detach） */
-  const okRoom = needObs ? (fresh && botsBalanced) : (elapsed >= 0 && elapsed < 90000)
+  const okRoom = fresh && (!needObs || botsBalanced)
   if (!okRoom) {
     wRoomId = null
     W.leave(); W.role = null; W.seat = -1
@@ -211,7 +212,7 @@ async function playMatch(W, loseIn, needObs) {
   const policy = needObs ? obsPolicy : estPolicy
   /* 输入泵：150ms 一拍（lastInput 持续=连续向量；cmd 一次性语义不受影响——W 全程零 cmd） */
   const tMatch = Date.now()
-  const capMs = needObs ? MATCH_TICKS * 50 + 12000 : 105000   /* est 靠乌龙 goal-cap 通常 <100s；残局尾窗也在此内到终 */
+  const capMs = MATCH_TICKS * 50 + 12000   /* fresh 自建 1600 ticks=80s：goal-cap 提前或 time-up ≤92s 兜底，必达终局 */
   const iv = setInterval(() => { const p = policy(W); if (p) W.send({ t: 'input', keys: p }) }, 150)
   try {
     while (Date.now() - tMatch < capMs && !W.ended) await sleep(300)
@@ -253,7 +254,7 @@ async function main() {
     const r = await playMatch(W, lose, needObs && obsFails < 5)
     if (r.fail || !r.res) {
       if (String(r.fail || '').startsWith('ambient-abort')) obsFails++
-      console.log(`  · skip [${r.fail}] lose=${lose} w=${wall()}s`)
+      console.log(`  · skip [${r.fail || (r.m && r.m.fail) || 'no-end'}] lose=${lose} w=${wall()}s`)
       matches.push({ ...r, loseIn: lose, outcome: null })
       continue
     }

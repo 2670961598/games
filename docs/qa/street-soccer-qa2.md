@@ -3,8 +3,8 @@
 - 单据：[QA·E6-W2-T3] 街头足球 QA2 联机红线专项二轮（BOT/FEEL 上线后复验+全链红线复核）单链 6/10+
 - 分支：feature/GAMES-142（基线 badff77 = GAMES-141 FEEL 已合并，merge main 无前进）
 - 日期：2026-10-15 ｜ 角色：QA（只读纪律：零产品代码改动，测试件为 `scripts/street-soccer-qa2-{net,mercy,web}.mjs`）
-- 环境：私有影子网关 `:4416`（`PORT/GATEWAY_PID/GATEWAY_LOG` 显式改道防覆盖常驻实例，`:4400/:4399` 全程零感知——生产 web 只读 GET 供页面加载，与 QA1 同口径）；剧本房一律 `/api/test/*` 隔离测试房；放水链走 WS quick 真实路径（协议 §2，见 §3 结构性论证）
-- 结论：**红线全绿，无 P0/P1 退回项**；QA1 观察项 O-1/O-2/O-3 抽验闭合；观察项 O-4/O-5 新增（均低危口径注记）
+- 环境：私有影子网关 `:4416`（`PORT/GATEWAY_PID/GATEWAY_LOG` 显式改道防覆盖常驻实例）+私有静态臂 `:4417`（`WEB_DIR=web` 同构复刻生产 web 源——本环境 :4399 未常驻，`:4400/:4399` 全程零感知）；剧本房一律 `/api/test/*` 隔离测试房；放水链走 WS quick 真实路径（协议 §2，见 §3 结构性论证）
+- 结论：**红线全绿，无 P0/P1 退回项**；QA1 观察项 O-1/O-2/O-3 抽验闭合；观察项 O-4/O-5/O-6 新增（均低危口径注记）
 
 ## 0. 冻结验收命令（自跑）
 
@@ -29,12 +29,12 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 
 ## 2. 200ms 延迟对照（qa2-net 34/34 绿——`scripts/street-soccer-qa2-net.mjs`）
 
-- **N1 时延带**（250ms 弃样窗=O-2 口径复用）：d0 房 tackle P95 49ms(n=8)+shot P95 94ms(n=24)（帽 600）✓；d200 房 tackle P95 242ms(n=16)（帽 900）✓；shot/pass 持球窗盲窗弃样（reject 在账 30 例=受理回路完好，QA1 已知采样劣势口径）✓
-- **仲裁不偏向低延迟者**（§5.4⑤）：tackle 胜率 0ms=10% vs 200ms=13%（|Δ|=3%<35%）✓——服务器权威仲裁无延迟项
-- **S3/S4 和解通道在 200ms 垫臂完整**：ext.ack 单调不减（×688）+ext.hash 周期在场（×68，末例 1066537894）✓——预测/确定性链路不受垫臂破坏
-- **触球反馈链数据源**：touch 事件×192+增量快照球 owner 镜像 688/688 恒带 ✓——FEEL 层触球反馈（F01 形变等）的伺服端数据源在 200ms 下不缺失；首绘 ≤80ms 红线由 FEEL 单 feel-check 17 面证（交叉引用）
-- **N3 长局 spot**：maxTicks=6000 硬顶房 spot×9 tick 单调+stateHash 演化+终局 time-up winner=B tick=3680 ✓；goal 事件==终态队分（A6 口径同源）✓
-- **N4 O-3 混跑抽验**（BOT 单 N4 决策级 A/B 的在线方向性，双 seed 聚合）：comp 队进球 3:0 压制 casual 队 ✓+comp 触球 61>casual 33（站位卡线+接散球路径压制）✓；steal/tackle 数据面披露（行为谱差异非压制失败——QA1 §4 注同源）
+- **N1 时延带**（250ms 弃样窗=O-2 口径复用）：d0 房 shot P95 48ms(n=7)+tackle P95 143ms(n=12)（帽 600）✓；d200 房 tackle P95 247ms(n=15)（帽 900）✓；shot/pass 持球窗盲窗弃样（reject 在账 30 例=受理回路完好，QA1 已知采样劣势口径）✓
+- **仲裁不偏向低延迟者**（§5.4⑤）：tackle 胜率 0ms=5% vs 200ms=13%（|Δ|=8%<35%）✓——服务器权威仲裁无延迟项
+- **S3/S4 和解通道在 200ms 垫臂完整**：ext.ack 单调不减（×692）+ext.hash 周期在场（×68，末例 1066537894）✓——预测/确定性链路不受垫臂破坏
+- **触球反馈链数据源**：touch 事件×192+增量快照球 owner 镜像 692/692 恒带 ✓——FEEL 层触球反馈（F01 形变等）的伺服端数据源在 200ms 下不缺失；首绘 ≤80ms 红线由 FEEL 单 feel-check 17 面证（交叉引用）
+- **N3 长局 spot**：maxTicks=6000 硬顶房 spot×9 tick 单调（末 tick=3624）+终局 time-up winner=B tick=3680（终态锚 stateHash=3255398145 在场）✓；goal 事件==终态队分（A6 口径同源）✓
+- **N4 O-3 混跑抽验**（BOT 单 N4 决策级 A/B 的在线方向性，双 seed 聚合）：comp 队进球 6:0 压制 casual 队 ✓+comp 触球 76>casual 33（站位卡线+接散球路径压制）✓；steal/tackle 数据面披露（行为谱差异非压制失败——QA1 §4 注同源）
 
 ## 3. 放水链在线验证（qa2-mercy——`scripts/street-soccer-qa2-mercy.mjs`）
 
@@ -47,6 +47,13 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 ## 4. 满编 2v2+第 5 人观战·FEEL 焦点光圈（qa2-web）
 
 <!-- WEB-RESULTS -->
+**9/9 绿**（`QA_WEB`/`QA_GW_WS` 环境改道：页面源=私有静态臂 `:4417`（`WEB_DIR=web`，与生产 :4399 同源零感知——QA1 期 :4399 生产常驻在本环境未起，故同构复刻），WS=`?gw=` 影子网关 :4416）
+
+- **W1 quick 页·让位入席（O-1 客户端面）**：真人优先顶替 bot 席（seat=3）✓+F08 让位提示环台账在案（就席=席位让位完成时点）✓+roomId 落 sessionStorage（?room= 拓扑入口）✓
+- **W2 满编 2v2 真实路径**（QA1 P4 复刻·FEEL 后复验）：4 真人四席互异 `[3,2,1,0]`（bot 全让位）✓
+- **W3 第 5 人观战**（FEEL 后）：seat=-1（welcome 实证非初始假信号——QA1 假信号锚口径）✓+快照流同观（ball.x 175000→196665 同流推进）✓+**F11 观战焦点球光圈台账**在案（lat=36ms）✓
+- **焦点环页内墨水（FEEL F11 落地闭环）**：球屏位环形 r10-18×36 采样×3 帧——观战页命中 7/60、5/60、5/60 vs **对照=球员页同环 0/60** ✓（金晕 #FFD86B 脉动仅在观战导演位着墨；F03 拖尾瞬态被持续帧滤除）；零 pageerror 全轮 ✓
+- 截图证据：`kernel/workers/GAMES-142-shots/qa2-{spectate-focus,fullhouse}.png`
 
 ## 5. QA1 观察项复核
 
@@ -61,17 +68,21 @@ cd /Volumes/BigDisk/Studio/projects/GAMES/repo && node scripts/api-check.js stre
 ## 7. 观察项（低危，接 QA1 编号）
 
 <!-- OBSERVATIONS -->
+- **O-4（低危·口径注记）N2-r5 手感层 stam 断言弱**：断言名「复席后快照续流体力值在场且演化」实作仅在场性检查（`typeof number && !== -1`）——本跑 welcome stam=100000→续流 100000 同值，未获「演化」正样本（断线 5s 窗内席位静止零消耗所致）。四键延续面（stam/lungeT/stumbleT/tackleCd）在场性已证；后续复验若需证演化，应断线前先制造体力消耗再复席采样。蓄力为本地瞬时态随断线弃、不属服务器延续面——脚本内口径注记维持。
+- **O-5（低危·QA 件口径，非产品缺陷）mercy 制败链首跑死锁三因**：①est 帽 105s<ambient 房局长 180s（bothost 默认 3600 ticks，est 容忍入龄房→结构性 no-end）②no-end 弃房回灌 quick 池→ambient-abort 连环（弃局不记账致连败停滞）③skip 日志打印错字段（顶层 `fail` 而非 `m.fail`，显 `[undefined]` 掩盖 no-end 真因）。二跑修订：全档 fresh 自建房+局长 1600 ticks+帽式对齐（详见 §9 修订披露）。放水链本体（台账/注入/行为档）无恙——死锁全程在 harness 制败侧。
+- **O-6（低危·字段面披露）F08 让位提示环台账 lat=null**：web 臂 W1 读 FEEL fx 台账 F08（让位提示环）`lat=nullms`——台账条目在场但 lat 字段缺省（对照 F11 lat=36ms 有值）。就席时点类 fx 无时延语义或漏记，建议 FEEL 台账统一 lat 口径（不影响本单判据：F08 判据为在案非时延）。
 
 ## 8. 回归抽查 2 作（共享 harness 面）
 
 - `api-check pool-physics`：19/19 绿（S3/S4 先例作，共享 testapi/rooms/sims harness 零扰动）
 - `api-check mini-moba`：22/22 绿（放水链同源作——pulse/foeLose 链框架面无扰动）
 
-（结果 /tmp/qa2-142/reg-{pool,moba}.log；报告 kernel/workers/GAMES-41/api-check-*-20261014235*.json）
+（结果 /tmp/qa2-142/reg-{pool,moba}.log；报告 kernel/workers/GAMES-41/api-check-{pool-physics-20261015004029,mini-moba-20261015004148}.json——本单实测复跑）
 
 ## 9. QA 件清单（本单新增，零产品代码改动）
 
 - `scripts/street-soccer-qa2-net.mjs`——net 臂 34 断言（N1 延迟对照/N2 重连三档+手感层延续/N3 长局/N4 混跑抽验）
 - `scripts/street-soccer-qa2-mercy.mjs`——放水链在线验证（WS quick 真实路径+饱和器+燃位器）
 - `scripts/street-soccer-qa2-web.mjs`——浏览器臂（满编+观战 F11 焦点环）
-- 复跑：影子网关 `PORT=4416 HOST=127.0.0.1 GATEWAY_LOG=/tmp/x/gw.log GATEWAY_PID=/tmp/x/gw.pid WEB_DIR=web node server/gateway/index.js &` 后依次跑三脚本（QA_GW 可覆写网关地址）
+- 复跑：影子网关 `PORT=4416 HOST=127.0.0.1 GATEWAY_LOG=/tmp/qa2-142/gw.log GATEWAY_PID=/tmp/qa2-142/gw.pid WEB_DIR=web node server/gateway/index.js &` + 静态臂 `PORT=4417 HOST=127.0.0.1 DATA_DIR=<tmp> WEB_DIR=web node server/index.js &` 后依次跑三脚本（`QA_GW`/`QA_WEB`/`QA_GW_WS`/`QA_SHOTS` 可覆写）
+- **二跑修订（首跑 PM 抢救件自测暴露，均 QA 件非产品码）**：mercy est 帽 105s→138s（time-up 兜底 ~123s 计败，原帽先于终局弃局致连败停滞+弃房污染 quick 池）+skip 日志字段修正；web 页面源/截图目录 env 化（:4399 未常驻环境可复跑）+环形探针 NaN 坐标守卫（ball 态瞬态缺键曾致 getImageData 崩）
