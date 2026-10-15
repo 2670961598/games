@@ -1,0 +1,86 @@
+{
+  "slug": "iron-torrent",
+  "title": "钢铁洪流",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 280,
+  "scoring": {
+    "win": "歼灭敌队（命池耗尽全毁）或占点 100%",
+    "lose": "全队被歼/被占点/超时裁定负",
+    "s2": "击毁数+伤害量",
+    "s3": "超时裁定链：存活台数→占点进度→累计伤害"
+  },
+  "description": "实弹抛物弹道，掩体越打越少：穿甲平射、榴弹越墙，中央占点定生死。预览线就是权威弹道——200ms 延迟照样指哪打哪。",
+  "net": {
+    "tech": "S4",
+    "gameId": "iron-torrent",
+    "mode": "2v2-armored",
+    "seats": 4,
+    "teams": { "A": [0, 2], "B": [1, 3] },
+    "api": {
+      "spec": 1,
+      "ops": {
+        "move":  { "ws": "input", "keys": ["mx","my"],
+                   "desc": "驾驶向量 {mx,my}∈[-100,100] 整数，20Hz 持续上报（静止保活）；input.frame=seq（预测和解 ack 锚点）。本地预测同式零等待" },
+        "aim":   { "ws": "input", "keys": ["tur"],
+                   "desc": "炮塔目标角 tur uint16 brads（服务器 >>3 量化 0.044°）；炮塔以类内转速上限（75-90°/s）渐转——权威角是唯一开炮弹向" },
+        "fire":  { "ws": "input", "keys": ["cmd"],
+                   "desc": "开炮：cmd={k:'fire',ammo:0|1}——零瞄准参数（弹向=服务器当前炮塔角）；弹药>0 且 CD=0 才受理，非法 {k:'reject'}；回执 events {k:'fire',ang,x,y,vx,vy,vz}（确定性重演起点，含散布后出射角）" },
+        "swap":  { "ws": "input", "keys": ["cmd"],
+                   "desc": "弹种切换：cmd={k:'swap',ammo:0|1}——AP 穿甲/HE 榴弹，瞬时（不改 CD）；回执快照 ammo 字段" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）",
+        "winner": "'A'=偶数席队(0,2) ｜ 'B'=奇数席队(1,3) ｜ 'draw'",
+        "teams": { "A": [0, 2], "B": [1, 3] },
+        "reason": "eliminated（敌队全灭：命池尽且坦克全毁） ｜ capture（占点进度 100%） ｜ timeout（9600 tick 裁定链：存活台数→占点进度→累计伤害→draw） ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live + welcome.state（地图 tile 表/占点 0/命池 5,5/physics 声明块）+ 首张全量快照",
+        "A2 能赢：gunner 剧本 A 队终态胜（eliminated 或 capture；对位 3×casual 无预判）",
+        "A3 能输：idle 剧本 B 队终态胜（挂机送命池，对位 2×competitive 绕侧+集火）",
+        "A4 注入→快照反映 <100ms：move 位移/aim 的 tur 收敛/fire 事件均见下一 snapSeq（服务端同钟）",
+        "A5 断线重连 <10s：$reconnect 后 welcome 全量恢复（坦克/弹药/掩体耐久/占点/命池/活动弹道重演快进 ≤1ms）",
+        "A6 命中与命池链：drive-hit 段（提前量解算注入 fire）→ {k:'hit'} hp 减 → {k:'kill'} 命池−1 → {k:'respawn'} 6s 后满弹出场；命池尽后 kill → 无 respawn；全队出局 → end(eliminated)",
+        "A7 弹道确定性双跑：同 seed 同策略两房终态 stateHash 相等 && 事件账本逐字节相等 && stateHash==回放器重放 hash（S4 纪律红线）；fire 事件参数（ang/vx/vy/vz）双跑逐字节相等",
+        "A8 占点与掩体链：siege 剧本占点净 1 人 91s±2s 进度满 → end(capture) 可达；HE 拆墙 {k:'crumble'} 后 tile 耐久=0 且后续 AP 弹道命中判定不再被该 tile 拦截（事件账本 hit 链回算）"
+      ],
+      "script": {
+        "seed": 20261015, "timeScale": 8, "startDelayMs": 600, "maxTicks": 9600,
+        "scenarios": {
+          "win":  { "autopilot": true, "botLevels": [null, "casual", "casual", "casual"], "expectWinner": "A", "policy": "gunner" },
+          "lose": { "botLevels": [null, "competitive", "casual", "competitive"], "expectWinner": "B", "policy": "idle" },
+          "siege": {
+            "botLevels": [null, "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "siege-probe",
+            "assert": "A6+A8 账本断言（命中链+占点/掩体链），胜负不断言"
+          },
+          "deterministic": {
+            "runs": 2, "autopilot": true, "botLevels": [null, "balanced", "balanced", "balanced"], "expectWinner": "any", "policy": "gunner",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志逐字节相等 && stateHash == replayHash"
+          },
+          "latency200": {
+            "arms": [ { "delayMs": 0 }, { "delayMs": 200 } ], "botLevels": [null, "balanced", "balanced", "balanced"],
+            "policy": "gunner",
+            "assert": "双臂完赛（有终局）&& A 队击毁数两臂差 ≤1 && armB carriedInputs > 0（延迟注入在场证据，kart A8 口径）"
+          }
+        }
+      }
+    }
+  },
+  "bot": {
+    "levels": 3,
+    "takeOver": "balanced",
+    "mercy": { "min": 2, "hard": 4, "noise1": 9, "noise2": 18 }
+  }
+}

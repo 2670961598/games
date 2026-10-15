@@ -1148,5 +1148,22 @@
         "chain": "GAMES-137 设计书/GAMES-138 DEV/GAMES-139 QA1/GAMES-140 BOT/GAMES-141 FEEL/GAMES-142 QA2/GAMES-143 VIS/GAMES-144 STRESS（FIX1/FIX2 零退回跳过未占单号）"
       }
     }
+  },
+  "multiplayer:iron-torrent": {
+    "status": "dev-landed",
+    "date": "2026-10-15",
+    "net": {
+      "tech": "S4"
+    },
+    "bot": {
+      "levels": 3,
+      "takeOver": "balanced"
+    },
+    "chain": {
+      "design": "GAMES-145",
+      "dev": "GAMES-146",
+      "count": 2
+    },
+    "notes": "S4 预测弹道第二款单链 2/10（DEV=钢铁洪流核心实现：连续预测（坦克域 tick 步进+input ring ack 和解）+离散段重演（弹道域 Q16 子步，fire 事件携散布出射角全参下发=客户端零 rng 复现义务）组合——roadmap S4 行两半由 pool/iron 各证其一的 DEV 侧落地。TRIG16 跨作复用第三作；弹道 2.5D 高度分层（AP 峰 17.7px 被一切掩体挡/HE 峰 60.5px 越一切墙）；三地图程序化固定布局（上下镜像 by construction）；Bot 提前量闭式迭代解（1/2/3 轮档差）+卡死滑墙账本；gunner 剧本风筝带机制差（casual 无提前量在 19 万距离打移动靶误差 55k>>r_hit 13k）A2 7/7；A7 双跑+回放器+fire 参数逐字节；siege 占点/拆墙链。v1 收窄 REPORT 披露（HE 撞掩体不 AOE 坦克/AOE 只伤敌队/锚点通用路线版）。"
   }
 }

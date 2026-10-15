@@ -30,6 +30,7 @@ import { speedKartSim } from './sims/speed-kart.js'
 import { tacticsDuelSim } from './sims/tactics-duel.js'
 import { miniMobaSim } from './sims/mini-moba.js'
 import { streetSoccerSim } from './sims/street-soccer.js'
+import { ironTorrentSim } from './sims/iron-torrent.js'
 import { attachWs } from './lib/ws.js'
 import { TestHost, handleTestApi, isLoopback } from './testapi.js'
 
@@ -63,6 +64,7 @@ rooms.register(speedKartSim)    // S7 预测与和解首证（GAMES-109，设计
 rooms.register(tacticsDuelSim)  // S1+S5 双技术复用首款（GAMES-118，设计 §5）
 rooms.register(miniMobaSim)     // S2 状态同步第二款（GAMES-127，设计 §5 战场节奏×小镇管线）
 rooms.register(streetSoccerSim) // S3+S4 双技术复用第三款（GAMES-138，设计 §5.1 单流双域+持球权桥）
+rooms.register(ironTorrentSim) // S4 预测弹道第二款（GAMES-146，设计 §5.1 连续预测+离散段重演组合）
 
 const bothost = new BotHost({ rooms, log })
 bothost.register({ gameId: 'net-tank', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 })
@@ -76,6 +78,7 @@ bothost.register({ gameId: 'speed-kart', minLive: 2, levels: ['casual', 'balance
 bothost.register({ gameId: 'tactics-duel', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数，终局 3s 补房）
 bothost.register({ gameId: 'mini-moba', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数）
 bothost.register({ gameId: 'street-soccer', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（casual+balanced；设计 §7 房间参数，终局 3s 补房）
+bothost.register({ gameId: 'iron-torrent', minLive: 2, levels: ['casual', 'balanced'], maxRooms: 4 }) // 常驻房 2（设计 §7：casual+balanced，终局 3s 补房，上限 4 房）
 rooms.onEnded = () => bothost.ensure()
 
 const testHost = new TestHost({ rooms, log })

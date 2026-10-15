@@ -23,6 +23,7 @@ const CATALOG = [
   { name: '极限接力', track: 'T3 混合', tech: 'S3' },
   { name: '八球台球', track: 'T4 物理', tech: 'S4', on: true, url: '/games/multiplayer/pool-physics/index.html' },
   { name: '苍穹争锋', track: 'T4 物理', tech: 'S4' },
+  { name: '钢铁洪流', track: 'T4 物理', tech: 'S4', on: true, url: '/games/multiplayer/iron-torrent/index.html' },
   { name: '元素对决', track: 'T5 回合', tech: 'S5', on: true, url: '/games/multiplayer/element-duel/index.html' },
   { name: '弈界棋阁', track: 'T5 回合', tech: 'S5' },
   { name: '深夜狼人', track: 'T5 回合', tech: 'S5' },
