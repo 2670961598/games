@@ -35,9 +35,11 @@ await sleep(4500) // quick 入局+welcome+首张快照+首帧渲染
 
 /* ---------- P1-A1 事件闭环 ---------- */
 const wl = await page.evaluate(() => window.__GAMES_DEBUG__ && window.__GAMES_DEBUG__.dbgEvents && window.__GAMES_DEBUG__.dbgEvents().find((e) => e.event === 'welcome'))
+ok('P1', 'A1 S4 声明块在浏览器面（welcome.room.physics.engine==iron-int-v1，§5.2 版本护栏前提）',
+  !!(wl && wl.payload && wl.payload.engine === 'iron-int-v1'), wl ? `engine=${wl.payload.engine}` : '未见 welcome')
 ok('P1', 'A1 事件闭环·boot→join：quick 入房 welcome 就席 seat≥0（快照流推进）',
   !!(wl && wl.payload && wl.payload.seat >= 0),
-  wl ? `seat=${wl.payload.seat} engine=${wl.payload.room && wl.payload.room.physics && wl.payload.room.physics.engine}` : '未见 welcome')
+  wl ? `seat=${wl.payload.seat} engine=${wl.payload.engine}（emitDbg 扁平 payload——physicsHash=${wl.payload.physicsHash}）` : '未见 welcome')
 
 /* ---------- P1-A2/A4 可玩+操控响应（CDP 触控真实输入路径） ---------- */
 const cdp = await context.newCDPSession(page)
@@ -74,19 +76,28 @@ const s1 = await inkField()
 ok('P1', 'A2 可玩·受信输入驱动对局演化（摇杆拖拽→战场墨水分布位移，坦克位演化）',
   s0.nonBg > 120 && s1.nonBg > 120 && Math.abs(s1.nonBg - s0.nonBg) >= 3,
   `非底色墨水 ${s0.nonBg}→${s1.nonBg}（拖拽前后分布位移=世界演化）`)
-/* fire 钮（Ø64 @309,605）：tap→乐观开炮+权威 fire 回执（A4 计时——只认我席 fire） */
+/* fire 钮（Ø64 @309,605）：tap→乐观开炮+权威 fire 回执（A4 计时——只认我席 fire）。
+   CD/阵亡窗是真实游戏态（首跑实测 tap 落窗=无 fire 事件非缺陷）——重试至 4 次取首个
+   生效样本，reject 事件同步采集归因（reject 在页=按钮路径通+服务器校验面裁回）。 */
 const mySeat = wl && wl.payload && wl.payload.seat
-const tTap = Date.now()
-await touch('touchStart', [{ x: 309, y: 605 }])
-await sleep(80)
-await touch('touchEnd', [])
-await sleep(1600)
-const fires = await page.evaluate(() => window.__GAMES_DEBUG__.dbgEvents().filter((e) => e.event === 'fire'))
-const myFire = fires.find((e) => e.payload && e.payload.seat === mySeat && e.at >= tTap) || null
+let myFire = null, tTap = 0, rejects = []
+/* 三跑实证：quick 会并入在打房（探针 frame=554@join——中途接手 Bot 坦克，全程被敌
+   Bot 揪打），客户端 uiTap 门 !alive||cd>0 静默不发 op（无 reject 属设计）。对策=入房
+   初期（坦克近满血）密集重试 12×700ms——CD_FIRE=50 tick=5s 窗内必有 cd=0 落点 */
+for (let attempt = 0; attempt < 12 && !myFire; attempt++) {
+  tTap = Date.now()
+  await touch('touchStart', [{ x: 309, y: 605 }])
+  await sleep(80)
+  await touch('touchEnd', [])
+  await sleep(700)
+  const evs = await page.evaluate(() => window.__GAMES_DEBUG__.dbgEvents().filter((e) => e.event === 'fire' || e.event === 'reject'))
+  rejects = evs.filter((e) => e.event === 'reject')
+  myFire = evs.find((e) => e.event === 'fire' && e.payload && e.payload.seat === mySeat && e.at >= tTap) || null
+}
 const latMs = myFire ? myFire.at - tTap : -1
 ok('P1', 'A2/A4 可玩·fire 钮真实输入路径→我席权威 fire 回执在页（含散布角事件参数，§5.3）',
   !!myFire,
-  myFire ? `fire@${JSON.stringify(myFire.payload).slice(0, 96)}…` : `未见我席(seat=${mySeat}) fire 回执（CD 期/阵亡窗披露；页内 fire 事件×${fires.length}）`)
+  myFire ? `fire@${JSON.stringify(myFire.payload).slice(0, 96)}…` : `未见我席(seat=${mySeat}) fire 回执（12×0.7s 重试全落 CD/阵亡窗；reject×${rejects.length}${rejects.length ? ' why=' + JSON.stringify(rejects[0].payload).slice(0, 60) : ''}——探针实证 quick 并房在打局+uiTap 门静默设计）`)
 ok('P1', 'A4 操控响应·fire tap→权威 fire 事件 <1500ms（含轮询/组包；<100ms 红线=服务端同钟口径，冻结命令 A4 交叉引用）',
   latMs >= 0 && latMs < 1500, latMs >= 0 ? `${latMs}ms` : '无样本')
 
@@ -105,7 +116,18 @@ async function frameCost(p, frames) {
   })
 }
 const perf = await frameCost(page, 140)
-const blankP = await (async () => { const b = await context.newPage(); await b.goto('about:blank'); const r = await frameCost(b, 80); await b.close(); return r })()
+const blankP = await (async () => {
+  const b = await context.newPage(); await b.goto('about:blank')
+  /* 后台 tab rAF 节流坑：新开 tab 抢走 active 位后 blank 页 rAF 可能停发（首跑实测挂死）——
+     bringToFront 归位 + 15s 超时降级披露（对照带是披露位非门禁，cond 恒 true） */
+  await b.bringToFront().catch(() => { })
+  const r = await Promise.race([
+    frameCost(b, 80),
+    sleep(15000).then(() => ({ avg: 'n/a', p95: -1, jank: -1, n: 0 })),
+  ])
+  await page.bringToFront().catch(() => { })
+  await b.close(); return r
+})()
 ok('P2', 'perf 渲染帧成本 avg <16ms（60fps 预算=DoD ≥55fps 换算口径；帧成本法=回调执行耗时，免疫环境 vsync 封顶）',
   perf.avg < 16, `avg=${perf.avg}ms p95=${perf.p95}ms n=${perf.n}`)
 ok('P2', 'perf 掉帧率（帧成本 >25ms）<2%', perf.jank < 2, `${perf.jank}%`)
