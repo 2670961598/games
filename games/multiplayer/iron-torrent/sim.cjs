@@ -549,8 +549,16 @@
    * rng=mulberry32(seed^seat^tick>>2)（§4.2）；散布噪声只耗本席 rng 流
    * ===================================================================== */
   var BOT_EVERY = { casual: 10, balanced: 6, competitive: 4 };
-  var ITER_N = { casual: 0, balanced: 2, competitive: 3 }; // 迭代深度（§4.2）
+  var ITER_N = { casual: 0, balanced: 2, competitive: 3 }; // 迭代深度（§4.2——brain 按档接线）
   var NOISE = { casual: 0, balanced: 9, competitive: 2 };  // 附加散布（8192 档）
+  /* casual 失误率参数表（§4.2 冲锋队「乱射」可调参化，BOT 深化单）：aimP=瞄准大偏
+   * 注入率（窗内 tur 偏 jit 档）/holdP=犹豫率（窗内不开炮）/turnP=走位失误率（窗内
+   * 背敌盲走）；缺省=DEV 冻结值，game.json bot.casual 可调；只耗本席 rng 流 */
+  var CASUAL = { aimP: 0.22, jit: 900, holdP: 0.18, turnP: 0.10 };
+  /* 放水链参数表（§4.3 让力模式启用，street GAMES-140 同式；game.json bot.mercy 可调）：
+   * min/hard=对席真人连败两档阈值；noise1/noise2=档内散布附加（8192 档）；leadCut=
+   * L1 提前量迭代降档轮数；errP=失误注入率（犹豫窗）。env 缺省全链不可达（A8 口径） */
+  var MERCY = { min: 2, hard: 4, noise1: 9, noise2: 18, leadCut: 1, errP: 0.30 };
   /* 掩体锚点表（§4.2 balanced 站桩轮换/competitive 绕侧途径）——三图通用安全路线：
    * 中央结构（十字臂/双墙/环）都以边路绕行（m-cross 横臂 cols3..13 近全宽，唯
    * col1-2/col14-15 有南北口），末锚=中心圈两翼（不穿墙带） */
@@ -561,11 +569,12 @@
     [[295000, 180000], [295000, 320000], [220000, 330000]], // B 队席 3
   ];
   /* 提前量解算核（§4.1 伪代码直译：闭式迭代+风偏补偿；全整数。
-   * 速度=mem 记账 milli/tick → 子步域 /5；风补偿=mag×t/100 milli 反向） */
-  function solveLead(st, me, tgt, ammo) {
+   * 速度=mem 记账 milli/tick → 子步域 /5；风补偿=mag×t/100 milli 反向。
+   * n=迭代轮数（§4.2 档间差：brain 按 ITER_N[level] 接线；autopilot 缺省 3 轮不变） */
+  function solveLead(st, me, tgt, ammo, n) {
     var vh = AMMO[ammo].vh;
     var t = 0, ax = tgt.x, ay = tgt.y;
-    var n = 3;
+    n = n || 3;
     for (var it = 0; it < n; it++) {
       ax = tgt.x + ((tgtVelX(st, tgt) * t / 5) | 0);
       ay = tgt.y + ((tgtVelY(st, tgt) * t / 5) | 0);
@@ -618,15 +627,40 @@
     var M = st.mem[seat] || (st.mem[seat] = {});
     var anchors = ANCHORS[seat];
     var team = seat & 1;
+    /* ---- 放水链扫描（§4.3 让力模式启用，street GAMES-140 同式）：env.foeLose[seat]
+     * =房内其他真人最大连败（rooms.js pulse 台账→doFrame botEnv；META.pulseTeam 按队记）
+     * ——对席真人连败 ≥min → L1 让力（提前量迭代降 leadCut 轮+散布附加+失误注入）；
+     * ≥hard → L2 重败（行为降档 comp→bal，§4.3 单步口径）；同队真人连败 → 生态位让位
+     * （收步跟后+让火力位）。env 缺省（回放器/离线直调）或 foeLose=0（api 剧本房单局
+     * pulse 恒 0）全链不可达 → 与在线逐字节等价（A8 口径）；噪声只耗本席 rng 流。 */
+    var mercyDeg = 0, humanFoe = false, mateHuman = false;
+    var MC = (env && env.mercy) || MERCY;
+    if (env && env.foeLose && (env.foeLose[seat] || 0) >= MC.min) {
+      mercyDeg = (env.foeLose[seat] || 0) >= MC.hard ? 2 : 1;
+      if (env.kinds) for (var ks = 0; ks < SEATS; ks++) {
+        if (ks === seat || env.kinds[ks] !== 'human') continue;
+        if (ks === (seat ^ 2)) mateHuman = true; else humanFoe = true; // 2v2：mate=seat^2 同队，余席皆对席
+      }
+      if (humanFoe && mercyDeg >= 2 && level === 'competitive') level = 'balanced'; // L2 重败降档（§4.3：comp→bal 单步）
+    }
+    var mNoise = humanFoe && mercyDeg >= 1 ? (mercyDeg >= 2 ? MC.noise2 : MC.noise1) : 0;
+    var mLead = humanFoe && mercyDeg >= 1 ? (MC.leadCut || 1) : 0;
+    var mErrP = humanFoe && mercyDeg >= 1 ? (MC.errP || 0) : 0;
     /* 敌清单（最近敌优先） */
     var foe = null, fd = 1e15; // milli² 距离量级哨兵（2^30≈1e9 会被 380000²≈1.4e11 压过）
+    var mt = st.players[seat ^ 2]; // 同队 mate（ping 集火指示源）
     for (var i = 0; i < SEATS; i++) {
       var q = st.players[i];
       if (!q || !q.alive || q.team === team) continue;
       var dd = d2(P.x, P.y, q.x, q.y);
       /* competitive 集火：hp 最低敌距离加权（§4.2 ping 集火——平方距离域 1e11 量级，
-       * hp²×2500（100hp→2.5e9≈50000 milli 等效折减）才可达影响域） */
-      if (level === 'competitive') dd -= q.hp * q.hp * 2500;
+       * hp²×2500（100hp→2.5e9≈50000 milli 等效折减）才可达影响域）；
+       * +ping 集火（§4.2：队友 tur 指向锥 25°=568 档内的敌再折减 4e9≈63000 milli
+       * 等效——两 bot 自然同目标；远距不越距离优先） */
+      if (level === 'competitive') {
+        dd -= q.hp * q.hp * 2500;
+        if (mt && mt.alive && Math.abs(angDiff(mt.tur, atan2Q(q.x - mt.x, q.y - mt.y))) <= 568) dd -= 4000000000;
+      }
       if (dd < fd) { fd = dd; foe = q; }
     }
     var steer = function (x, y, sp) {
@@ -651,10 +685,10 @@
     M.dt--;
     if (!M.ai) M.ai = { tx: P.x, ty: P.y, anchor: 0, fired: 0 };
 
-    /* ---- 瞄准（§4.1）---- */
+    /* ---- 瞄准（§4.1；迭代轮数按档接线 §4.2：cas 0/bal 2/comp 3——L1 让力降 mLead 轮）---- */
     var aimAt = foe;
     if (level !== 'casual' && fresh) {
-      var lead = solveLead(st, P, foe, 0);
+      var lead = solveLead(st, P, foe, 0, Math.max(0, (ITER_N[level] || 2) - mLead));
       M.ai.tx = lead.x; M.ai.ty = lead.y;
       /* competitive 减速预判（§4.1：对减速目标用 (v_pre+v_now)/2——近似：提前量 ×85%） */
       if (level === 'competitive') {
@@ -666,9 +700,21 @@
       }
     } else if (level === 'casual') {
       M.ai.tx = foe.x; M.ai.ty = foe.y; // 无提前量（§4.2 单据口径：直线逼近乱射）
+      /* 失误率参数化（BOT 深化单）：窗级三失误——瞄准大偏/犹豫不开炮/走位背敌 */
+      if (fresh) {
+        var CU = (env && env.casual) || CASUAL;
+        M.ai.blunder = rng() < CU.aimP ? (rng() < 0.5 ? CU.jit : -CU.jit) : 0;
+        M.ai.hold = rng() < CU.holdP ? every : 0;
+        M.ai.wrong = rng() < CU.turnP;
+      }
+      if (M.ai.hold > 0) M.ai.hold--;
     }
+    /* 放水链失误注入（L1/L2）：对席真人连败档犹豫窗（与 casual holdP 同门禁语义） */
+    if (level !== 'casual' && fresh && mErrP > 0) M.ai.hold = rng() < mErrP ? every : 0;
+    else if (level !== 'casual' && M.ai.hold > 0) M.ai.hold--;
     var wantTur = atan2Q(M.ai.tx - P.x, M.ai.ty - P.y) & 8191;
-    var noise = NOISE[level] || 0;
+    if (M.ai.blunder) wantTur = (wantTur + M.ai.blunder + 8192) & 8191;
+    var noise = (NOISE[level] || 0) + mNoise;
     if (noise && fresh) wantTur = (wantTur + ((((rng() * 2 - 1) * noise) | 0)) + 8192) & 8191;
     out.tur = (wantTur << 3) & 0xFFFF;
 
@@ -683,33 +729,93 @@
 
     /* ---- 移动（§4.2 三档移动面）---- */
     if (level === 'casual') {
-      /* 直线逼近（不绕掩体，穿开阔地）；60000 内收步对轰（贴脸必中=假命中带，收窄） */
-      if (dist > 60000) steer(foe.x, foe.y);
+      /* 直线逼近（不绕掩体，穿开阔地）；60000 内收步对轰（贴脸必中=假命中带，收窄）；
+       * 走位失误窗（aimP 同族 turnP）：背敌盲走一窗（§4.2「乱射」的驾驶面） */
+      if (M.ai.wrong) steer(P.x - (foe.x - P.x), P.y - (foe.y - P.y));
+      else if (dist > 60000) steer(foe.x, foe.y);
       else if (dist < 40000) steer(P.x - (foe.x - P.x), P.y - (foe.y - P.y));
     } else if (level === 'balanced') {
-      /* 掩体轮换：站桩射 2-4 发→移至下一锚（锚=掩体后 8000 近似=锚点即固定安全位） */
-      if (dist > 200000) { var an = anchors[M.ai.anchor % anchors.length]; steer(an[0], an[1]); }
+      /* 受击退掩体（§4.2 掩体利用：受击后 60% 概率退至最近掩体锚——BOT 深化接线；
+       * retreat 窗 18 拍内锚优先，近距交火（<60000）仍切向对轰不送背） */
+      if (fresh) {
+        if (M.lhp !== undefined && P.hp < M.lhp && rng() < 0.6) {
+          var bi = 0, bdist = 0;
+          for (var ai = 0; ai < anchors.length; ai++) {
+            var ad = d2(P.x, P.y, anchors[ai][0], anchors[ai][1]);
+            if (ai === 0 || ad < bdist) { bdist = ad; bi = ai; }
+          }
+          M.ai.anchor = bi; M.ai.retreat = 18;
+        }
+        M.lhp = P.hp;
+      }
+      if (M.ai.retreat > 0) {
+        M.ai.retreat--;
+        if (dist > 60000) { var rn = anchors[M.ai.anchor % anchors.length]; steer(rn[0], rn[1]); }
+        else if (dist < 90000) {
+          var tr = (atan2Q(foe.x - P.x, foe.y - P.y) + ((st.tick >> 4) & 1 ? 2048 : -2048)) & 8191;
+          steer(P.x + ((cosQ16(tr) * 40000) >> 16), P.y + ((sinQ16(tr) * 40000) >> 16));
+        }
+      } else if (dist > 200000) {
+        /* 锚点轮换巡航（BOT 深化：到锚超时 90 拍推进——镜像 balanced 房恒 0 fire 的
+         * 僵局破除：锚链末锚=中心圈两翼，轮到末锚即入射程环开火） */
+        var an = anchors[M.ai.anchor % anchors.length];
+        if (d2(P.x, P.y, an[0], an[1]) < 30000 * 30000) {
+          M.ai.wait = (M.ai.wait || 0) + 1;
+          if (M.ai.wait > 90) { M.ai.wait = 0; M.ai.anchor++; }
+        } else M.ai.wait = 0;
+        steer(an[0], an[1]);
+      }
       else if (M.ai.fired >= 2 + ((rng() * 3) | 0)) { M.ai.fired = 0; M.ai.anchor++; }
       else if (dist < 90000) { // 切向绕行（保持侧翼受弹面，不送背）
         var ta = (atan2Q(foe.x - P.x, foe.y - P.y) + ((st.tick >> 4) & 1 ? 2048 : -2048)) & 8191;
         steer(P.x + ((cosQ16(ta) * 40000) >> 16), P.y + ((sinQ16(ta) * 40000) >> 16));
+      } else if (d2(P.x, P.y, anchors[M.ai.anchor % anchors.length][0], anchors[M.ai.anchor % anchors.length][1]) > 30000 * 30000) {
+        /* 中距站桩带教义（BOT 深化）：站桩射击只在锚位发生——90-200k 途经开阔地/
+         * 占点圈不停车（防无占点意图的 bot 常驻圈心堵点——占点权留给真占点者） */
+        steer(anchors[M.ai.anchor % anchors.length][0], anchors[M.ai.anchor % anchors.length][1]);
       }
-      /* 回防/补给（§4.2） */
+      /* 回防/补给（§4.2；补给时机深化：近距交火不撤——撤=送背） */
       if (st.capTeam === (team ^ 1) && st.capBar > 60000) steer(CAP_CX, CAP_CY);
-      if (P.ammo[0] < 4) { var sp2 = SPAWN[seat]; steer(sp2[0], sp2[1]); }
+      if (P.ammo[0] < 4 && dist > 90000) { var sp2 = SPAWN[seat]; steer(sp2[0], sp2[1]); }
     } else {
       /* competitive 绕侧（§4.2：目标背面 120-180° 入射带途径点——近似=目标侧后 45° 位） */
       var backAng = foe.dir;
       var sideAng = (backAng + (seat === 0 || seat === 1 ? 2048 : -2048)) & 8191; // 左右分席绕
       var fx = foe.x + ((cosQ16(sideAng) * 60000) >> 16);
       var fy = foe.y + ((sinQ16(sideAng) * 60000) >> 16);
-      if (dist > 160000 || Math.abs(angDiff(atan2Q(P.x - foe.x, P.y - foe.y), backAng)) < 2731) {
+      /* 占点-歼灭模式切换（§4.2 占点权重进决策评分——BOT 深化单）：
+       * capW=占点域收益：敌净占中（bar>30000 起算，越深越急线性增）→ 回防；
+       * 我方净占收盘段（bar>60000）→ 护点；开局 300 tick 席 2 先占（席位分工）；
+       * 人数优（敌活<我活）→ 歼灭模式权重 ×70%（追猎优先）；capW>50000 切占点域 */
+      var foeAlive = 0, myAlive = 0;
+      for (var ci = 0; ci < SEATS; ci++) {
+        var cp = st.players[ci];
+        if (!cp || !cp.alive) continue;
+        if (cp.team === team) myAlive++; else foeAlive++;
+      }
+      var capW = 0;
+      if (st.capTeam === (team ^ 1) && st.capBar > 30000) capW = 40000 + st.capBar;
+      else if (st.capTeam === team && st.capBar > 60000 && st.capBar < CAP_MAX) capW = 55000;
+      if (st.tick < 300 && seat === 2) capW += 60000;
+      if (foeAlive < myAlive) capW = ((capW * 7) / 10) | 0;
+      if (capW > 50000) steer(CAP_CX, CAP_CY);
+      else if (dist > 160000 || Math.abs(angDiff(atan2Q(P.x - foe.x, P.y - foe.y), backAng)) < 2731) {
         steer(clampI(fx, 20000, W_M - 20000), clampI(fy, 20000, H_M - 20000));
       }
-      /* 占点权重（§4.2：进度差/敌全占回防+开局 1 人先占） */
-      if (st.tick < 300 && (seat & 1) === 0 && seat === 2) steer(CAP_CX, CAP_CY);
-      else if (st.capTeam === (team ^ 1) && st.capBar > 50000) steer(CAP_CX, CAP_CY);
-      if (P.ammo[0] < 4) { var sp3 = SPAWN[seat]; steer(sp3[0], sp3[1]); }
+      if (P.ammo[0] < 4 && dist > 90000) { var sp3 = SPAWN[seat]; steer(sp3[0], sp3[1]); }
+    }
+
+    /* ---- 生态位让位（§4.3：同队真人连败 → bot 收步+让火力位）----
+     * 收步：bot 比真人更近火线 → 退到真人身后 60000（沿 foe→mate 延长线，不抢前）；
+     * 让火力位：真人更近且仍有弹 → 本拍让炮（真人打不了的场合才补位开火） */
+    var yieldFire = false;
+    if (mateHuman && mercyDeg >= 1 && mt && mt.alive) {
+      var myFd = d2(P.x, P.y, foe.x, foe.y), mFd = d2(mt.x, mt.y, foe.x, foe.y);
+      if (myFd < mFd) {
+        if (mt.ammo[0] + mt.ammo[1] > 0) yieldFire = true;
+        var bx = mt.x - foe.x, by = mt.y - foe.y, bl = isqrt(bx * bx + by * by) || 1;
+        steer(mt.x + (((bx * 60000) / bl) | 0), mt.y + (((by * 60000) / bl) | 0));
+      }
     }
 
     /* 卡死滑墙（net-tank sx 账本同款）：有输入而近拍位移≈0=被 tile 挡 → 方向旋转
@@ -723,7 +829,9 @@
      * AP 落地 ~215000/HE 落点环 ~221000，射程外开火=纯浪费弹药）---- */
     var aligned = Math.abs(angDiff(wantTur, P.tur)) <= 22; // 1°≈22 档
     var inRange = dist <= (ammo === 1 ? 245000 : 210000);
-    if (aligned && inRange && P.cd <= 0 && P.ammo[ammo] > 0 && !friendOnLine(st, P, M.ai.tx, M.ai.ty)) {
+    /* 犹豫窗（casual holdP/放水链 errP）与让火力位（生态位让位）都是窗级门禁 */
+    if (aligned && inRange && P.cd <= 0 && P.ammo[ammo] > 0 && !(M.ai.hold > 0) && !yieldFire
+      && !friendOnLine(st, P, M.ai.tx, M.ai.ty)) {
       if (P.sel !== ammo) { out.cmd = { k: 'swap', ammo: ammo }; return out; }
       out.cmd = { k: 'fire', ammo: ammo };
       M.ai.fired = (M.ai.fired || 0) + 1;
