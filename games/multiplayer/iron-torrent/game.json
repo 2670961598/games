@@ -81,6 +81,7 @@
   "bot": {
     "levels": 3,
     "takeOver": "balanced",
-    "mercy": { "min": 2, "hard": 4, "noise1": 9, "noise2": 18 }
+    "casual": { "aimP": 0.22, "jit": 900, "holdP": 0.18, "turnP": 0.10 },
+    "mercy": { "min": 2, "hard": 4, "noise1": 9, "noise2": 18, "leadCut": 1, "errP": 0.30 }
   }
 }
