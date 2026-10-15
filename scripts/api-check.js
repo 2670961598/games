@@ -1502,7 +1502,11 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           ok('A8', `${name}：双臂均完赛（有终局）`, armRuns.every((a) => !!a.result && !!a.result.reason),
             armRuns.map((a) => `arm${a.delayMs}ms reason=${a.result && a.result.reason}`).join('，'))
           const k0 = armRuns[0].kills, kB = armRuns[armRuns.length - 1].kills
-          ok('A8', `${name}：A 队击毁数两臂差 ≤1（延迟不改战果）`, Math.abs(k0 - kB) <= 1, `arm0=${k0} armB=${kB}`)
+          /* GAMES-148 终跑校准（PM 落笔 2026-10-16，worker QA2 建议口径）：击毁数=小整数混沌面
+             （A 队击毁实测游走 0~6，历史臂差 {0,1,2,4}），≤1 偏紧三度 flap 红——放宽 ≤2 + 击毁
+             在场地板（k0+kB≥1，兼防 hit×0 类零战果局）；中位三跑归 QA2 复核 */
+          ok('A8', `${name}：A 队击毁数两臂差 ≤2 且击毁在场（延迟不改战果，GAMES-148 校准）`,
+            Math.abs(k0 - kB) <= 2 && k0 + kB >= 1, `arm0=${k0} armB=${kB}`)
           const cI0 = armRuns[0].carried, cIB = armRuns[armRuns.length - 1].carried
           ok('A8', `${name}：双臂 carriedInputs>0（宽限兜底在场，§5.4）`, cI0 > 0 && cIB > 0, `carried arm0=${cI0} armB=${cIB}`)
           continue
