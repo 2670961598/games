@@ -21,9 +21,17 @@
 
   /* ---------- HUD 字号登记表（HF 体系） ---------- */
   var HF_REG = {}, dbgEvents = [];
+  var HF_CLS = { P0: { min: 99, n: 0 }, P1: { min: 99, n: 0 }, P2: { min: 99, n: 0 } };
+  /* GAMES-143：旧实现 '15px 700'（size 前置+裸数字尾）=非法 CSS font 简写，canvas
+   * 赋值被静默忽略——全 HUD 实渲染 10px 缺省字（GAMES-135 mini-moba 同款坑，登记
+   * 表只记调用值不记生效值）。修正为 weight 前置合法简写；hudFonts() 附 __cls
+   * 分级下限 + __applied 生效往返自证。 */
   function HF(tag, px, weight, cls) {
-    var f = px + 'px ' + weight + '00';
+    var f = (weight || 6) + '00 ' + px + 'px -apple-system,"PingFang SC","Helvetica Neue",sans-serif';
     HF_REG[tag] = { px: px, weight: weight, cls: cls, at: now() };
+    var c = HF_CLS[cls] || (px >= 13 ? HF_CLS.P0 : px >= 11 ? HF_CLS.P1 : HF_CLS.P2);
+    if (px < c.min) c.min = px;
+    c.n++;
     return f;
   }
   function fmtTime(ticks) { // play tick → mm:ss
@@ -548,17 +556,21 @@
     ctx.restore();
     if (popA > 0) { ctx.fillStyle = '#FFD86B'; ctx.font = HF('p1b', 11, 7, 'P1'); ctx.globalAlpha = popA; ctx.fillText('+1', 74 - 20, 33 - 12 - popA * 8); ctx.globalAlpha = 1 }
     if (popB > 0) { ctx.fillStyle = '#FFD86B'; ctx.font = HF('p1b', 11, 7, 'P1'); ctx.globalAlpha = popB; ctx.fillText('+1', 134 + 20, 33 - 12 - popB * 8); ctx.globalAlpha = 1 }
+    /* 计分形色双通道（GAMES-143；hud-font-standard §3 形状第二通道强制）：A 椭圆标/
+     * B 方形标——与球员底盘同构（A 椭圆/B 方形），色弱下计分归属不依赖色相。 */
+    ctx.fillStyle = '#E8A33D'; ctx.beginPath(); ctx.ellipse(74, 42, 6.5, 3.5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3DC8E8'; ctx.fillRect(127, 39, 13, 7);
     ctx.fillStyle = '#E8E4D8'; ctx.font = HF('p0n', 13, 6, 'P0'); ctx.fillText(fmtTime(snapState.clock), W / 2 + 8, 33);
     ctx.fillStyle = '#7b8698'; ctx.font = HF('p2', 9, 5, 'P2'); ctx.fillText('街头足球 · 围笼 2v2', W - 62, 32);
     // 相位横幅位
     ctx.textAlign = 'center';
     if (snapState.phase === 'kick') {
-      ctx.fillStyle = '#FFD86B'; ctx.font = HF('p0', 13, 7, 'P0');
+      ctx.fillStyle = '#FFD86B'; ctx.font = HF('p0b', 13, 7, 'P0');
       ctx.fillText('开球 ' + Math.ceil((30 - phaseT()) / 20 * 10) / 10 + 's', W / 2, 50);
     } else if (snapState.phase === 'goal') {
-      ctx.fillStyle = '#ffffff'; ctx.font = HF('p0', 13, 7, 'P0'); ctx.fillText('进球！', W / 2, 50);
+      ctx.fillStyle = '#ffffff'; ctx.font = HF('p0b', 13, 7, 'P0'); ctx.fillText('进球！', W / 2, 50);
     } else if (snapState.ot) {
-      ctx.fillStyle = '#FFD86B'; ctx.font = HF('p0', 13, 7, 'P0'); ctx.fillText('金球加时', W / 2, 50);
+      ctx.fillStyle = '#FFD86B'; ctx.font = HF('p0b', 13, 7, 'P0'); ctx.fillText('金球加时', W / 2, 50);
     }
     ctx.textAlign = 'left';
   }
@@ -597,10 +609,13 @@
           fxD(fx.chargeFull.rec);
         }
       }
-      if (b.id === 'sprint' && me) { // 体力弧（P1）
+      if (b.id === 'sprint' && me) { // 体力弧（P1）——A 实心/B 分段（阵营双编码 §7：A 实心/B 分段体力弧）
         var st = (me.stam != null ? me.stam : 100000) / 100000;
+        var segB = (me.team != null ? me.team : mySeat % 2) === 1;
         ctx.strokeStyle = st < 0.2 ? '#e06c5a' : '#7ed08a'; ctx.lineWidth = 3;
+        if (segB) ctx.setLineDash([9, 4]); // B 席分段弧（9 实 4 隙）
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 2, -Math.PI / 2, -Math.PI / 2 + st * Math.PI * 2); ctx.stroke();
+        if (segB) ctx.setLineDash([]);
         if (st < 0.4) { ctx.fillStyle = '#E8E4D8'; ctx.font = HF('p1', 11, 6, 'P1'); ctx.fillText(String(Math.round(st * 100)), b.x, b.y + b.r + 12) }
       }
     }
@@ -659,7 +674,7 @@
     for (var k = 0; k < fx.floats.length; k++) {
       var f = fx.floats[k], a3 = 1 - (t - f.at) / 2400;
       ctx.globalAlpha = Math.min(1, a3 * 2); ctx.fillStyle = f.col; ctx.textAlign = 'center';
-      ctx.font = HF('p0', f.txt === '乌龙！' ? 19 : 16, 7, 'P0');
+      ctx.font = HF(f.txt === '乌龙！' ? 'p0fo' : 'p0f', f.txt === '乌龙！' ? 19 : 16, 7, 'P0');
       ctx.fillText(f.txt, W / 2, 180 - (t - f.at) / 40);
       if (f.rec) fxD(f.rec);
     }
@@ -677,8 +692,8 @@
       grd.addColorStop(1, 'rgba(10,12,16,' + (0.5 * dq).toFixed(3) + ')');
       ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
     }
-    if (snapState.ot || t - fx.goldAt < 800) { // F13：金球 OT 金色调（相位持续+触发期加强）
-      var gq = snapState.ot ? 0.10 : 0.16 * (1 - (t - fx.goldAt) / 800);
+    if (snapState.ot || t - fx.goldAt < 800) { // F13：金球 OT 金色调（持续态 0.10+触发窗 800ms 内 0.06 增益衰减——GAMES-143 修死码：旧 0.16 分支因快照 state.ot 先于事件置 1 永不触达）
+      var gq = (snapState.ot ? 0.10 : 0) + 0.06 * Math.max(0, 1 - (t - fx.goldAt) / 800);
       if (t - fx.goldAt < 800) fxD(fx.goldRec);
       var g2 = ctx.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, H * 0.66);
       g2.addColorStop(0, 'rgba(255,216,107,0)');
@@ -721,20 +736,20 @@
     ctx.textAlign = 'center';
     ctx.save(); ctx.translate(W / 2, 170); ctx.scale(es, es); ctx.translate(-W / 2, -170);
     ctx.fillStyle = mySeat < 0 ? '#E8E4D8' : win ? '#7ed08a' : '#e06c5a';
-    ctx.font = HF('p0', 26, 7, 'P0');
+    ctx.font = HF('p0t', 26, 7, 'P0');
     ctx.fillText(mySeat < 0 ? '比赛结束' : win ? '胜利' : '失败', W / 2, 170);
     ctx.restore();
     if (fx.endFx) fxD(fx.endFx.rec);
     if (endResult) {
-      ctx.fillStyle = '#E8A33D'; ctx.font = HF('p0', 20, 7, 'P0'); ctx.fillText(String(snapState.score.A), W / 2 - 30, 220);
-      ctx.fillStyle = '#E8E4D8'; ctx.font = HF('p0n', 16, 6, 'P0'); ctx.fillText(':', W / 2, 218);
-      ctx.fillStyle = '#3DC8E8'; ctx.font = HF('p0', 20, 7, 'P0'); ctx.fillText(String(snapState.score.B), W / 2 + 30, 220);
+      ctx.fillStyle = '#E8A33D'; ctx.font = HF('p0s', 20, 7, 'P0'); ctx.fillText(String(snapState.score.A), W / 2 - 30, 220);
+      ctx.fillStyle = '#E8E4D8'; ctx.font = HF('p0ns', 16, 6, 'P0'); ctx.fillText(':', W / 2, 218);
+      ctx.fillStyle = '#3DC8E8'; ctx.font = HF('p0s', 20, 7, 'P0'); ctx.fillText(String(snapState.score.B), W / 2 + 30, 220);
       ctx.fillStyle = '#9aa5b5'; ctx.font = HF('p1', 11, 6, 'P1');
       ctx.fillText('终局：' + (endResult.reason || ''), W / 2, 250);
       var sc = endResult.scores || {};
       ctx.fillText('进球账 席0 ' + (sc[0] || 0) + ' · 席1 ' + (sc[1] || 0) + ' · 席2 ' + (sc[2] || 0) + ' · 席3 ' + (sc[3] || 0), W / 2, 274);
     }
-    ctx.fillStyle = '#2E6E8C'; ctx.font = HF('p1b', 12, 7, 'P1');
+    ctx.fillStyle = '#2E6E8C'; ctx.font = HF('p1e', 12, 7, 'P1');
     if (eg >= 1) ctx.fillText('点击 再来一局', W / 2, 330);
     ctx.textAlign = 'left';
   }
@@ -821,11 +836,14 @@
       fx.squash = null; fx.boostUntil = 0; fx.chargeFull = null; fx.net = null; fx.scorePop = null;
       fx.dimUntil = 0; fx.dust = {}; fx.stum = {}; fx.seatR = null; fx.kickFx = null; fx.endFx = null;
       fx.possFx = null; fx.ownFx = null; fx.ghost = null; fx.slowUntil = 0; fx.punch = 0; fx.shake = 0; fx.flash = 0;
+      fx.goldAt = -1e9;
       return true;
     }
     if (name === 'charge') { charge.on = true; charge.t0 = t - 1350; return true } // 蓄力 1.35s → F02 由 frame 检测触发
     if (name === 'kickoff') { kickoffFx(); return true }
     if (name === 'ot') { snapState.ot = 1; onEvent({ k: 'ot' }); return true }
+    if (name === 'otOff') { snapState.ot = 0; fx.goldAt = -1e9; return true } // VIS 三态探针：清 OT 态回无金色调基线
+    if (name === 'seat') { fx.seatR = { at: t, rec: fxT('F08') }; return true } // F08 VIS 复现驱动（真时点=welcome 就席）
     if (name === 'focus') { fx.focusForce = !fx.focusForce; if (fx.focusForce && !fx.focusRec) fx.focusRec = fxT('F11'); return true } // F11 QA 驱动（观战位同款渲染）
     if (name === 'goalFor') { onEvent({ k: 'goal', team: mySeat % 2 === 0 ? 'A' : 'B', scorer: mySeat, frame: 0 }); return true }
     if (name === 'goalAgainst') { onEvent({ k: 'goal', team: mySeat % 2 === 0 ? 'B' : 'A', scorer: (mySeat + 1) % 4, frame: 0 }); return true }
@@ -834,9 +852,23 @@
     return false;
   }
   window.__GAMES_DEBUG__ = {
-    hudFonts: function () { return JSON.parse(JSON.stringify(HF_REG)) },
+    /* hudFonts：{tag:{px,weight,cls,at}} 平铺（QA1/FEEL 兼容口径）+ __cls 分级下限
+     * （P0≥13/P1≥11/P2≥9 自证源）+ __applied 生效往返自证（GAMES-143：旧 HF 非法
+     * 简写被 canvas 静默忽略——登记值≠生效值，须回读 ctx.font 闭环）。 */
+    hudFonts: function () {
+      var o = JSON.parse(JSON.stringify(HF_REG));
+      var applied = false;
+      try { var prev = ctx.font; ctx.font = HF('hfProbe', 13, 7, 'P0'); applied = /13px/.test(ctx.font); ctx.font = prev } catch (e) { applied = false }
+      o.__cls = {}; for (var c in HF_CLS) o.__cls[c] = { min: HF_CLS[c].min === 99 ? null : HF_CLS[c].min, samples: HF_CLS[c].n };
+      o.__applied = applied;
+      return o;
+    },
     events: function () { return dbgEvents.slice(-30) },
-    state: function () { return { seat: mySeat, phase: snapState.phase, clock: snapState.clock, score: snapState.score, poss: ball.owner, ball: { x: Math.round(ballR.x), y: Math.round(ballR.y) }, players: Object.keys(players).length } },
+    state: function () {
+      var ents = [];
+      for (var i = 0; i < 4; i++) { var p = players[i]; if (p) ents.push({ seat: i, team: p.team, cls: p.cls, x: Math.round(((i !== mySeat && p.ix != null) ? p.ix : p.x) / K), y: Math.round(((i !== mySeat && p.iy != null) ? p.iy : p.y) / K) }) }
+      return { seat: mySeat, phase: snapState.phase, clock: snapState.clock, score: snapState.score, poss: ball.owner, ot: snapState.ot, ball: { x: Math.round(ballR.x), y: Math.round(ballR.y) }, players: Object.keys(players).length, ents: ents };
+    },
     perf: function () {
       var cs = perfLog.costs.slice(-180), gs = perfLog.gaps.slice(-180);
       var avg = cs.length ? cs.reduce(function (a, b) { return a + b }, 0) / cs.length : 0;
