@@ -1160,23 +1160,19 @@
         "bot": "三档装甲 Bot（casual 散兵：无提前量/balanced 老兵：1-2 轮迭代提前量+站桩带冻占点圈/competitive 神炮手：3 轮闭式迭代+换班窗）+决策节流 forceFresh+卡死滑墙账本；断线托管=balanced（挂机=送命池，设计 §4.3）",
         "chain": "GAMES-145 设计书/GAMES-146 DEV/GAMES-147 QA1/GAMES-148 FIX1/GAMES-149 BOT/GAMES-150 FEEL/GAMES-151 QA2/GAMES-152 VIS/GAMES-154 STRESS（GAMES-153 为别单占用非本链；FIX2 零退回跳过未占单号）"
       }
+    },
+    "multiplayer:yi-pavilion": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 9,
+      "notes": "E6-W2-T5 第五款收官（单链 9/9 预算版、FIX2 零退回跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→VIS→STRESS——平台第 13 条完整单链=W2 波第五款收官+E6 13/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间弈界棋阁 1v1 测试房 8min ts2 三模式混开 churn（gomoku/reversi/cascade）+keeper 观战锚/满编 1v1 双真人+第 3 人观战 spot（观战手数进度 ruling moveNo 顶层面）/十三游戏同网关混编全家福 yi 第 13 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/yi-pavilion-stress.md）。单链要目：DEV S5 回合权威第三证·多规则集统一引擎（RULES 五函数注册表 gomoku/reversi/cascade 一套引擎零代码分叉；井字 SUB[19683] 完美解表入 hash；feat 特征提取器=RULES 一等公民服务器 Bot 与客户端威胁提示同源；零隐藏=个性化恒等映射观战即对局视图；一套 engine hash 护栏三模式）；QA1 F1 反应表键序失配族（S5 个性化谱系第三作恒等位）+双真人席慢打钟率交叉引用 0.01%；FIX1 F1 双成因（featOf 求交落导出面+balanced ΔV≤0 弃权）；BOT 开局树奖金制（硬接管丢强度二证）+行动性悬崖 3↔5+判别器原则等价；FEEL 离线零网关口径+批内自清+ruleOf 短路三坑；QA2 bothost 全 casual 档=mercy 在线观测位在托管接管 bot（双接管协议复证）+welcome seats 键 level 误杀+长局 8min 钟尽终局 reason=clock 设计态验证面；VIS 无头帧塌带瞬态墨取证三律+探针红先证产品码。实录=知识库草稿《弈界棋阁开发实录》",
+      "net": {
+        "tech": "S5",
+        "bot": "多规则三档棋士 Bot（casual 棋感：一阶特征即走+30s 步限单步代走/balanced 棋士：feat 求交威胁读+开局树奖金制/competitive 棋圣：判别器原则等价+行动性悬崖 3↔5 调参）+Ultimate TTT 送位策略；断线托管=balanced+倾向继承（主动托管 host op 三层：单步代走/持续续打/afk 世代）",
+        "chain": "GAMES-153 设计书/GAMES-155 DEV/GAMES-156 QA1/GAMES-157 FIX1/GAMES-158 BOT/GAMES-159 FEEL/GAMES-160 QA2/GAMES-161 VIS/GAMES-162 STRESS（GAMES-154 为别单占用非本链；FIX2 零退回跳过未占单号）"
+      }
     }
-  },
-  "multiplayer:yi-pavilion": {
-    "status": "dev-landed",
-    "date": "2026-10-16",
-    "net": {
-      "tech": "S5"
-    },
-    "bot": {
-      "levels": 3,
-      "takeOver": "casual(单步)/tendency-inherit(持续托管)"
-    },
-    "chain": {
-      "design": "GAMES-153",
-      "dev": "GAMES-155",
-      "count": 2
-    },
-    "notes": "S5 回合权威第三证·多规则集统一表达单链 2/10（DEV=弈界棋阁核心实现：RULES 五函数注册表 gomoku/reversi/cascade 一套引擎——统一 Int8 格数组+cell 编码，回合引擎/托管/回放/双跑 per-rule 零改动；井字 SUB[19683] 完美解表生成入 hash；黑白 WGT+行动性+stab；五子连型滑窗表；feat 特征提取器=RULES 一等公民（服务器 Bot 与客户端威胁提示同源）；place 单 op 通行三模式（无 endTurn）；托管三层单步化（30s 步限=casual 单步代走/持续=balanced+倾向继承/afk=3 全超时步）；零隐藏信息=个性化恒等（观战=对局视图）；一套 engine hash 护栏三模式+welcome.room.duel.rule 随房绑定；房间参数 rule/handicap 通路（rooms quick 匹配+testapi 剧本建房）；BotHost 多规则常驻房 3（每模式一 casual 房）；HF __applied 生效自证首日；宣纸亮底+圆方双子形色双编码。api-check 21/21（三模式 A2+A3 afk+A6 双跑回放）；冒烟 9/9；回归 tactics/pool 双绿）"
   }
 }
