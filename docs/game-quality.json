@@ -1173,6 +1173,24 @@
         "bot": "多规则三档棋士 Bot（casual 棋感：一阶特征即走+30s 步限单步代走/balanced 棋士：feat 求交威胁读+开局树奖金制/competitive 棋圣：判别器原则等价+行动性悬崖 3↔5 调参）+Ultimate TTT 送位策略；断线托管=balanced+倾向继承（主动托管 host op 三层：单步代走/持续续打/afk 世代）",
         "chain": "GAMES-153 设计书/GAMES-155 DEV/GAMES-156 QA1/GAMES-157 FIX1/GAMES-158 BOT/GAMES-159 FEEL/GAMES-160 QA2/GAMES-161 VIS/GAMES-162 STRESS（GAMES-154 为别单占用非本链；FIX2 零退回跳过未占单号）"
       }
+    },
+    "multiplayer:deep-foodchain": {
+      "status": "dev-landed",
+      "date": "2026-10-17",
+      "net": {
+        "tech": "S6"
+      },
+      "bot": {
+        "levels": 3,
+        "swarm": true,
+        "takeOver": "casual"
+      },
+      "chain": {
+        "design": "GAMES-163",
+        "dev": "GAMES-164",
+        "count": 2
+      },
+      "notes": "S6 海量实体第二证·吞噬成长链单链 2/10（DEV=深海食物链核心实现：实体吞噬即经济——吞噬裁决 ruling 化一裁三账（{k:devour} 单事件原子携带击杀/质量转移 gain=floor(mv×11/20)/化粒 drops=clamp(ceil(dropT/2),3,30) 残差并末粒，判定与入账同 tick 原子完成客户端与剧本零推断）；质量守恒账本六计数 {ate,gained,dashed,endow,dropped,expired} 任意 tick 恒等式 ΣM+Σ粒+expired−endow−ate−gained−dropped+dashed==0（A8 终态复算 13 局残差全 0）；K=1.25 连续体型比判定（档位是标签不是判定）；体型四档\"档即视野\"AOI {380,440,500,560}+15px 滞回（X-03 原则：机制/带宽/Bot 三面一张表）；点实体无 path（全量 ~65B/鱼 轻 8×，full20 实测增量均 474-513B/全量占比 ≤0.6%）；dash 质量换速度（×1.6 v、每 0.5s −1 质量化光点）活体矿脉；Bot 体型键控四问树（Q1 威胁锥/Q2 拦截迭代闭式解+dash 收口/Q3 密度场/Q4 晶簇带埋伏，tier 改 θ 阈值不改结构）+casual 饲料位（不做密度场主动觅食=体型滞留 T0 低段·尸粒供给主力——生态 bootstrap 的供给前提）；鱼汛潮=回填加速非新实体（90s 相位 20s 窗磷虾 25s→8s）；深海军绿底三光带+四档形色双编码+HF __applied 生效自证首日（Q-013 前置清偿）；deep- 前缀 feed 排首+dash 持续键 sanitizeKeys 扩展。api-check 53/54→调优后全绿待复跑；冒烟/perf 见 REPORT）"
     }
   }
 }

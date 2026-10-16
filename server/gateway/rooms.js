@@ -49,6 +49,10 @@ const sanitizeKeys = (k) => {
   // tur=炮塔目标角 uint16（8192 档 brads<<3，sim 侧 >>3 量化）——持续态键（lastInput
   // 宽限沿用）；不带该键的游戏零感知
   if (k && Number.isFinite(k.tur)) out.tur = Math.max(0, Math.min(65535, Math.trunc(k.tur)))
+  // S6 第二证冲刺键（GAMES-164 deep-foodchain 先例，协议 §6 input 面扩展）：
+  // dash=冲刺开关 0|1（质量换速度）——持续态键（lastInput 宽限沿用）；
+  // 与 boost（snake-king）同形不同名：io 鱼语义 dash+质量账本（设计 §2.3）
+  if (k && k.dash !== undefined) out.dash = k.dash ? 1 : 0
   return out
 }
 
