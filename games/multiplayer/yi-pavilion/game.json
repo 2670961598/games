@@ -16,6 +16,7 @@
   "bot": {
     "levels": ["casual", "balanced", "competitive"],
     "takeOver": "casual(单步超时)/tendency-inherit(持续托管)",
+    "mercy": { "minFoeLose": 2, "hardFoeLose": 3 },
     "desc": "超时单步=casual 随手代走一步（托管粒度谱系第三作：element/tactics 整回合→本作单步，§5.5）；断线/主动托管=balanced 核+倾向继承（attackBias/solidBias 盘面代理复算，§4.6）；afk 三分离（连续 3 全超时步零 op 认负）；多规则统一框架=feat 特征提取器接口（加第六棋种零改三档决策机，附决策 9）"
   },
   "scoring": {

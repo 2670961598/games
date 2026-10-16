@@ -19,6 +19,12 @@ import { readFileSync } from 'node:fs'
 const require = createRequire(import.meta.url)
 const YP = require('../../../games/multiplayer/yi-pavilion/sim.cjs')
 
+/* 陪玩放水配置（GAMES-158，tactics/element 同式）：阈值入 game.json bot.mercy 可调——
+ * 适配器读出经 env.mercy 注入 brain；sim 侧零配置（离线确定性/回放不读 game.json，
+ * env 缺省全链不可达）。信号位=1v1 pulse 台账（rooms.js seats=2 缺省分支，零网关改动）。 */
+const GAME_CFG = JSON.parse(readFileSync(new URL('../../../games/multiplayer/yi-pavilion/game.json', import.meta.url), 'utf8'))
+const MERCY_CFG = (GAME_CFG.bot && GAME_CFG.bot.mercy) || { minFoeLose: 2, hardFoeLose: 3 }
+
 function sendTo(ctx, msg) {
   if (ctx && ctx.conn && ctx.conn.writable) ctx.conn.send(typeof msg === 'string' ? msg : JSON.stringify(msg))
 }
@@ -87,7 +93,7 @@ export const yiPavilionSim = {
   },
   serialize: YP.serialize,
   deserialize: null,
-  brain: (state, seat, level, rng, env) => YP.brain(state, seat, level, rng, env),
+  brain: (state, seat, level, rng, env) => YP.brain(state, seat, level, rng, env ? Object.assign({}, env, { mercy: MERCY_CFG }) : env),
   op,
   emit,
   onSync,
