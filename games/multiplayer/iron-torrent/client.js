@@ -177,7 +177,7 @@
   function onSnapshot(msg) {
     var ack = msg.ext && msg.ext.ack;
     if (typeof msg.frame === 'number') { srvFrame = msg.frame; srvAt = now() } // F1 锚点：每快照重校准（对定时器节流/时钟漂移免疫）
-    if (msg.full) { tanks = {}; projsLocal = [] }
+    if (msg.full) { tanks = {}; projsLocal = projsLocal.filter(function (l) { return l.qa }) } // full 重建保留 qa 探针段（VIS GAMES-152：豁免须覆盖 full 路径——产品弹 id 域为正，qa 段仅 fxProbe 产生）
     for (var i = 0; i < (msg.ents || []).length; i++) {
       var e = msg.ents[i], si = parseInt(e.id.slice(1), 10);
       if (isNaN(si)) continue;
