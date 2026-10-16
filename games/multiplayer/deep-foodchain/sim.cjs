@@ -22,7 +22,7 @@
  * 常驻渔场语义（§1.1/附决策 1）：房=常驻（META.persistent），轮（round=3600 tick）
  * 在 state 内推进——轮末加冕（海王=榜首）→ kills 清零、score 重锚 floor(M/4) →
  * round++ 继续，世界不清空、鱼不死光、房间不 ended；测试房 maxTicks=3600
- * 投影终局（winner A=API 席 score≥320）。
+ * 投影终局（winner A=API 席 score≥320 且 M≥500 成对绑定——§6 A2 双锚，snake goal 双条件先例）。
  * Bot 三档=生态位（§4）：casual 饲料鱼/ balanced 觅食者/ competitive 猎手
  * （拦截闭式解+dash 收口+晶簇带埋伏）——体型键控四问树（tier 改阈值不改结构）。
  * 确定性：无 Date/random 入判定路径（seed 纪律同 mmo/snake）。
@@ -56,6 +56,7 @@ const SITES = { alg: 120, kri: 40, cry: 20 }                // 位数量 = 180�
 const MILESTONES = { 80: '成鱼', 300: '猎鲨', 1000: '沧鲸', 4000: '海王之姿' } // §2.4（破卵=出生位）
 const SKINS = 8                                             // §2.6 皮肤表
 const GOAL = 320                                            // 轮末达标线（§6 endState）
+const MASS_GOAL = 500                                       // A2 成长锚成对绑定（§6 A2「score≥320 且 M≥500」；snake goal 双条件先例）
 const SPAWN_GAP = 260_000, SPAWN_GAP_RELAX = 180_000        // 出生安全位（§5.1）
 const AFK_TICKS = 600                                       // 60s 无输入 → casual 托管（§4.3）
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v)
@@ -354,15 +355,19 @@ function step(st, inputs, room) {
   }
 
   /* 8. 测试房投影终局（§6 endState：生产常驻房不终局——maxTicks=null 恒不投影）。
+   * goal 双条件=score≥320 且 M≥500 成对绑定（snake 先例 §6 A2「击杀流单独到分不出果——
+   * 成长曲线锚与达标线同刻成立才算 goal」：本作 A2 文本「score ≥320 且 M≥500」同式；
+   * 只绑 score 时 kills×40 出分快于 M 成长，goal 在 M~300 提前点火=A2 数值锚结构性红）。
    * 排序红线：投影必须先于轮末 rollover（kills 清零/score 重锚）——maxTicks==ROUND_TICKS
    * 同拍时后投影会读到重锚后的 score，轮末分数被抹、终局失真（snake 先例同坑） */
   let over = null
   if (st.testRoom && st.maxTicks != null && room) {
     const humans = room.seats.filter((s) => s.kind === 'human').map((s) => s.seat)
-    const scores = {}
-    for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'fish') scores[e.seat] = e.score }
+    const scores = {}, masses = {}
+    for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'fish') { scores[e.seat] = e.score; masses[e.seat] = e.M } }
     const apiScore = Math.max(0, ...humans.map((s) => scores[s] || 0))
-    if (apiScore >= GOAL) over = { winner: 'A', reason: 'goal', scores }
+    const apiM = Math.max(0, ...humans.map((s) => masses[s] || 0))
+    if (apiScore >= GOAL && apiM >= MASS_GOAL) over = { winner: 'A', reason: 'goal', scores }
     else if (st.tick >= st.maxTicks) over = { winner: 'B', reason: 'round-end', scores }
   }
 

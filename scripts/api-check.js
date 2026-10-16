@@ -738,8 +738,8 @@ const POLICIES = {
   const df = () => (DF || (DF = createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/deep-foodchain/shared.cjs'))))
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
   const heading = (deg2, x, y) => ((Math.atan2(y - deg2.y, x - deg2.x) * 180 / Math.PI) % 360 + 360) % 360
-  /* feed-hunt 击杀节律（A2 双锚同刻达成）：kills×40 出分快于 M 成长——每次吞噬后
-   * 20s 觅食窗（fat-gain≥60 例外）强制 M 雪球跟上，跨线时 M≥500 与 score≥320 同拍 */
+  /* feed-hunt 击杀节律（M 雪球优先）：goal 跨线由 sim 成对绑定 score≥320∧M≥500（结构性
+   * 保证 A2 双锚同刻）；节律窗是策略侧 M 增速整形——每次吞噬后 20s 觅食窗（fat-gain≥60 例外） */
   const feedMem = { kills: -1, coolUntil: 0 }
   const steerDeep = (state, seat, mode) => {
     const me = state.ents && state.ents['s' + seat]
