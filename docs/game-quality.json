@@ -1165,5 +1165,22 @@
       "count": 2
     },
     "notes": "S4 预测弹道第二款单链 2/10（DEV=钢铁洪流核心实现：连续预测（坦克域 tick 步进+input ring ack 和解）+离散段重演（弹道域 Q16 子步，fire 事件携散布出射角全参下发=客户端零 rng 复现义务）组合——roadmap S4 行两半由 pool/iron 各证其一的 DEV 侧落地。TRIG16 跨作复用第三作；弹道 2.5D 高度分层（AP 峰 17.7px 被一切掩体挡/HE 峰 60.5px 越一切墙）；三地图程序化固定布局（上下镜像 by construction）；Bot 提前量闭式迭代解（1/2/3 轮档差）+卡死滑墙账本；gunner 剧本风筝带机制差（casual 无提前量在 19 万距离打移动靶误差 55k>>r_hit 13k）A2 7/7；A7 双跑+回放器+fire 参数逐字节；siege 占点/拆墙链。v1 收窄 REPORT 披露（HE 撞掩体不 AOE 坦克/AOE 只伤敌队/锚点通用路线版）。"
+  },
+  "multiplayer:yi-pavilion": {
+    "status": "dev-landed",
+    "date": "2026-10-16",
+    "net": {
+      "tech": "S5"
+    },
+    "bot": {
+      "levels": 3,
+      "takeOver": "casual(单步)/tendency-inherit(持续托管)"
+    },
+    "chain": {
+      "design": "GAMES-153",
+      "dev": "GAMES-155",
+      "count": 2
+    },
+    "notes": "S5 回合权威第三证·多规则集统一表达单链 2/10（DEV=弈界棋阁核心实现：RULES 五函数注册表 gomoku/reversi/cascade 一套引擎——统一 Int8 格数组+cell 编码，回合引擎/托管/回放/双跑 per-rule 零改动；井字 SUB[19683] 完美解表生成入 hash；黑白 WGT+行动性+stab；五子连型滑窗表；feat 特征提取器=RULES 一等公民（服务器 Bot 与客户端威胁提示同源）；place 单 op 通行三模式（无 endTurn）；托管三层单步化（30s 步限=casual 单步代走/持续=balanced+倾向继承/afk=3 全超时步）；零隐藏信息=个性化恒等（观战=对局视图）；一套 engine hash 护栏三模式+welcome.room.duel.rule 随房绑定；房间参数 rule/handicap 通路（rooms quick 匹配+testapi 剧本建房）；BotHost 多规则常驻房 3（每模式一 casual 房）；HF __applied 生效自证首日；宣纸亮底+圆方双子形色双编码。api-check 21/21（三模式 A2+A3 afk+A6 双跑回放）；冒烟 9/9；回归 tactics/pool 双绿）"
   }
 }
