@@ -3,6 +3,9 @@
  * 弹道=fire 事件起段本地确定性重演（离散段重演，pool 范式）+快照 projs 兜底；
  * 弹道预览线=本地同 sim 前瞻（previewTrace 三面同源，§5.5）——「预测」与「权威」
  * 的分界只在输入时点不在算法。
+ * GAMES-150 手感层：FXLIST 动效登记表（fb 反馈类 ≤80ms 首绘红线）+ fxLedger 双时戳
+ * 台账 + SND 音效位（makeSound 平台范式：总闸门默认静音只记账）——fx 层只读消费
+ * 快照/事件（sim/brain 零改动）；动效全部渲染期偏移/粒子，不入任何游戏态。
  * HUD 字号走 HF 登记表+__applied 生效往返自证（hud-font-standard §1，Q-013 教训
  * 前置：weight 前置合法简写，禁后置带单位错写）。
  * 阵营色+形状双编码（§7）：A 琥珀圆炮塔盖/B 青六角；弹丸 A 圆点实线/B 菱形虚线；
@@ -35,7 +38,7 @@
    * 与字重才记 true——非法简写被 canvas 静默忽略=10px 缺省字，此处第一断言位 */
   function appliedSelfCheck() {
     ctx.save();
-    ctx.font = '700 13px sans-serif';
+    ctx.font = HF('hfProbe', 13, 7, 'P0'); // 探针也走 HF（零裸字号口径；登记键不破坏 FE-4c 共同键比对）
     var m = /^(\d+)\s*px/.exec(ctx.font) || /(\d+)px/.exec(ctx.font);
     /* Chromium 把 700 规范化回读为 bold——按语义比对（字重在场：700|bold），
      * 字号生效=回读 13px（10px=赋值被静默忽略的缺省字特征，GAMES-135/143） */
@@ -51,6 +54,56 @@
   };
   window.__GAMES_DEBUG__.dbgEvents = function () { return dbgEvents.slice(-40) };
 
+  /* ---------- GAMES-150 FXLIST：[id, 名称, fb|state]——fb=反馈类（事件→首绘 ≤80ms
+   * 红线，台账断言），state=状态类（持续态，只报数）。fxT 打触发时戳、fxD 打首绘
+   * 时延（fxLedger 供 feel-check 复跑；设计 §3.2/§3.4 juice 清单落地）。 ---------- */
+  var FXLIST = [
+    ['F01', 'recoilBody', 'fb'],     // 车体后坐（fire → 车体反向 2px+炮管后缩 6px 200ms 回弹；重坦 ×0.7/坦歼 ×1.3——§3.2 重量感三件套）
+    ['F02', 'muzzleBlast', 'fb'],    // 炮口焰（fire → 焰锥+硝烟+弹壳抛出，§3.4）
+    ['F03', 'turretJolt', 'fb'],     // 炮塔震颤（fire → 炮塔角微摆衰减 150ms）
+    ['F04', 'reloadGlow', 'fb'],     // 满装辉光（cd>0→0 → 装填环辉光脉冲 300ms+机括声）
+    ['F05', 'hitSpark', 'fb'],       // 命中火花（hit → 正/侧/背三色火花放射——部位差异化）
+    ['F06', 'crumbleDust', 'fb'],    // 掩体碎裂（crumble → 碎块抛物飞溅+尘雾）
+    ['F07', 'treadTrail', 'fb'],     // 履带印拖尾（行进每 ≥14px 落一枚双轨印，§3.2）
+    ['F08', 'previewBreath', 'fb'],  // 弹道预览线呼吸（fire → 200ms 余晖+基线呼吸，§3.4）
+    ['F09', 'hurtEdge', 'fb'],       // 受伤红屏边缘（我席被命中 → 战场缘红晕 300ms，§3.2）
+    ['F10', 'hitArc', 'fb'],         // 受击方向弧（入射向红弧 300ms——被绕侧方位知觉，§3.2）
+    ['F11', 'swapPulse', 'fb'],      // 弹种切换动效（swap → 弹种钮缩放脉冲+环闪）
+    ['F12', 'killBanner', 'fb'],     // 观战击杀特写横幅（kill → 名签横幅冲入，观战/玩家同款）
+    ['F13', 'treadFade', 'fb'],      // 击毁履带印渐隐（kill → 被毁者履带印 1.5s 淡出）
+    ['F14', 'killChain', 'fb'],      // 击杀爆炸+殉爆链（kill → 主爆+70/150ms 次级爆串）
+    ['F15', 'endAnim', 'fb'],        // 结算动画（end → 胜=彩雨/败=压暗滑入，胜负分歧）
+    ['F16', 'capPulse', 'fb'],       // 占点圈脉冲（capTick 进度变更 → 圈脉冲+滴答；满点前警报音）
+    ['F17', 'respawnBeam', 'fb'],    // 重生光柱（respawn → 基地光柱 500ms+补满满格音）
+    ['F18', 'windFlagWave', 'state'] // 风向旗飘动（顶栏旗面 sin 涟漪常摆，§2.3 HUD 常显）
+  ];
+  var fxLedger = [];
+  function fxT(id) { fxLedger.push({ id: id, trig: now(), lat: null }); if (fxLedger.length > 240) fxLedger.shift(); return fxLedger[fxLedger.length - 1] }
+  function fxD(rec) { if (rec && rec.lat == null) rec.lat = Math.max(0, Math.round(now() - rec.trig)) }
+
+  /* ---------- 音效位（makeSound 平台范式：总闸门默认静音只记账；开启后 WebAudio
+   * 简音色占位——多人客户端本地化口径，GAMES-131/141 同式） ---------- */
+  var SND = { on: false, slots: ['cannonNear', 'cannonFar', 'hitMetal', 'hitThud', 'reloadClick', 'engineHum', 'killBoom', 'chainBlast', 'crumble', 'capTick', 'capAlert', 'swap', 'reject', 'respawnFull', 'hurtAlarm', 'endWhistle', 'banner'], calls: [], fired: {}, ac: null };
+  function sfx(slot) {
+    SND.calls.push({ g: slot, at: Math.round(now()) });
+    SND.fired[slot] = true; // 持久触达集（calls 滚动窗会被巡航期高频履带/命中音刷掉）
+    if (SND.calls.length > 300) SND.calls.shift();
+    if (!SND.on) return;
+    try {
+      if (!SND.ac) SND.ac = new (window.AudioContext || window.webkitAudioContext)();
+      var a = SND.ac, o = a.createOscillator(), g = a.createGain(), t = a.currentTime;
+      var big = { killBoom: 1, chainBlast: 1, endWhistle: 1 };
+      var cl = { reloadClick: 1, swap: 1, capTick: 1, reject: 1, hitMetal: 1 };
+      o.type = big[slot] || cl[slot] ? 'square' : slot === 'cannonNear' || slot === 'cannonFar' ? 'triangle' : 'sine';
+      var f0 = big[slot] ? 140 : cl[slot] ? 840 : slot === 'cannonFar' ? 190 : slot === 'cannonNear' ? 330 : 520;
+      var f1 = big[slot] ? 46 : cl[slot] ? 1180 : slot === 'cannonFar' ? 90 : slot === 'cannonNear' ? 130 : 240;
+      var dur = big[slot] ? 0.34 : slot === 'cannonNear' || slot === 'cannonFar' ? 0.24 : 0.12;
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) { /* 无音频环境静默 */ }
+  }
+
   /* ---------- 连接态 ---------- */
   var ws = null, mySeat = -1, ended = false, endResult = null;
   var tanks = {};                          // 席位→权威态（快照）
@@ -59,7 +112,11 @@
   var tiles = null;                        // 掩体耐久档（全量快照/增量脏 tile）
   var tileTypes = null;                    // 掩体类型（全量）
   var srvFrame = -1, srvAt = 0, lastQ = -1, inRing = [];   // 快照锚（F1 修复，GAMES-148）：frame 推算基准
-  var fx = { muzzle: [], booms: [], crumbs: [], floats: [], shake: 0, recols: {}, deadBanner: null };
+  var fx = { muzzle: [], booms: [], crumbs: [], floats: [], shake: 0, recols: {}, deadBanner: null,
+    sparks: [], treads: [], recoil: {}, jolt: {}, beams: [], chain: [],
+    swapAt: -1e9, glowAt: -1e9, breathAt: -1e9, capPulseAt: -1e9, hurtAt: -1e9, hurtArc: null,
+    breathRec: null, hurtRec: null, capRec: null, glowRec: null, swapRec: null, capPrevTeam: -1,
+    endAt: -1e9, endFxOn: false, prevCd: -1, prevCap: 0, wasMoving: false, treadLast: {}, windRec: null };
 
   function hint(t) { hintEl.textContent = t; hintEl.style.display = t ? 'block' : 'none' }
   function fatal(t) { document.getElementById('fatal-msg').textContent = t; document.getElementById('fatal').style.display = 'flex' }
@@ -76,7 +133,7 @@
       var msg; try { msg = JSON.parse(m.data) } catch (e) { return }
       if (msg.t === 'welcome') onWelcome(msg, rid);
       else if (msg.t === 'snapshot') onSnapshot(msg);
-      else if (msg.t === 'end') { ended = true; endResult = msg.result }
+      else if (msg.t === 'end') { ended = true; endResult = msg.result; endFx() }
       else if (msg.t === 'closed') { if (!ended) fatal('房间已回收——刷新重进') }
     };
   }
@@ -151,32 +208,69 @@
     p.x += c.spd * inp.mx / 100;
     p.y += c.spd * inp.my / 100;
   }
-  /* ---------- 事件（表现层；权威态在快照，§7 红线） ---------- */
+  /* ---------- 事件（表现层；权威态在快照，§7 红线）——GAMES-150：每事件打
+   * fxT 触发时戳+音效位（首绘 fxD 在渲染侧落，fb ≤80ms 红线由此可证）。 ---------- */
   function onEvent(e) {
     if (e.k === 'fire') { // 确定性重演起点：事件携参直读（含散布出射角——零推导）
-      projsLocal.push({ id: e.seat * 100000 + projsLocal.length + Math.floor(now() % 100000), seat: e.seat, ammo: e.ammo, x: e.x, y: e.y, z: e.z || 14000, vx: e.vx, vy: e.vy, vz: e.vz });
-      fx.muzzle.push({ x: e.x, y: e.y, at: now(), seat: e.seat });
+      var tF = now();
+      projsLocal.push({ id: e.seat * 100000 + projsLocal.length + Math.floor(tF % 100000), seat: e.seat, ammo: e.ammo, x: e.x, y: e.y, z: e.z || 14000, vx: e.vx, vy: e.vy, vz: e.vz });
+      fx.muzzle.push({ x: e.x, y: e.y, at: tF, seat: e.seat, rec: fxT('F02') });                    // F02 炮口焰
+      fx.recoil[e.seat] = { at: tF, rec: fxT('F01'), tur: e.ang };                                   // F01 后坐三件套·车体/炮管
+      fx.jolt[e.seat] = { at: tF, rec: fxT('F03') };                                                 // F03 炮塔震颤
+      if (e.seat === mySeat) { fx.breathAt = tF; fx.breathRec = fxT('F08') }                         // F08 预览线余晖（首绘=下一帧线强度抬升）
       fx.shake = Math.min(8, fx.shake + (e.seat === mySeat ? 4 : 1));
+      sfx(e.seat === mySeat ? 'cannonNear' : 'cannonFar');                                           // 炮声分层：远近
       emitDbg('fire', e);
     } else if (e.k === 'hit') {
-      fx.floats.push({ x: (tanks[e.victim] || {}).x || 0, y: ((tanks[e.victim] || {}).y || 0) - 20000, v: '-' + e.dmg, at: now(), col: TEAM_COL[(tanks[e.seat] || {}).team || 0] });
-      if (e.victim === mySeat) { fx.shake = Math.min(10, fx.shake + 5); fx.recols[e.part] = { at: now() } }
+      var tH = now(), vct = tanks[e.victim] || {};
+      fx.floats.push({ x: vct.x || 0, y: (vct.y || 0) - 20000, v: '-' + e.dmg, at: tH, col: TEAM_COL[(tanks[e.seat] || {}).team || 0] });
+      fx.sparks.push({ x: vct.x || 170000, y: vct.y || 250000, part: e.part || 'side', at: tH, rec: fxT('F05') }); // F05 三色火花（渲染侧按 part 取色）
+      if (e.victim === mySeat) {
+        fx.shake = Math.min(10, fx.shake + 5);
+        fx.hurtAt = tH; fx.hurtRec = fxT('F09');                                                     // F09 红屏边缘（首绘=下一帧边缘红晕）
+        fx.hurtArc = { ang: e.angIn || 0, at: tH, rec: fxT('F10') };                                 // F10 受击方向弧
+        sfx('hurtAlarm');
+      }
+      sfx('hitMetal');                                                                               // 命中金属声（部位差异化在音高外的视觉三色）
       emitDbg('hit', e);
     } else if (e.k === 'splash') {
       fx.booms.push({ x: e.x, y: e.y, at: now(), r: 30000 });
+      sfx('hitThud');                                                                                // HE 落地闷响
     } else if (e.k === 'crumble') {
-      fx.crumbs.push({ tile: e.tile, at: now() });
+      fx.crumbs.push({ tile: e.tile, at: now(), rec: fxT('F06') });
       if (tiles) tiles[e.tile] = 0;
       if (tileTypes) tileTypes[e.tile] = 0;
+      sfx('crumble');
       emitDbg('crumble', e);
     } else if (e.k === 'kill') {
-      fx.booms.push({ x: (tanks[e.victim] || {}).x || 0, y: (tanks[e.victim] || {}).y || 0, at: now(), r: 26000, big: true });
-      fx.deadBanner = { by: e.seat, victim: e.victim, at: now() };
+      var tK = now(), vx0 = (tanks[e.victim] || {}).x || 170000, vy0 = (tanks[e.victim] || {}).y || 250000;
+      fx.booms.push({ x: vx0, y: vy0, at: tK, r: 26000, big: true, rec: fxT('F14') });               // F14 主爆（殉爆链首=主爆即绘，次级 70/150ms 后续）
+      fx.chain.push({ x: vx0 + 9000, y: vy0 - 7000, at: tK + 70, r: 15000, sfxd: false },
+                    { x: vx0 - 8000, y: vy0 + 6000, at: tK + 150, r: 11000, sfxd: false });         // 殉爆链（次级爆到点起播+殉爆音）
+      fx.deadBanner = { by: e.seat, victim: e.victim, at: tK, rec: fxT('F12') };                     // F12 击杀特写横幅
+      for (var tk = 0; tk < fx.treads.length; tk++) if (fx.treads[tk].seat === e.victim && !fx.treads[tk].fadeAt) fx.treads[tk].fadeAt = tK; // F13 履带印渐隐
+      fx.treads.push({ x: vx0, y: vy0, dir: (tanks[e.victim] || {}).dir || 0, seat: e.victim, at: tK, wreck: true, fadeAt: tK, rec: fxT('F13') }); // 被毁原地焦印（渐隐首绘锚）
+      fx.recoil[e.victim] = null;
+      sfx('killBoom'); sfx('banner');
       emitDbg('kill', e);
     } else if (e.k === 'respawn') {
-      fx.muzzle.push({ x: e.x, y: e.y, at: now(), reborn: true });
-    } else if (e.k === 'reject') { emitDbg('reject', e) }
-    else if (e.k === 'end') { ended = true; endResult = e }
+      fx.beams.push({ x: e.x, y: e.y, at: now(), rec: fxT('F17') });                                 // F17 重生光柱
+      sfx('respawnFull');                                                                            // 弹药补满满格音
+    } else if (e.k === 'capTick') {
+      var bar = e.bar || 0;
+      if (bar > fx.prevCap) { fx.capPulseAt = now(); fx.capRec = fxT('F16') }                        // F16 占点圈脉冲（首绘=下一帧圈亮脉冲）
+      if (fx.prevCap < 90000 && bar >= 90000) sfx('capAlert');                                       // 满点前 10s 警报音（§3.4）
+      else if (bar > fx.prevCap) sfx('capTick');                                                     // 占点滴答
+      fx.prevCap = bar;
+    } else if (e.k === 'swapFx') {                                                                   // 本地 swap 动效（fxScene/uiTap 同管线）
+      fx.swapAt = now(); fx.swapRec = fxT('F11'); sfx('swap');
+    } else if (e.k === 'reject') { sfx('reject'); emitDbg('reject', e) }
+    else if (e.k === 'end') { ended = true; endResult = e; endFx() }
+  }
+  /* F08/F09/F16 的 rec 在渲染侧首帧落（线/圈/边缘常驻，事件只点亮强度）；F15 终局
+   * 动效同 street 两段式口径（世界层停绘前照常）。 */
+  function endFx() {
+    fx.endAt = now(); fx.endFxOn = true; fx.endRec = fxT('F15'); sfx('endWhistle');
   }
 
   /* ---------- 输入面（§1.6：摇杆+瞄准盘+fire+弹种四件） ---------- */
@@ -244,6 +338,7 @@
       }
     } else if (Math.hypot(p.x - AMMO_C.x, p.y - AMMO_C.y) <= AMMO_R) {
       held[id] = 'ammo'; selAmmo = selAmmo === 0 ? 1 : 0; sendCmd({ k: 'swap', ammo: selAmmo });
+      onEvent({ k: 'swapFx' }); // F11 弹种切换动效（本地即时；权威 sel 快照回读对齐）
     }
   }
   function uiEnd(id) { delete held[id] }
@@ -275,12 +370,49 @@
 
   /* ---------- 渲染 ---------- */
   var lastT = now();
-  function loop() {
-    var t = now(), dt = Math.min(50, t - lastT); lastT = t;
+  var perfLog = { costs: [], gaps: [], lastAt: 0 };
+  var paused = false;
+  function loop(ts) {
+    requestAnimationFrame(loop);
+    if (paused) return; // QA 冻结采样（GAMES-103 范式：保留最后帧供识图探针）
+    var t0 = now(), t = t0, dt = Math.min(50, t - lastT); lastT = t;
+    if (perfLog.lastAt) perfLog.gaps.push(t0 - perfLog.lastAt); // 首帧播种（GAMES-141：旧 if(gaps.length) 恒空死码→rafGap 恒 0）
+    perfLog.lastAt = t0;
+    if (perfLog.gaps.length > 240) perfLog.gaps.shift();
     if (fx.shake > 0) fx.shake = Math.max(0, fx.shake - dt * 0.04);
     stepProjs(dt);
+    updateFeel(t, dt);
     draw(t);
-    requestAnimationFrame(loop);
+    var cost = now() - t0;
+    perfLog.costs.push(cost);
+    if (perfLog.costs.length > 240) perfLog.costs.shift();
+  }
+  /* GAMES-150 感受层帧更新：履带印落点/满装辉光检测/引擎嗡鸣/殉爆链到点（全部
+   * 渲染期状态，只读消费快照——不入 sim）。 */
+  function updateFeel(t, dt) {
+    for (var seat in tanks) {
+      var p = tanks[seat];
+      if (!p || !p.alive) continue;
+      var last = fx.treadLast[seat];
+      if (!last) { fx.treadLast[seat] = { x: p.x, y: p.y }; continue }
+      var dx = p.x - last.x, dy = p.y - last.y, d2 = dx * dx + dy * dy;
+      if (d2 >= 14000 * 14000) { // 每 ≥14px 落一枚双轨印（§3.2 履带印）
+        fx.treads.push({ x: p.x, y: p.y, dir: p.dir || 0, seat: +seat, at: t, rec: +seat === mySeat ? fxT('F07') : null });
+        fx.treadLast[seat] = { x: p.x, y: p.y };
+        if (fx.treads.length > 72) fx.treads.shift(); // 帧成本帽（72 枚=1.0m 轨迹足够拖尾感）
+      }
+    }
+    var me = tanks[mySeat];
+    if (me && me.alive && typeof me.cd === 'number') {
+      if (fx.prevCd > 0 && me.cd <= 0) { // 满装：cd>0→0 跳变 → 辉光+机括声（F04）
+        fx.glowAt = t; fx.glowRec = fxT('F04'); sfx('reloadClick');
+      }
+      fx.prevCd = me.cd;
+    }
+    var moving = Math.abs(input.mx) + Math.abs(input.my) > 0;
+    if (moving && !fx.wasMoving && me && me.alive) sfx('engineHum'); // 履带引擎嗡鸣（起步）
+    fx.wasMoving = moving;
+    for (var ci = fx.chain.length - 1; ci >= 0; ci--) if (t >= fx.chain[ci].at && !fx.chain[ci].sfxd) { fx.chain[ci].sfxd = true; sfx('chainBlast') }
   }
   /* 本地弹道段重演（§5.1 离散事件确定性重演：同 sim 同参数逐字节一致） */
   function stepProjs(dt) {
@@ -317,6 +449,29 @@
       ctx.beginPath(); ctx.arc(sx(170000), sy(250000), 45, -Math.PI / 2, -Math.PI / 2 + TAU * snapState.capBar / 100000);
       ctx.strokeStyle = capCol; ctx.lineWidth = 3.5; ctx.stroke();
     }
+    /* F16 占点圈脉冲（capTick 进度变更 → 扩散圈 600ms；满点前呼吸加密） */
+    if (t - fx.capPulseAt < 600) {
+      var acp = t - fx.capPulseAt;
+      fxD(fx.capRec);
+      ctx.beginPath(); ctx.arc(sx(170000), sy(250000), 45 + acp * 0.05, 0, TAU);
+      ctx.strokeStyle = 'rgba(232,163,61,' + (0.55 * (1 - acp / 600)).toFixed(2) + ')';
+      ctx.lineWidth = 2; ctx.stroke();
+    }
+    /* F07/F13 履带印（双轨暗印+车向旋转；击毁者渐隐 1.5s，被毁原地焦印同链） */
+    for (var tdi = fx.treads.length - 1; tdi >= 0; tdi--) {
+      var tr = fx.treads[tdi], aT = 1;
+      if (tr.fadeAt) {
+        aT = 1 - (t - tr.fadeAt) / 1500;
+        fxD(tr.rec); // F13 渐隐首绘（fadeAt 置位后的第一帧）
+        if (aT <= 0) { fx.treads.splice(tdi, 1); continue }
+      } else if (tr.rec) fxD(tr.rec); // F07 首绘
+      ctx.save(); ctx.translate(sx(tr.x), sy(tr.y)); ctx.rotate((tr.dir || 0) / 8192 * TAU);
+      /* 常轨印=沙土色（§7 视觉基调：履带印区域 #8A7A5C——铁灰底上高可读）；
+       * 被毁焦印=炭黑（§3.4 焦黑残骸语言） */
+      ctx.fillStyle = tr.wreck ? 'rgba(16,14,12,' + (0.72 * aT).toFixed(2) + ')' : 'rgba(138,122,92,' + (0.5 * aT).toFixed(2) + ')';
+      if (tr.wreck) { ctx.fillRect(-9, -7, 18, 14) } else { ctx.fillRect(-1.8, -7.5, 3.6, 5.6); ctx.fillRect(-1.8, 1.9, 3.6, 5.6) }
+      ctx.restore();
+    }
     /* 掩体（tile：wall 混凝土/crate 木箱/rock 骨架） */
     if (tileTypes) for (var i = 0; i < tileTypes.length; i++) {
       var tv = tileTypes[i];
@@ -339,11 +494,15 @@
         return tiles && tiles[idx] === 0 ? 0 : (tileTypes ? tileTypes[idx] : 0);
       }, 24);
       var pcol = TEAM_COL[0];
+      /* F08 弹道预览线呼吸（基线 0.40-0.60 sin 摆动；fire 后 200ms 余晖抬升 §3.4） */
+      var brA = 0.4 + 0.2 * (0.5 + 0.5 * Math.sin(t / 450));
+      var afGlow = t - fx.breathAt;
+      if (afGlow < 200) { brA = Math.min(0.95, brA + 0.35 * (1 - afGlow / 200)); fxD(fx.breathRec) }
       ctx.beginPath();
       ctx.setLineDash(selAmmo === 1 ? [4, 3] : []);
       ctx.moveTo(sx(trace[0].x), sy(trace[0].y) - trace[0].z / K);
       for (var ti = 1; ti < trace.length; ti++) ctx.lineTo(sx(trace[ti].x), sy(trace[ti].y) - trace[ti].z / K);
-      ctx.strokeStyle = 'rgba(232,163,61,.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.strokeStyle = 'rgba(232,163,61,' + brA.toFixed(2) + ')'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.setLineDash([]);
       var lastPt = trace[trace.length - 1];
       ctx.beginPath(); ctx.arc(sx(lastPt.x), sy(lastPt.y), selAmmo === 1 ? 30 : 4, 0, TAU); // 落点标记（HE 附 AOE 圈）
@@ -361,18 +520,26 @@
       if (pr.ammo === 0) { ctx.fillStyle = tc; ctx.fillRect(px - 3, py - 1.5, 6, 3) } // AP 细长
       else { ctx.save(); ctx.translate(px, py); ctx.rotate(Math.PI / 4); ctx.fillStyle = tc; ctx.fillRect(-2.6, -2.6, 5.2, 5.2); ctx.restore() } // HE 圆钝菱
     }
-    /* 坦克（车体+履带印+炮塔；A 圆盖/B 六角双编码） */
+    /* 坦克（车体+履带+炮塔；A 圆盖/B 六角双编码）——GAMES-150 后坐三件套渲染期偏移：
+     * F01 车体反向 2px+炮管后缩 6px→200ms 回弹（重坦 ×0.7/坦歼 ×1.3）、F03 炮塔
+     * 震颤 ±1.2° 衰减 150ms（§3.2；全部不入 sim，纯绘制态）。 */
     for (var seat in tanks) {
       var p = tanks[seat];
       if (!p || !p.alive) continue;
       var x = sx(p.x), y = sy(p.y);
       var dir = (p.dir || 0) / 8192 * TAU, tur = (p.tur || 0) / 8192 * TAU;
-      ctx.save(); ctx.translate(x, y); ctx.rotate(dir);
+      var rc = fx.recoil[seat], rcK = 0, jt = fx.jolt[seat], jtK = 0;
+      if (rc && t - rc.at < 200) { rcK = (1 - (t - rc.at) / 200); fxD(rc.rec) } else fx.recoil[seat] = null;
+      if (jt && t - jt.at < 150) { jtK = 1 - (t - jt.at) / 150; fxD(jt.rec) } else fx.jolt[seat] = null;
+      var clsF = p.cls === 'heavy' ? 0.7 : p.cls === 'td' ? 1.3 : 1.0;
+      var back = rcK * 2 * clsF; // 车体沿炮向反向位移（px）
+      ctx.save(); ctx.translate(x - Math.cos(tur) * back, y - Math.sin(tur) * back); ctx.rotate(dir);
       ctx.fillStyle = '#3A3E44'; ctx.fillRect(-11, -9, 22, 18); // 车体
       ctx.fillStyle = '#2E3237'; ctx.fillRect(-11, -11, 22, 3.2); ctx.fillRect(-11, 7.8, 22, 3.2); // 履带
       ctx.restore();
-      ctx.save(); ctx.translate(x, y); ctx.rotate(tur);
-      ctx.fillStyle = '#464B52'; ctx.fillRect(0, -2.2, 16, 4.4); // 炮管
+      ctx.save(); ctx.translate(x - Math.cos(tur) * back, y - Math.sin(tur) * back);
+      ctx.rotate(tur + Math.sin((t - (jt ? jt.at : 0)) / 24) * 0.021 * jtK); // F03 震颤（余弦衰减微摆）
+      ctx.fillStyle = '#464B52'; ctx.fillRect(-rcK * 6 * clsF, -2.2, 16, 4.4); // 炮管后缩→回弹
       ctx.beginPath();
       if ((p.team || 0) === 0) ctx.arc(0, 0, 6.4, 0, TAU); // A 圆形炮塔盖
       else { ctx.moveTo(0, -7); for (var hx = 1; hx <= 6; hx++) { var a6 = hx / 6 * TAU; ctx.lineTo(Math.cos(a6) * 7, Math.sin(a6) * 7) } } // B 六角
@@ -387,18 +554,92 @@
         ctx.strokeStyle = hpr > .5 ? '#7DC87D' : hpr > .25 ? '#E8C23D' : '#E85D3D'; ctx.lineWidth = 2; ctx.stroke();
       }
     }
-    /* fx：炮口焰/爆尘/碎块/飘字 */
+    /* fx：炮口焰（F02 焰锥+硝烟+弹壳）/火花/殉爆链/爆尘/碎块/飘字/光柱/受击弧 */
     fx.muzzle = fx.muzzle.filter(function (m2) { return t - m2.at < 140 });
     for (var mi = 0; mi < fx.muzzle.length; mi++) {
       var mz = fx.muzzle[mi], ag = t - mz.at;
-      ctx.beginPath(); ctx.arc(sx(mz.x), sy(mz.y), 3 + ag * 0.12, 0, TAU);
-      ctx.fillStyle = 'rgba(255,190,90,' + (1 - ag / 140).toFixed(2) + ')'; ctx.fill();
+      var mag = (tanks[mz.seat] || {}).tur;
+      if (mag == null) mag = 0;
+      var ma = mag / 8192 * TAU;
+      if (mz.rec) fxD(mz.rec);
+      if (mz.reborn) { ctx.beginPath(); ctx.arc(sx(mz.x), sy(mz.y), 4 + ag * 0.1, 0, TAU); ctx.fillStyle = 'rgba(120,220,255,' + (1 - ag / 140).toFixed(2) + ')'; ctx.fill(); continue }
+      var fl = (mz.seat === mySeat ? 1 : 0.7) * (1 - ag / 140);
+      ctx.save(); ctx.translate(sx(mz.x), sy(mz.y)); ctx.rotate(ma);
+      ctx.fillStyle = 'rgba(255,210,110,' + fl.toFixed(2) + ')';               // 焰锥
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(9 + ag * 0.1, -2.6); ctx.lineTo(9 + ag * 0.1, 2.6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,150,60,' + (fl * 0.8).toFixed(2) + ')';        // 外焰
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(5, -4); ctx.lineTo(7, 0); ctx.lineTo(5, 4); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(sx(mz.x), sy(mz.y), 2 + ag * 0.18, 0, TAU);     // 硝烟晕
+      ctx.fillStyle = 'rgba(200,190,170,' + (0.4 * (1 - ag / 140)).toFixed(2) + ')'; ctx.fill();
+      var shAng = ma + Math.PI / 2 * (mz.seat % 2 ? 1 : -1);                   // 弹壳抛出（垂直炮向侧抛，§3.4）
+      var shD = ag * 0.09;
+      ctx.save(); ctx.translate(sx(mz.x) + Math.cos(shAng) * shD, sy(mz.y) + Math.sin(shAng) * shD - ag * 0.02); ctx.rotate(shAng + ag * 0.02);
+      ctx.fillStyle = 'rgba(212,180,96,' + (1 - ag / 140).toFixed(2) + ')'; ctx.fillRect(-1.5, -1, 3, 2);
+      ctx.restore();
+    }
+    /* F05 命中火花：正/侧/背三色（front 金黄/side 橙/rear 深红——部位差异化） */
+    fx.sparks = fx.sparks.filter(function (sp) { return t - sp.at < 260 });
+    var PART_COL = { front: [255, 211, 77], side: [255, 154, 61], rear: [255, 77, 77] };
+    for (var si2 = 0; si2 < fx.sparks.length; si2++) {
+      var sp2 = fx.sparks[si2], as = t - sp2.at, pc = PART_COL[sp2.part] || PART_COL.side;
+      if (sp2.rec) fxD(sp2.rec);
+      var nS = 7;
+      for (var sk = 0; sk < nS; sk++) {
+        var aS = sk / nS * TAU + (sp2.at % 97) * 0.02, dS = 3 + as * 0.085;
+        ctx.fillStyle = 'rgba(' + pc[0] + ',' + pc[1] + ',' + pc[2] + ',' + (1 - as / 260).toFixed(2) + ')';
+        ctx.fillRect(sx(sp2.x) + Math.cos(aS) * dS - 1, sy(sp2.y) + Math.sin(aS) * dS - 1, 2, 2);
+      }
+    }
+    /* F06 掩体碎裂：tile 碎块抛物飞溅+尘雾（每堵墙的死去都是可见的战局变化，§3.4） */
+    fx.crumbs = fx.crumbs.filter(function (cb) { return t - cb.at < 450 });
+    for (var cbi = 0; cbi < fx.crumbs.length; cbi++) {
+      var cb = fx.crumbs[cbi], ac = t - cb.at;
+      if (cb.rec) fxD(cb.rec);
+      var cxT = CX0 + (cb.tile % 17) * 20 + 10, cyT = CY0 + ((cb.tile / 17) | 0) * 20 + 10;
+      ctx.beginPath(); ctx.arc(cxT, cyT, 6 + ac * 0.12, 0, TAU); // 尘雾
+      ctx.fillStyle = 'rgba(150,140,120,' + (0.35 * (1 - ac / 450)).toFixed(2) + ')'; ctx.fill();
+      for (var dk = 0; dk < 5; dk++) { // 碎块 3-5 块抛物
+        var aD = dk / 5 * TAU + cb.tile * 0.3, dD = ac * 0.075 * (0.6 + (dk % 3) * 0.3);
+        var fy = cyT + Math.sin(aD) * dD - Math.max(0, ac * 0.05 - ac * ac * 0.00018);
+        ctx.fillStyle = 'rgba(110,105,98,' + (1 - ac / 450).toFixed(2) + ')';
+        ctx.fillRect(cxT + Math.cos(aD) * dD - 1.6, fy - 1.6, 3.2, 3.2);
+      }
+    }
+    /* F14 殉爆链：主爆后的 70/150ms 次级爆（到点起播——sfx 在 updateFeel 落） */
+    fx.chain = fx.chain.filter(function (ch) { return t - ch.at < 380 });
+    for (var chi = 0; chi < fx.chain.length; chi++) {
+      var chn = fx.chain[chi], ach = t - chn.at;
+      if (ach < 0) continue;
+      ctx.beginPath(); ctx.arc(sx(chn.x), sy(chn.y), (chn.r / K) * (0.3 + ach / 380 * 0.7), 0, TAU);
+      ctx.strokeStyle = 'rgba(255,140,70,' + (1 - ach / 380).toFixed(2) + ')'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx(chn.x), sy(chn.y), 2.5, 0, TAU);
+      ctx.fillStyle = 'rgba(255,220,150,' + (1 - ach / 380).toFixed(2) + ')'; ctx.fill();
+    }
+    /* F17 重生光柱（基地光柱落下 500ms） */
+    fx.beams = fx.beams.filter(function (bm) { return t - bm.at < 500 });
+    for (var bmi = 0; bmi < fx.beams.length; bmi++) {
+      var bm = fx.beams[bmi], abm = t - bm.at;
+      if (bm.rec) fxD(bm.rec);
+      var gr = ctx.createLinearGradient(0, sy(bm.y) - 46, 0, sy(bm.y));
+      gr.addColorStop(0, 'rgba(140,225,255,0)');
+      gr.addColorStop(1, 'rgba(140,225,255,' + (0.5 * (1 - abm / 500)).toFixed(2) + ')');
+      ctx.fillStyle = gr; ctx.fillRect(sx(bm.x) - 7, sy(bm.y) - 46, 14, 46);
     }
     fx.booms = fx.booms.filter(function (b) { return t - b.at < 400 });
     for (var bi = 0; bi < fx.booms.length; bi++) {
       var bo = fx.booms[bi], ab = t - bo.at, rr2 = (bo.r / K) * (0.3 + ab / 400 * 0.7);
+      if (bo.rec) fxD(bo.rec);
       ctx.beginPath(); ctx.arc(sx(bo.x), sy(bo.y), rr2, 0, TAU);
       ctx.strokeStyle = 'rgba(232,120,60,' + (1 - ab / 400).toFixed(2) + ')'; ctx.lineWidth = 2; ctx.stroke();
+      if (bo.big) { ctx.beginPath(); ctx.arc(sx(bo.x), sy(bo.y), 3, 0, TAU); ctx.fillStyle = 'rgba(255,230,170,' + (1 - ab / 400).toFixed(2) + ')'; ctx.fill() }
+    }
+    /* F10 受击方向弧（入射向红弧 300ms——被绕侧时的方位知觉，§3.2） */
+    if (fx.hurtArc && t - fx.hurtArc.at < 300) {
+      var hA = fx.hurtArc, ahA = (hA.ang || 0) / 8192 * TAU, meH = tanks[mySeat] || { x: 170000, y: 250000 };
+      fxD(hA.rec);
+      ctx.beginPath(); ctx.arc(sx(meH.x), sy(meH.y), 19, ahA - 0.55, ahA + 0.55);
+      ctx.strokeStyle = 'rgba(255,70,60,' + (1 - (t - hA.at) / 300).toFixed(2) + ')'; ctx.lineWidth = 3; ctx.stroke();
     }
     fx.floats = fx.floats.filter(function (f2) { return t - f2.at < 700 });
     for (var fi = 0; fi < fx.floats.length; fi++) {
@@ -433,12 +674,27 @@
     ctx.font = HF('cap', 11, 6, 'P1');
     ctx.fillStyle = '#8A969E';
     ctx.fillText('占点 ' + Math.round((snapState.capBar || 0) / 1000) + '%', W / 2, 48);
-    /* 风向旗（P1 读数，§2.3 HUD 常显） */
+    /* 风向旗（P1 读数+F18 旗面 sin 涟漪常摆，§2.3 HUD 常显——旗杆指向=风来向） */
     var w = snapState.wind || { mag: 0, ang: 0 };
     var wDir = ['→', '↓', '←', '↑'][Math.round((w.ang || 0) / 2048) % 4];
     ctx.textAlign = 'left';
     ctx.fillText('风 ' + wDir + ' ' + ((w.mag || 0) / 1000).toFixed(1), 8, 48);
     ctx.textAlign = 'center';
+    var fxX = 62, fxY = 36, wA = ((w.ang || 0) + 4096) / 8192 * TAU; // 旗朝风吹去向（ang 来向+180°）
+    ctx.save(); ctx.translate(fxX, fxY); ctx.rotate(wA);
+    ctx.strokeStyle = 'rgba(200,210,220,.9)'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(0, 8); ctx.stroke();  // 旗杆
+    var rip = 1 + (w.mag || 0) / 12000;                                  // 风强=涟漪幅度/频率
+    ctx.beginPath(); ctx.moveTo(0, -8);
+    for (var wseg = 1; wseg <= 3; wseg++) {
+      var wx = wseg * 4, wy = -8 + Math.sin(t / (300 / rip) + wseg * 1.3) * 1.6 * rip;
+      ctx.lineTo(wx, wy);
+    }
+    ctx.lineTo(12, 8); ctx.lineTo(0, 8); ctx.closePath();
+    ctx.fillStyle = 'rgba(232,163,61,.65)'; ctx.fill();
+    ctx.restore();
+    if (!fx.windRec) fx.windRec = fxT('F18');
+    fxD(fx.windRec); // F18 状态类首绘（旗常摆，报数不断言）
     /* 底栏（操作区） */
     ctx.fillStyle = '#181B1F'; ctx.fillRect(0, H - 111, W, 111);
     /* 摇杆底盘+帽 */
@@ -452,44 +708,89 @@
     /* 瞄准盘（右半浮动态+v1 静态底盘提示） */
     var ax2 = aimPad ? aimPad.ox : W - 200, ay2 = aimPad ? aimPad.oy : H - 58;
     ctx.beginPath(); ctx.arc(ax2, ay2, 34, 0, TAU); ctx.strokeStyle = 'rgba(61,200,232,.25)'; ctx.stroke();
-    /* fire 钮 Ø64+装填环+弹药（P0） */
+    /* fire 钮 Ø64+装填环+弹药（P0）——F04 满装辉光（cd>0→0 → 300ms 金辉脉冲） */
     var me = tanks[mySeat] || {};
     var cdFrac = Math.max(0, Math.min(1, (me.cd || 0) / 50));
+    var afGlow2 = t - fx.glowAt;
     ctx.beginPath(); ctx.arc(FIRE_C.x, FIRE_C.y, FIRE_R, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - cdFrac));
     ctx.strokeStyle = cdFrac > 0 ? '#8A4A3D' : TEAM_COL[0]; ctx.lineWidth = 4; ctx.stroke();
+    if (afGlow2 >= 0 && afGlow2 < 300) {
+      fxD(fx.glowRec);
+      ctx.beginPath(); ctx.arc(FIRE_C.x, FIRE_C.y, FIRE_R + 3 + afGlow2 * 0.03, 0, TAU);
+      ctx.strokeStyle = 'rgba(255,215,120,' + (0.8 * (1 - afGlow2 / 300)).toFixed(2) + ')'; ctx.lineWidth = 2.5; ctx.stroke();
+    }
     ctx.beginPath(); ctx.arc(FIRE_C.x, FIRE_C.y, FIRE_R - 5, 0, TAU); ctx.fillStyle = 'rgba(60,64,70,.9)'; ctx.fill();
     ctx.font = HF('ammo', 13, 7, 'P0');
     ctx.fillStyle = cdFrac > 0 ? '#7A5A50' : '#F0D8A8';
     ctx.fillText('FIRE', FIRE_C.x, FIRE_C.y + 1);
-    /* 弹种钮 Ø44（当前弹+余弹 P0） */
-    ctx.beginPath(); ctx.arc(AMMO_C.x, AMMO_C.y, AMMO_R, 0, TAU);
+    /* 弹种钮 Ø44（当前弹+余弹 P0）——F11 切换脉冲（250ms 缩放+环闪） */
+    var afSwap = t - fx.swapAt, swK = afSwap >= 0 && afSwap < 250 ? 1 + 0.16 * (1 - afSwap / 250) : 1;
+    if (afSwap >= 0 && afSwap < 250) fxD(fx.swapRec);
+    ctx.save(); ctx.translate(AMMO_C.x, AMMO_C.y); ctx.scale(swK, swK);
+    ctx.beginPath(); ctx.arc(0, 0, AMMO_R, 0, TAU);
     ctx.fillStyle = selAmmo === 0 ? 'rgba(90,110,130,.85)' : 'rgba(150,90,60,.85)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.stroke();
+    ctx.strokeStyle = afSwap >= 0 && afSwap < 250 ? 'rgba(255,225,150,' + (1 - afSwap / 250).toFixed(2) + ')' : 'rgba(255,255,255,.3)';
+    ctx.lineWidth = afSwap >= 0 && afSwap < 250 ? 2.5 : 1; ctx.stroke();
     ctx.font = HF('ammoSel', 13, 7, 'P0');
     ctx.fillStyle = '#fff';
-    var ammoArr = me.ammo || [15, 8];
-    ctx.fillText((selAmmo === 0 ? 'AP' : 'HE'), AMMO_C.x, AMMO_C.y - 3);
-    ctx.fillText('' + ammoArr[selAmmo], AMMO_C.x, AMMO_C.y + 12);
-    /* 击毁横幅（名签 P1） */
-    if (fx.deadBanner && t - fx.deadBanner.at < 1500) {
-      ctx.font = HF('killBanner', 12, 6, 'P1');
-      ctx.fillStyle = 'rgba(255,255,255,.85)';
-      ctx.fillText('seat' + fx.deadBanner.by + ' 击毁 seat' + fx.deadBanner.victim, W / 2, 76);
+    var ammoArr = [me.a0 != null ? me.a0 : 15, me.a1 != null ? me.a1 : 8]; // 快照 a0/a1（增量账本字段）
+    ctx.fillText((selAmmo === 0 ? 'AP' : 'HE'), 0, -3);
+    ctx.fillText('' + ammoArr[selAmmo], 0, 12);
+    ctx.restore();
+    /* F09 受伤红屏边缘（我席被命中 → 战场缘红晕 300ms；clip 战场域=顶/底栏锚点零污染） */
+    if (fx.hurtAt > 0 && t - fx.hurtAt < 300) {
+      fxD(fx.hurtRec);
+      var hA2 = 0.5 * (1 - (t - fx.hurtAt) / 300);
+      ctx.save(); ctx.beginPath(); ctx.rect(CX0, CY0, CW, CH); ctx.clip();
+      var hvG = ctx.createLinearGradient(0, CY0, 0, CY0 + 60);
+      hvG.addColorStop(0, 'rgba(232,60,50,' + hA2.toFixed(2) + ')'); hvG.addColorStop(1, 'rgba(232,60,50,0)');
+      ctx.fillStyle = hvG; ctx.fillRect(CX0, CY0, CW, 60);
+      var hvG2 = ctx.createLinearGradient(0, CY0 + CH - 60, 0, CY0 + CH);
+      hvG2.addColorStop(0, 'rgba(232,60,50,0)'); hvG2.addColorStop(1, 'rgba(232,60,50,' + hA2.toFixed(2) + ')');
+      ctx.fillStyle = hvG2; ctx.fillRect(CX0, CY0 + CH - 60, CW, 60);
+      ctx.restore();
     }
-    /* 结算页（§7：胜负大字+战报条+再来一局） */
+    /* F12 击杀特写横幅（名签 P1；冲入=前 240ms 缩放+位移滑入） */
+    if (fx.deadBanner && t - fx.deadBanner.at < 1500) {
+      var bA = t - fx.deadBanner.at, bK = bA < 240 ? bA / 240 : 1;
+      fxD(fx.deadBanner.rec);
+      ctx.save(); ctx.translate(W / 2, 76 - (1 - bK) * 14); ctx.scale(0.7 + 0.3 * bK, 0.7 + 0.3 * bK);
+      ctx.font = HF('killBanner', 12, 6, 'P1');
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * (bA < 1200 ? 1 : (1500 - bA) / 300)).toFixed(2) + ')';
+      ctx.fillText('seat' + fx.deadBanner.by + ' 击毁 seat' + fx.deadBanner.victim, 0, 0);
+      ctx.restore();
+    }
+    /* 结算页（§7：胜负大字+战报条+再来一局）——F15 胜负分歧动效（胜=阵营色彩雨
+     * 60 粒/败=压暗+大字自下渐入+按钮迟现 400ms；平局随败臂无彩雨） */
     if (ended && endResult) {
-      ctx.fillStyle = 'rgba(10,12,15,.88)'; ctx.fillRect(0, 0, W, H);
+      var eA = fx.endAt > 0 ? t - fx.endAt : 999;
+      fxD(fx.endRec);
       var win = endResult.winner === 'A' ? 0 : endResult.winner === 'B' ? 1 : -1;
+      var iWin = win >= 0 && mySeat >= 0 && win === (mySeat & 1);
+      ctx.fillStyle = 'rgba(10,12,15,' + (iWin ? 0.82 : Math.min(0.9, 0.7 + eA * 0.0004)).toFixed(2) + ')';
+      ctx.fillRect(0, 0, W, H);
+      if (iWin && eA < 4000) { // 彩雨：阵营双色+白，三频三角相位（无 rng——idx 三角函数派生；36 粒=帧成本帽）
+        for (var cf = 0; cf < 36; cf++) {
+          var cfX = (cf * 61 + ((eA * 0.06 + cf * 17) % 41)) % W, cfY = ((eA * 0.22 + cf * 83) % (H + 60)) - 30;
+          var cfC = cf % 3 === 0 ? TEAM_COL[win] : cf % 3 === 1 ? '#FFFFFF' : (win === 0 ? TEAM_COL[1] : TEAM_COL[0]);
+          ctx.save(); ctx.translate(cfX, cfY); ctx.rotate(cf + eA * 0.004);
+          ctx.fillStyle = cfC; ctx.globalAlpha = 0.85; ctx.fillRect(-2, -3.5, 4, 7); ctx.restore();
+        }
+        ctx.globalAlpha = 1;
+      }
+      var eIn = Math.max(0, Math.min(1, (eA - 120) / 380)); // 大字渐入（自下 12px）
       ctx.font = HF('endBig', 26, 7, 'P0');
       ctx.fillStyle = win < 0 ? '#C8D2D8' : TEAM_COL[win];
-      ctx.fillText(win < 0 ? '平局' : (win === (mySeat & 1) ? '胜利' : '败北'), W / 2, H / 2 - 60);
-      ctx.font = HF('endSub', 12, 6, 'P1');
-      ctx.fillStyle = '#8A969E';
-      ctx.fillText('终局 · ' + (endResult.reason || '') + ' · winner=' + endResult.winner, W / 2, H / 2 - 34);
-      ctx.font = HF('endBtn', 14, 6, 'P1');
-      ctx.fillStyle = '#E8A33D';
-      ctx.fillText('点击再来一局', W / 2, H / 2 + 40);
-      ctx.fillText('返回大厅', W / 2, H / 2 + 66);
+      ctx.fillText(win < 0 ? '平局' : (iWin ? '胜利' : '败北'), W / 2, H / 2 - 60 + (1 - eIn) * 12);
+      if (eA > 400) {
+        ctx.font = HF('endSub', 12, 6, 'P1');
+        ctx.fillStyle = '#8A969E';
+        ctx.fillText('终局 · ' + (endResult.reason || '') + ' · winner=' + endResult.winner, W / 2, H / 2 - 34);
+        ctx.font = HF('endBtn', 14, 6, 'P1');
+        ctx.fillStyle = '#E8A33D';
+        ctx.fillText('点击再来一局', W / 2, H / 2 + 40);
+        ctx.fillText('返回大厅', W / 2, H / 2 + 66);
+      }
     }
     ctx.textAlign = 'left';
     /* 页脚 slug·version（P2） */
@@ -505,6 +806,73 @@
       ev.preventDefault();
     }
   }, { passive: false });
+  /* ---------- 调试面（识图/QA 钩子；GAMES-150 增 fx 台账/音效位/场景驱动器/perf） ---------- */
+  function fxScene(name) { // 手感场景驱动（QA 取证入口：事件类走 fxProbe，本地/状态类在此）
+    var t = now(), me = tanks[mySeat] || {};
+    if (name === 'calm') { // 清瞬态（采样/锚点用；履带印为持续设计态保留）
+      fx.muzzle.length = 0; fx.sparks.length = 0; fx.crumbs.length = 0; fx.floats.length = 0;
+      fx.booms.length = 0; fx.chain.length = 0; fx.beams.length = 0; fx.hurtArc = null;
+      fx.shake = 0; fx.swapAt = -1e9; fx.glowAt = -1e9; fx.breathAt = -1e9; fx.capPulseAt = -1e9;
+      fx.hurtAt = -1e9; fx.deadBanner = null;
+      return true;
+    }
+    if (name === 'fire') { // 后坐三件套+炮口焰+预览余晖（走同一 onEvent 管线；参数取当前炮塔角）
+      var fs2 = me.alive ? mySeat : -1;                 // QA 驱动容错：我席阵亡窗回退任一存活席（F08 余晖仍只挂我席）
+      if (fs2 < 0) for (var sk2 in tanks) if (tanks[sk2] && tanks[sk2].alive) { fs2 = +sk2; break }
+      if (fs2 < 0) return false;
+      var sh = tanks[fs2] || {}, ang = sh.tur || 0, A0 = C.AMMO[0];
+      onEvent({ k: 'fire', seat: fs2, ammo: 0, ang: ang, x: sh.x || 170000, y: sh.y || 250000,
+        vx: Math.cos(ang / 8192 * TAU) * A0.vh | 0, vy: Math.sin(ang / 8192 * TAU) * A0.vh | 0, vz: A0.vz });
+      return true;
+    }
+    if (name === 'reload') { fx.glowAt = t; fx.glowRec = fxT('F04'); sfx('reloadClick'); return true } // F04 QA 驱动（真时点=cd 跳变检测）
+    if (name === 'hit') { onEvent({ k: 'hit', seat: (mySeat + 1) % 4, victim: mySeat, dmg: 30, angIn: 2048, part: 'side' }); return true } // F05/F09/F10（我席被命中）
+    if (name === 'hitFoe') { var f2 = tanks[(mySeat + 1) % 4] || {}; onEvent({ k: 'hit', seat: mySeat, victim: (mySeat + 1) % 4, dmg: 30, angIn: 0, part: 'rear' }); return true } // F05 背面三色（victim=他席）
+    if (name === 'crumble') { // F06：任选一块在场掩体 tile
+      var pick = 200;
+      if (tileTypes) for (var pt2 = 0; pt2 < tileTypes.length; pt2++) if (tileTypes[pt2] === 1) { pick = pt2; break }
+      onEvent({ k: 'crumble', tile: pick });
+      return true;
+    }
+    if (name === 'kill') { onEvent({ k: 'kill', seat: mySeat, victim: (mySeat + 1) % 4 }); return true } // F12/F13/F14
+    if (name === 'cap') { onEvent({ k: 'capTick', team: 0, bar: Math.max(1, fx.prevCap + 550) }); return true } // F16 推进脉冲
+    if (name === 'capAlert') { onEvent({ k: 'capTick', team: 0, bar: 91000 }); return true } // 满点前警报
+    if (name === 'swap') { onEvent({ k: 'swapFx' }); return true } // F11
+    if (name === 'respawn') { onEvent({ k: 'respawn', seat: mySeat, x: me.x || 170000, y: me.y || 450000 }); return true } // F17
+    if (name === 'engine') { // F07+engineHum：原地落一枚我席履带印+嗡鸣（真时点=行进 14px 步进）
+      fx.treads.push({ x: me.x || 170000, y: me.y || 250000, dir: me.dir || 0, seat: mySeat, at: t, rec: fxT('F07') });
+      sfx('engineHum');
+      return true;
+    }
+    if (name === 'reject') { onEvent({ k: 'reject', op: 'fire', why: 'cd' }); return true }
+    if (name === 'end') { // F15 终局批（两段式后置——世界层探针批先走，street GAMES-141 口径）
+      if (!endResult) endResult = { winner: mySeat % 2 === 0 ? 'A' : 'B', reason: 'qa-feel' };
+      ended = true; endFx();
+      return true;
+    }
+    return false;
+  }
+  window.__GAMES_DEBUG__.state = function () {
+    var me = tanks[mySeat] || {};
+    return { seat: mySeat, phase: snapState.phase, ended: ended, alive: me.alive ? 1 : 0,
+      cd: me.cd || 0, capBar: snapState.capBar, wind: snapState.wind, frame: srvFrame,
+      players: Object.keys(tanks).length, selAmmo: selAmmo };
+  };
+  window.__GAMES_DEBUG__.pause = function (v) { paused = !!v };
+  window.__GAMES_DEBUG__.perf = function () {
+    var cs = perfLog.costs.slice(-180), gs = perfLog.gaps.slice(-180);
+    var avg = cs.length ? cs.reduce(function (a, b) { return a + b }, 0) / cs.length : 0;
+    var sorted = cs.slice().sort(function (a, b) { return a - b });
+    var gAvg = gs.length ? gs.reduce(function (a, b) { return a + b }, 0) / gs.length : 0;
+    return { n: cs.length, costAvgMs: +avg.toFixed(2), costP95Ms: +(sorted[Math.floor(sorted.length * 0.95)] || 0).toFixed(2),
+      costJankPct: +(cs.filter(function (c) { return c > 25 }).length / Math.max(1, cs.length) * 100).toFixed(2), rafGapMs: +gAvg.toFixed(1) };
+  };
+  window.__GAMES_DEBUG__.fxProbe = function (ev) { onEvent(ev); return true }; // 合成事件走同一 onEvent 管线
+  window.__GAMES_DEBUG__.fxScene = fxScene;
+  window.__GAMES_DEBUG__.fxList = function () { return FXLIST.map(function (f) { return { id: f[0], name: f[1], cls: f[2] } }) };
+  window.__GAMES_DEBUG__.fxLedger = function () { return fxLedger.map(function (l) { return { id: l.id, trig: Math.round(l.trig), lat: l.lat } }) };
+  window.__GAMES_DEBUG__.sfxGroups = function () { return { on: SND.on, slots: SND.slots.slice(), fired: Object.keys(SND.fired), calls: SND.calls.slice() } };
+  window.__GAMES_DEBUG__.sndOn = function (v) { SND.on = !!v };
   /* 页脚版本行自证（P2 在场） */
   emitDbg('boot', { engine: S.ENGINE, hash: S.ENGINE_HASH, appliedCheck: appliedSelfCheck() });
   connect();
