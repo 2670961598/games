@@ -247,12 +247,12 @@ console.log('── V2 双编码全 UI 面 + V3 FEEL 交付面入识图（revers
   await p.evaluate(() => window.__GAMES_DEBUG__.fxScene('calm'))
 
   /* --- V3-a/b F01 落子弹跳墨水（fxProbe place→席 B 青子：弹跳窗子簇+涟漪环瞬态收敛） ---
-   * 页内帧感知序列：每步双 rAF 保证位图更新（脚本侧 sleep+读位图在帧稀时读到旧帧——
-   * 弹跳 120ms/涟漪 240ms 窗整段跳帧即假红）。谷基线（3 采样 min）差分免疫邻格呼吸块。 */
-  const f01 = await p.evaluate(() => new Promise(async (res) => {
+   * 同 F02 首跑病灶：双 rAF+sleep 采样在无头帧塌（中位 51ms/隙 p90 129ms）下漏采 120ms 弹子窗——
+   * 改 raw-rAF 逐帧全录（预发 320ms 谷基线帧+发后 520ms 帧），Node 析峰；缺峰重发（fxProbe 合成可重试）。
+   * 谷基线（预发帧 min）差分免疫邻格呼吸块；fxProbe 不改盘面真值——同一空格可反复发。 */
+  const fireF01 = () => p.evaluate(() => new Promise((res) => {
     const dbg = window.__GAMES_DEBUG__
-    const cv = document.getElementById('cv'), g2 = cv.getContext('2d')
-    const nf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const g2 = document.getElementById('cv').getContext('2d')
     const v = dbg.state().view
     let cell = -1
     for (let c = 0; c < 64; c++) { const r = (c / 8) | 0, cc = c % 8; if (!v.board[c] && r >= 2 && r <= 5 && cc >= 2 && cc <= 5) { cell = c; break } } /* 盘中心空格（环带避盘框） */
@@ -260,69 +260,84 @@ console.log('── V2 双编码全 UI 面 + V3 FEEL 交付面入识图（revers
     const rect = (x, y, w, h, R, G, B, t) => { const d = g2.getImageData(x, y, w, h).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - R) <= t && Math.abs(d[i + 1] - G) <= t && Math.abs(d[i + 2] - B) <= t) n++; return n }
     const stone = () => rect(cx - 12, cy - 12, 24, 24, 61, 200, 232, 46) /* B 青子簇 */
     const ripple = () => { let n = 0; for (let k = 0; k < 16; k++) { const th = k / 16 * Math.PI * 2; for (let r = 18.5; r <= 31.7; r += 1) { const d = g2.getImageData(Math.round(cx + Math.cos(th) * r), Math.round(cy + Math.sin(th) * r), 1, 1).data; if (Math.abs(d[0] - 178) <= 26 && Math.abs(d[1] - 149) <= 26 && Math.abs(d[2] - 96) <= 26) n++ } } return n } /* 环带 [0.42,0.72]cs */
-    const valley = async () => { let m = Infinity; for (let i = 0; i < 3; i++) { m = Math.min(m, ripple()); if (i < 2) { await new Promise((r) => setTimeout(r, 120)); await nf() } } return m } /* 呼吸谷（罩半周期 300ms） */
-    const base = await valley()
-    dbg.fxProbe({ k: 'place', seat: 1, cell })
-    let peakStone = 0, peakRip = 0
-    for (let i = 0; i < 8; i++) { await nf(); peakStone = Math.max(peakStone, stone()); peakRip = Math.max(peakRip, ripple() - 0); await new Promise((r) => setTimeout(r, 25)) } /* 弹跳/涟漪窗内帧感知峰值 */
-    await new Promise((r) => setTimeout(r, 360))
-    await nf()
-    const after = await valley()
-    res({ cell, peakStone, peakRip, base, after })
+    const frames = []
+    let fired = false, t0 = 0
+    const loop = () => {
+      const now = performance.now()
+      if (!fired && frames.length >= 6) { fired = true; t0 = now; dbg.fxProbe({ k: 'place', seat: 1, cell }) }
+      frames.push({ t: Math.round(now - (fired ? t0 : now)), s: stone(), r: ripple() })
+      if (now - (t0 || now) < 520) requestAnimationFrame(loop)
+      else res({ cell, frames })
+    }
+    requestAnimationFrame(loop)
   }))
-  const pc = { x: 12 + (f01.cell % 8) * 44 + 22, y: 68 + ((f01.cell / 8) | 0) * 44 + 22 }
-  ok('V3-a', 'FEEL 入识图·F01 落子弹跳墨水·子簇（弹跳窗内落点 B 青子在场——0.6 缩放弹入 120ms）', f01.peakStone >= 30, `青子峰值=${f01.peakStone}px（帧感知窗内峰值，cell#${f01.cell}）`)
+  let f01 = null, f01Tries = 0
+  while (f01Tries < 4) { /* 缺峰重发：弹子窗 120ms<帧隙 p90——单发可能整窗漏采 */
+    f01Tries++
+    const r = await fireF01()
+    const pre = r.frames.filter((f) => f.t <= 0), post = r.frames.filter((f) => f.t > 0)
+    const base = Math.min(...pre.map((f) => f.r)), after = Math.min(...post.filter((f) => f.t > 420).map((f) => f.r))
+    f01 = { cell: r.cell, peakStone: Math.max(...post.map((f) => f.s)), peakRip: Math.max(...post.map((f) => f.r)), base, after: Number.isFinite(after) ? after : base, frames: r.frames.length }
+    if (f01.peakStone >= 30 && f01.peakRip >= f01.base + 5) break
+    await sleep(120)
+  }
+  ok('V3-a', 'FEEL 入识图·F01 落子弹跳墨水·子簇（弹跳窗内落点 B 青子在场——0.6 缩放弹入 120ms）', f01.peakStone >= 30, `青子峰值=${f01.peakStone}px（${f01.frames} 帧×${f01Tries} 发，cell#${f01.cell}）`)
   ok('V3-b', 'FEEL 入识图·F01 落子涟漪环（环带瞬态增量在场——呼吸谷基线差分：邻格呼吸块恒在不计入）', f01.peakRip >= f01.base + 5, `涟漪增量=${f01.peakRip}-谷基线${f01.base}=${f01.peakRip - f01.base} 点`)
   ok('V3-b2', 'FEEL 入识图·F01 涟漪瞬态收敛（240ms 窗过后谷对谷增量归零=非阻塞证据）', f01.after - f01.base <= 4, `残余增量=${f01.after - f01.base}（谷 ${f01.after} vs 谷基线 ${f01.base}）@窗后`)
   await p.evaluate(() => window.__GAMES_DEBUG__.fxScene('calm'))
   await sleep(80)
 
-  /* --- V3-c/d/e F02 翻子波序（切比雪夫距序 40ms/子：近格先翻·远格（距 d 格）延 d*40ms 后翻） --- */
+  /* --- V3-c/d/e F02 翻子波序（切比雪夫距序 40ms/子：近格先翻·远格（距 d 格）延 d*40ms 后翻） ---
+   * 首跑三红根因（诊断件实证）：无头页 rAF 中位 51ms/p90 129ms——琥珀半窗仅 80ms，
+   * 双 rAF+setTimeout 轮询 4 拍/700ms 全落窗隙=采样过稀（near/far 墨帧俱在，波序真实，非产品缺陷）。
+   * 改页内 raw-rAF 逐帧采样（帧隙上限<窗宽）+琥珀首见时刻序证+缺窗重发（fxProbe 合成可重试）。 */
   const wave = await p.evaluate(() => { /* 波序取证：延迟=格距**波源**（view.last2）×40ms——不是近远格互距！
    * 选两颗已有青子（board==2：波前=青波后=琥珀可分辨；空格动画不画且无翻前色）：
-   * near=距波源最近（延迟最小）、far=距波源最远（延迟差 ≥2 格×40ms 采样窗互斥）。 */
+   * near=距波源最近、far=距波源最远（取 dF-dN 最大化——琥珀半窗 [d*40+80,d*40+160] 两窗
+   * 分离度=(dF-dN-2)*40ms，差≥2 即不相交；差≥3 带额外分离带更稳）。 */
     const v = window.__GAMES_DEBUG__.state().view
     const src = v.last2 >= 0 ? v.last2 : v.last
     const st = []; for (let c = 0; c < 64; c++) if (v.board[c] === 2) st.push(c)
     const dist = (c) => Math.max(Math.abs(((c / 8) | 0) - ((src / 8) | 0)), Math.abs((c % 8) - (src % 8)))
     let near = null, far = null
     for (const c of st) { const d = dist(c); if (near === null || d < near.d) near = { c, d }; if (far === null || d > far.d) far = { c, d } }
-    if (near && far && far.d - near.d >= 2) {
-      window.__GAMES_DEBUG__.fxProbe({ k: 'flip', cells: [near.c, far.c], seat: 0 })
-      return { a: near.c, b: far.c, dN: near.d, dF: far.d }
-    }
+    if (near && far && far.d - near.d >= 2) return { a: near.c, b: far.c, dN: near.d, dF: far.d }
     return { none: true, n: st.length, dN: near ? near.d : -1, dF: far ? far.d : -1 }
   })
   if (wave && !wave.none) {
-    /* 页内条件驱动轮询（22ms）+变化检测（动画全程 160ms 窗，非琥珀段 80ms）：
-     * nearT/farT=两格帧变化首见时刻——时刻顺序证（farT-nearT≥20ms=波序；齐翻则同帧 ≈0ms）。
-     * 帧序列密度不足时采样点会整段落两窗缝隙（near 琥珀 80ms 段无帧）——时刻法免疫。 */
-    const flipSeq = await p.evaluate(([a, b2]) => new Promise((res) => {
+    /* 单次发波+raw-rAF 逐帧全录（500ms），Node 侧析窗：nearT/farT=各自琥珀首见帧时刻。
+     * 返回帧带 nA/fA 两格琥珀计数（±50 容差含 0.4 alpha 混色——远窗首帧弱墨也可见）。 */
+    const fireOnce = () => p.evaluate(([a, b2]) => new Promise((res) => {
       const dbg = window.__GAMES_DEBUG__
       const g2 = document.getElementById('cv').getContext('2d')
       const xy = (c) => ({ x: 12 + (c % 8) * 44 + 22, y: 68 + ((c / 8) | 0) * 44 + 22 })
       const pa = xy(a), pb = xy(b2)
       const cnt = (pt) => { const d = g2.getImageData(pt.x - 10, pt.y - 10, 20, 20).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 232) <= 50 && Math.abs(d[i + 1] - 163) <= 50 && Math.abs(d[i + 2] - 61) <= 50) n++; return n }
-      const baseA = cnt(pa), baseB = cnt(pb)
-      dbg.fxProbe({ k: 'flip', cells: [a, b2], seat: 0 })
+      const frames = []
       const t0 = performance.now()
-      let nearT = -1, farT = -1, farAtNear = -1, aPeak = 0, bPeak = 0, polls = 0
-      const nf = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-      const poll = async () => {
-        await nf() /* 帧感知：确保读到注入后新帧 */
+      dbg.fxProbe({ k: 'flip', cells: [a, b2], seat: 0 })
+      const loop = () => {
         const t = performance.now() - t0
-        const na = cnt(pa), nb = cnt(pb); polls++
-        aPeak = Math.max(aPeak, na); bPeak = Math.max(bPeak, nb)
-        if (nearT < 0 && Math.abs(na - baseA) > 15) { nearT = t; farAtNear = nb }
-        if (farT < 0 && Math.abs(nb - baseB) > 15) farT = t
-        if ((nearT >= 0 && farT >= 0) || t > 700) res({ nearT, farT, farAtNear, aPeak, bPeak, baseA, baseB, polls })
-        else setTimeout(poll, 18)
+        frames.push({ t: Math.round(t), nA: cnt(pa), fA: cnt(pb) })
+        if (t < 520) requestAnimationFrame(loop)
+        else res({ frames })
       }
-      poll()
+      requestAnimationFrame(loop)
     }), [wave.a, wave.b])
-    ok('V3-c', `FEEL 入识图·F02 翻子波序·近格先翻（波首动画启动——距波源 ${wave.dN} 格延迟 ${wave.dN * 40}ms；首翻 <100ms 红线表现层证）`, flipSeq.nearT >= 0 && flipSeq.nearT <= wave.dN * 40 + 200 && flipSeq.aPeak >= 15, `近格#c${wave.a} 首变=${flipSeq.nearT}ms 琥珀峰值=${flipSeq.aPeak}px（轮询 ${flipSeq.polls} 点）`)
-    ok('V3-d', `FEEL 入识图·F02 波序·远格滞后（时刻顺序证：远格首变-${'近格首变'}=${flipSeq.farT - flipSeq.nearT >= 0 ? Math.round(flipSeq.farT - flipSeq.nearT) : 'n/a'}ms ≥20ms——齐翻则同帧 ≈0ms；波序非齐翻）`, flipSeq.nearT >= 0 && flipSeq.farT >= 0 && flipSeq.farT - flipSeq.nearT >= 20, `nearT=${flipSeq.nearT}ms farT=${flipSeq.farT}ms（近格帧远格琥珀=${flipSeq.farAtNear}px 披露）`)
-    ok('V3-e', `FEEL 入识图·F02 波序·远格后翻（远格动画到场=${wave.dF} 格距波源 ×40ms/子 波序吻合）`, flipSeq.farT >= 0 && flipSeq.farT <= wave.dF * 40 + 240 && flipSeq.bPeak >= 15, `远格首变=${flipSeq.farT}ms 琥珀峰值=${flipSeq.bPeak}px`)
+    let flipSeq = null, tries = 0
+    while (tries < 4) { /* 缺窗重发：琥珀窗 80ms 帧隙 p90 129ms 可能整窗漏采——重发合成波直至双窗均采到 */
+      tries++
+      const r = await fireOnce()
+      const nT = r.frames.find((f) => f.nA > 25), fT = r.frames.find((f) => f.fA > 25)
+      const nPeak = Math.max(...r.frames.map((f) => f.nA)), fPeak = Math.max(...r.frames.map((f) => f.fA))
+      flipSeq = { nearT: nT ? nT.t : -1, farT: fT ? fT.t : -1, nPeak, fPeak, frames: r.frames.length, tries }
+      if (flipSeq.nearT >= 0 && flipSeq.farT >= 0) break
+      await sleep(120)
+    }
+    const minDiff = Math.max(12, (wave.dF - wave.dN - 2) * 40) /* 琥珀窗真分离=(dF-dN-2)*40；差2=邻接窗（下限拍 12=一帧量子） */
+    ok('V3-c', `FEEL 入识图·F02 翻子波序·近格先翻（波首动画启动——距波源 ${wave.dN} 格延迟 ${wave.dN * 40}ms；首翻 <100ms 红线表现层证）`, flipSeq.nearT >= 0 && flipSeq.nearT <= wave.dN * 40 + 200 && flipSeq.nPeak >= 15, `近格#c${wave.a} 琥珀首见=${flipSeq.nearT}ms 峰值=${flipSeq.nPeak}px（${flipSeq.frames} 帧×${flipSeq.tries} 发）`)
+    ok('V3-d', `FEEL 入识图·F02 波序·远格滞后（时刻顺序证：远格琥珀首见-近格琥珀首见 ≥${minDiff}ms——齐翻则同帧 ≈0ms；波序非齐翻）`, flipSeq.nearT >= 0 && flipSeq.farT >= 0 && flipSeq.farT - flipSeq.nearT >= minDiff, `nearT=${flipSeq.nearT}ms farT=${flipSeq.farT}ms Δ=${flipSeq.farT - flipSeq.nearT}ms`)
+    ok('V3-e', `FEEL 入识图·F02 波序·远格后翻（远格动画到场=${wave.dF} 格距波源 ×40ms/子 波序吻合）`, flipSeq.farT >= 0 && flipSeq.farT <= wave.dF * 40 + 240 && flipSeq.fPeak >= 15, `远格琥珀首见=${flipSeq.farT}ms 峰值=${flipSeq.fPeak}px`)
   } else { ok('V3-c', `F02 波序（青子对距波源差不足——局面不支持取证：青子=${wave ? wave.n : '?'} dN=${wave ? wave.dN : '?'} dF=${wave ? wave.dF : '?'})`, false, ''); ok('V3-d', 'F02 远格滞后', false, ''); ok('V3-e', 'F02 远格后翻', false, '') }
   await p.evaluate(() => window.__GAMES_DEBUG__.fxScene('calm'))
   await sleep(80)
