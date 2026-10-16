@@ -1147,24 +1147,20 @@
         "bot": "两档街头 Bot（casual 街坊：基础移动+随机射门/balanced 老鸟：站位+传球线+门线看守抢断）+放水链（L1 让力 pow≡552/L2 降档散布 340-680，game.json bot.mercy/bot.casual 可调）+团队作 pulse（META.pulseTeam seat%2）；断线托管=balanced（挂机=空门放对手，设计 §4.3）",
         "chain": "GAMES-137 设计书/GAMES-138 DEV/GAMES-139 QA1/GAMES-140 BOT/GAMES-141 FEEL/GAMES-142 QA2/GAMES-143 VIS/GAMES-144 STRESS（FIX1/FIX2 零退回跳过未占单号）"
       }
+    },
+    "multiplayer:iron-torrent": {
+      "stage": "accepted",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass",
+      "iterations": 9,
+      "notes": "E6-W2-T4 混合轨第四款收官（单链 9/9 预算版、FIX2 零退回跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→VIS→STRESS——平台第 12 条完整单链=W2 波第四款收官+E6 12/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间钢铁洪流 2v2 测试房 8min ts2 churn+观战锚/满编 2v2+第 5 人观战 spot（击杀特写横幅数据面）/十二游戏同网关混编全家福 iron 第 12 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/iron-torrent-stress.md）。单链要目：DEV S4 预测弹道第二证（连续预测+离散段重演组合：坦克域 tick 步进 input ring ack 和解+弹道域 Q16 子步 fire 全参下发）；QA1 离散 cmd 塞 20Hz 自计数 input 帧恒越预约窗（testapi≠WS 路径盲区）；FIX1 三层根因（复刻缺陷形状不能定位层/testapi payload-当-keys/设计书即缺陷载体）+sanitizeKeys 加法式零感知+网关三态谱清点定案；BOT 决策节流 forceFresh+站桩带冻占点圈+换班窗陈旧五实例；FEEL 对照带计量点错位/临终并房/探针窗阵亡三假红源；QA2 latency 逐局谓词低尾翻转（Δmean=+1.43 稳）+端口并存陷阱+mercy 三坑；VIS 快照整清吃探针段/木箱串色谓词/焰叠本体合成色/双编码像素核。实录=知识库草稿《钢铁洪流开发实录》",
+      "net": {
+        "tech": "S4",
+        "bot": "三档装甲 Bot（casual 散兵：无提前量/balanced 老兵：1-2 轮迭代提前量+站桩带冻占点圈/competitive 神炮手：3 轮闭式迭代+换班窗）+决策节流 forceFresh+卡死滑墙账本；断线托管=balanced（挂机=送命池，设计 §4.3）",
+        "chain": "GAMES-145 设计书/GAMES-146 DEV/GAMES-147 QA1/GAMES-148 FIX1/GAMES-149 BOT/GAMES-150 FEEL/GAMES-151 QA2/GAMES-152 VIS/GAMES-154 STRESS（GAMES-153 为别单占用非本链；FIX2 零退回跳过未占单号）"
+      }
     }
-  },
-  "multiplayer:iron-torrent": {
-    "status": "dev-landed",
-    "date": "2026-10-15",
-    "net": {
-      "tech": "S4"
-    },
-    "bot": {
-      "levels": 3,
-      "takeOver": "balanced"
-    },
-    "chain": {
-      "design": "GAMES-145",
-      "dev": "GAMES-146",
-      "count": 2
-    },
-    "notes": "S4 预测弹道第二款单链 2/10（DEV=钢铁洪流核心实现：连续预测（坦克域 tick 步进+input ring ack 和解）+离散段重演（弹道域 Q16 子步，fire 事件携散布出射角全参下发=客户端零 rng 复现义务）组合——roadmap S4 行两半由 pool/iron 各证其一的 DEV 侧落地。TRIG16 跨作复用第三作；弹道 2.5D 高度分层（AP 峰 17.7px 被一切掩体挡/HE 峰 60.5px 越一切墙）；三地图程序化固定布局（上下镜像 by construction）；Bot 提前量闭式迭代解（1/2/3 轮档差）+卡死滑墙账本；gunner 剧本风筝带机制差（casual 无提前量在 19 万距离打移动靶误差 55k>>r_hit 13k）A2 7/7；A7 双跑+回放器+fire 参数逐字节；siege 占点/拆墙链。v1 收窄 REPORT 披露（HE 撞掩体不 AOE 坦克/AOE 只伤敌队/锚点通用路线版）。"
   },
   "multiplayer:yi-pavilion": {
     "status": "dev-landed",
