@@ -726,6 +726,125 @@ const POLICIES = {
   })(),
 }
 
+/* ---------- deep-foodchain S6 第二证策略工厂（GAMES-164 设计 §6 剧本策略：feed-hunt/devour-hunt） ----------
+ * S6 语义同 snake（a 连续模拟量每拍重发、dash 变才带）；剧本侧读全量 state 合法。
+ * 共核 steer：Q1 避大（可吞我者 300px 锥→法向脱离）+ 避墙 + 拦截迭代闭式解
+ * （ prey 外推 t 轮 ×3 收敛——与 sim brain 同式，§4.1）；15ms 轮询下状态新鲜度
+ * ~0.45 tick，比 bot 决策拍（8-30 tick）密度高一个量级=API 席猎术优势的全部来源。
+ * feed-hunt（A2 能赢）：密度场贪心觅食 + 机会吞噬（拦截解可达才咬）+ dash 收口；
+ * devour-hunt（A7）：猎物优先（最近可吞目标拦截追击），断言事件账本逐条对账。 */
+{
+  let DF = null
+  const df = () => (DF || (DF = createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/deep-foodchain/shared.cjs'))))
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+  const heading = (deg2, x, y) => ((Math.atan2(y - deg2.y, x - deg2.x) * 180 / Math.PI) % 360 + 360) % 360
+  /* feed-hunt 击杀节律（A2 双锚同刻达成）：kills×40 出分快于 M 成长——每次吞噬后
+   * 20s 觅食窗（fat-gain≥60 例外）强制 M 雪球跟上，跨线时 M≥500 与 score≥320 同拍 */
+  const feedMem = { kills: -1, coolUntil: 0 }
+  const steerDeep = (state, seat, mode) => {
+    const me = state.ents && state.ents['s' + seat]
+    if (!me || me.dead) return { a: me ? me.a : 0 }
+    if (mode === 'feed') {
+      if (feedMem.kills >= 0 && me.kills > feedMem.kills) feedMem.coolUntil = state.tick + 200 // 新吞噬→节律窗
+      feedMem.kills = me.kills
+    }
+    const cooling = mode === 'feed' && state.tick < feedMem.coolUntil
+    const K = df()
+    const W = state.map ? state.map.w : 1800000, H = state.map ? state.map.h : 1800000
+    const myR = K.rOfM(me.M), v = K.vOf(me.M)
+    const foes = Object.values(state.ents).filter((e) => e.k === 'fish' && e.seat !== seat && !e.dead)
+    /* Q1 避大：可吞我者 <300px 且航向锥 ±50° 含我（或 <100px 贴身）→ 法向脱离 */
+    let flee = null
+    for (const f of foes) {
+      if (!K.canSwallow(K.rOfM(f.M), myR)) continue
+      const d = dist(me, f)
+      if (d > 320000) continue
+      const toMe = heading(me, f.x, f.y)
+      const da = Math.abs(K.angDiff(f.a, toMe))
+      if (da <= 50 || d < 100000) { if (!flee || d < flee.d) flee = { f, d } }
+    }
+    if (flee) {
+      const away = heading(flee.f, me.x, me.y)
+      const side = Math.abs(K.angDiff(me.a, away)) > 90 ? away : (K.angDiff(me.a, away) >= 0 ? (me.a + 90) % 360 : (me.a + 270) % 360)
+      let a = side
+      const px = me.x + Math.cos(a * Math.PI / 180) * 200000, py = me.y + Math.sin(a * Math.PI / 180) * 200000
+      if (px < 60000 || py < 60000 || px > W - 60000 || py > H - 60000) a = heading(me, W / 2, H / 2)
+      return { a: Math.round(a), dash: 0 }
+    }
+    /* Q2 机会吞噬：可吞目标 + 拦截解 t≤3s（dash 档收口）——feed-hunt 肥猎优先，devour-hunt 最近优先 */
+    let prey = null, pd = Infinity, pt = 0, bs2 = -1
+    for (const f of foes) {
+      if (f.p > 0) continue
+      if (!K.canSwallow(myR, K.rOfM(f.M))) continue
+      const d = dist(me, f)
+      if (d > 700000) continue
+      const pv = K.vOf(f.M)
+      let t = d / Math.max(2000, v)
+      let ok = false
+      for (let i = 0; i < 3; i++) {
+        const ix = f.x + Math.cos(f.a * Math.PI / 180) * pv * t, iy = f.y + Math.sin(f.a * Math.PI / 180) * pv * t
+        if (ix < 40000 || iy < 40000 || ix > W - 40000 || iy > H - 40000) break
+        t = Math.hypot(ix - me.x, iy - me.y) / Math.max(2000, v)
+      }
+      ok = t <= 30
+      if (!ok && me.M >= 50) { // dash 档拦截（质量换速度）
+        let t2 = d / Math.max(2000, v * 1.6)
+        for (let i = 0; i < 3; i++) {
+          const ix = f.x + Math.cos(f.a * Math.PI / 180) * pv * t2, iy = f.y + Math.sin(f.a * Math.PI / 180) * pv * t2
+          if (ix < 40000 || iy < 40000 || ix > W - 40000 || iy > H - 40000) { t2 = 1e9; break }
+          t2 = Math.hypot(ix - me.x, iy - me.y) / Math.max(2000, v * 1.6)
+        }
+        if (t2 <= 30) { t = t2; ok = true }
+      }
+      if (!ok) continue
+      const d2 = K.devourOf(f.M)
+      /* feed-hunt 肥猎门（A2 锚 M≥500 与 goal(score≥320) 同刻达成的口径）：
+       * 小猎（重生鱼 gain 11-22）的 40 分/杀会让 goal 在 M~260 提前点火——只追
+       * gain≥30 的肥猎（体型阶梯 r13+ 可猎 M≤80 档），M 雪球先立、kills 后收；
+       * 嘴边 <120px 的任何合格猎物顺路吞（free calories，不追击）；
+       * 节律窗内只吃 gain≥60 的超肥猎（ otherwise 纯觅食养 M） */
+      const gate = cooling ? 60 : 30
+      if (mode === 'feed' && d2.gain < gate && d > 120000) continue
+      /* 猎物评分=增益×距离衰减（非最近优先）：肥猎一口 +44~100 是 M 雪球主引擎（§1.4 快车道） */
+      const sv = d2.gain * 60000 / (d + 60000)
+      if (sv > bs2) { bs2 = sv; pd = d; prey = f; pt = t }
+    }
+    if (prey && (mode === 'devour' || pd < 500000 || K.devourOf(prey.M).gain >= 30)) {
+      const pv = K.vOf(prey.M)
+      const lead = pd < 150000 ? Math.min(2, pt) : pt
+      let a = heading(me, prey.x + Math.cos(prey.a * Math.PI / 180) * pv * lead, prey.y + Math.sin(prey.a * Math.PI / 180) * pv * lead)
+      const dash = pd < 260000 && me.M >= 50 && pd > 20000 ? 1 : 0 // 收口 dash；<20px 免（防过冲）
+      return { a: Math.round(a), dash }
+    }
+    /* Q3 觅食：value/(dist+60px) 贪心 + 尸粒簇 ×2.2（吞噬后原地回收=击杀闭环）+ 大鱼圈食降权 */
+    let best = null, bs = -1
+    for (const id in state.ents) {
+      const e = state.ents[id]
+      let val = 0
+      if ((e.k === 'alg' || e.k === 'kri' || e.k === 'cry') && e.on) val = { alg: 1, kri: 2, cry: 4 }[e.k]
+      else if (e.k === 'drop') val = e.v || 2
+      if (!val) continue
+      const d = dist(me, e)
+      let s = val * 60000 / (d + 60000) * (e.k === 'drop' ? 2.2 : 1)
+      for (const f of foes) {
+        if (K.canSwallow(K.rOfM(f.M), myR) && dist(f, e) < 220000) { s *= 0.2; break } // 大鱼圈食不凑
+      }
+      if (s > bs) { bs = s; best = e }
+    }
+    if (best) {
+      let a = heading(me, best.x, best.y)
+      const margin = 160000
+      const rad = a * Math.PI / 180
+      if ((me.x < margin && Math.cos(rad) < 0) || (me.x > W - margin && Math.cos(rad) > 0) || (me.y < margin && Math.sin(rad) < 0) || (me.y > H - margin && Math.sin(rad) > 0)) a = heading(me, W / 2, H / 2)
+      const far = (best.v || 0) >= 4 && dist(me, best) > 380000 && me.M >= 60
+      return { a: Math.round(a), dash: far ? 1 : 0 }
+    }
+    return { a: Math.round(heading(me, W / 2, H / 2)), dash: 0 }
+  }
+  POLICIES['feed-hunt'] = (state, seat) => steerDeep(state, seat, 'feed')
+  POLICIES['devour-hunt'] = (state, seat) => steerDeep(state, seat, 'devour')
+}
+
 /* ---------- snake-king S6 策略工厂（设计 §6 剧本策略：feed-grow/kill-hunt） ----------
  * S6 语义：a 连续模拟量每拍重发（心跳兼保活）、boost 高价值远点才带。
  * 避障=轨迹 rollout：同式积分（shared.cjs stepTurn/vOf，两端同式纯函数）预测 22 tick
@@ -1109,7 +1228,8 @@ async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POL
       for (let i = 1; i < lb.length; i++) if (lb[i].score > lb[i - 1].score) mono = false
       let amax = -Infinity
       let snakes = 0
-      for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake') { snakes++; if (e.score > amax) amax = e.score } }
+      /* S6 群实体口径（GAMES-164 第二证）：snake-king=snake / deep-foodchain=fish——同为排行榜席位实体 */
+      for (const id in st.ents) { const e = st.ents[id]; if (e.k === 'snake' || e.k === 'fish') { snakes++; if (e.score > amax) amax = e.score } }
       if (snakes < minSnakes) minSnakes = snakes
       if (!mono || lb[0].score < amax) a6bad++
     }
@@ -1407,31 +1527,37 @@ try {
         !!firstS && firstS.msg.ents && firstS.msg.ents.length === 5 && firstS.msg.ents.some((e) => e.id === 'ball'),
         firstS ? `snapSeq=${firstS.msg.snapSeq} ents=${firstS.msg.ents.length} ack=${firstS.msg.ext && firstS.msg.ext.ack}` : '未见快照')
     } else if (meta.net.tech === 'S6') {
-      /* S6 海量实体（GAMES-99）：welcome.state 竞技场骨架（round 相位/排行榜/资源位）
-         + room.snake 声明块（碰撞口径护栏，S4 physics/S5 duel 同范式）；
-         live 后秒配 20 实体（bot 19+API 1）——「快照 ents ≥20 蛇」按全量 state 口径
-         断言（AOI 快照按 r(n) 过滤，同屏本就 <20，§5.2），首张全量快照另证。 */
+      /* S6 海量实体（GAMES-99 蛇王/GAMES-164 深海食物链第二证）：welcome.state
+         竞技场骨架（round 相位/排行榜/180 资源位）+ 声明块（碰撞口径护栏，
+         S4 physics/S5 duel 同范式）；live 后秒配 20 实体（bot 19+API 1）——
+         「快照 ents ≥20」按全量 state 口径断言（AOI 快照过滤，同屏本就 <20，§5.2）。 */
+      const deep = gameId === 'deep-foodchain'
+      const EK = deep ? 'fish' : 'snake', DECL = deep ? 'fish' : 'snake'
       const rd = smoke.state && smoke.state.round, lb = smoke.state && smoke.state.leaderboard
+      const siteKs = deep ? ['alg', 'kri', 'cry'] : ['grass', 'berry', 'ore']
       let siteN = 0
-      for (const id in (smoke.state && smoke.state.ents || {})) { const k = smoke.state.ents[id].k; if (k === 'grass' || k === 'berry' || k === 'ore') siteN++ }
+      for (const id in (smoke.state && smoke.state.ents || {})) { if (siteKs.includes(smoke.state.ents[id].k)) siteN++ }
       ok('A1', 'S6 welcome.state 竞技场骨架（round 相位/排行榜/180 资源位）',
         !!(rd && rd.n >= 1 && Array.isArray(lb) && siteN === 180),
         `round=${rd && rd.n}-${rd && rd.tick} lb=${lb && lb.length} sites=${siteN}`)
-      const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.snake)
-      ok('A1', 'S6 room.snake 声明块（engine+碰撞口径+实体三顶）',
-        !!wel && !!wel.msg.room.snake.engine && wel.msg.room.snake.hitR === 14 && wel.msg.room.snake.cap.snake === 24,
-        wel ? `${wel.msg.room.snake.engine}#${wel.msg.room.snake.v} hitR=${wel.msg.room.snake.hitR} cap=${JSON.stringify(wel.msg.room.snake.cap)}` : '未见声明块')
+      const wel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room[DECL])
+      const d6 = wel && wel.msg.room[DECL]
+      ok('A1', `S6 room.${DECL} 声明块（engine+碰撞口径+实体三顶${deep ? '——K=1.25 吞噬比' : ''}）`,
+        deep
+          ? !!d6 && d6.engine === 'deep-foodchain-sim' && d6.K === 1.25 && d6.cap.fish === 24
+          : !!d6 && !!d6.engine && d6.hitR === 14 && d6.cap.snake === 24,
+        d6 ? `${d6.engine}#${d6.v}${deep ? ' K=' + d6.K : ' hitR=' + d6.hitR} cap=${JSON.stringify(d6.cap)}` : '未见声明块')
       let snakeN = 0, s6 = s, c6 = cursor
       const t6 = Date.now()
       while (snakeN < 20 && Date.now() - t6 < 2000) { // live→首 tick 席位自愈有 1 tick 竞态：短轮询补看
-        for (const id in (s6.state && s6.state.ents || {})) if (s6.state.ents[id].k === 'snake') snakeN++
+        for (const id in (s6.state && s6.state.ents || {})) if (s6.state.ents[id].k === EK) snakeN++
         if (snakeN >= 20) break
         await sleep(50)
         const q = await gwState(smoke.roomId, c6)
         if (!q.json) break
         s6 = q.json; c6 = q.json.cursor
       }
-      ok('A1', 'S6 秒配 20 实体（live 后全场蛇数 ≥20）', snakeN >= 20, `snakes=${snakeN}`)
+      ok('A1', `S6 秒配 20 实体（live 后全场${EK}数 ≥20）`, snakeN >= 20, `${EK}=${snakeN}`)
       const firstFull6 = (s6.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
         || await (async () => {
           let r = s6, c = c6, hit = null
@@ -1481,7 +1607,7 @@ try {
        S2：注入带 seq（input.frame=输入序号），快照 ext.ack ≥ seq 即证明已处理（§6 A4）。
        S4：注入 shot op → 首张球动期 snapshot（ext.physics，≤10 tick/100ms，§6 A4）。 */
     const injPayload = isS2 && meta.net.tech !== 'S6' && meta.net.tech !== 'S7' ? { mx: 63, my: 0, fire: 0, frame: 1 }
-      : meta.net.tech === 'S6' ? { a: 90, boost: 0, frame: 1 }
+      : meta.net.tech === 'S6' ? (gameId === 'deep-foodchain' ? { a: 90, dash: 0, frame: 1 } : { a: 90, boost: 0, frame: 1 })
       : meta.net.tech === 'S7' ? { st: 40, th: 1, frame: 1 }
       : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
       : meta.net.tech === 'S5' ? (gameId === 'yi-pavilion' ? { op: { k: 'place', cell: 99999 } } : { op: { k: 'pick', hero: 0 } }) /* yi（GAMES-155）：无 pick 前置相位——注入越界 place → reject ruling（≤10 tick 回执证据，tactics reject not-deploy 同口径） */
@@ -1758,26 +1884,61 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           checks.push({ id: aid, name: `${name} 局 ${si + 1}/${statSeeds.length} 终态（seed=${seed}）`, pass: true, stat: true, detail })
           console.log(`  · ${aid} ${name} 局 ${si + 1}/${statSeeds.length} seed=${seed} ${winnerOk ? '胜' : '负'}（${r.result.reason}）${durMs}ms`)
         }
-        /* S6 专项断言（GAMES-99 §6）：A6 排行榜 / A7 击杀链路 / full20 带宽与蛇数——逐局严格；
-           数值锚（win 轮末 n / full20 deaths）只采样，局后中位聚合断言 */
+        /* S6 专项断言（GAMES-99 §6 / GAMES-164 第二证）：A6 排行榜 / A7 链路对账 /
+           full20 带宽与群实体数 / A8 质量账本——逐局严格；数值锚（win 轮末 n·M /
+           full20 deaths）只采样，局后中位聚合断言 */
         if (meta.net.tech === 'S6') {
+          const deep = gameId === 'deep-foodchain'
           const meEnd = r.state && r.state.ents && r.state.ents['s' + room.playerSeat]
-          if (name === 'win') stat.n.push(meEnd ? meEnd.n : 0)
+          if (name === 'win') stat.n.push(meEnd ? (deep ? meEnd.M : meEnd.n) : 0)
           ok(aid, 'S6 A6 排行榜一致（top5 非增+榜首=argmax，全程抽样）', r.a6bad === 0 && r.a6samples > 50, `${r.a6samples} 次抽样 ${r.a6bad} 违例`)
+          if (deep) {
+            /* A8 质量账本守恒（§5.3 恒等式，逐局硬断言）：终态全量 state 复算
+               ΣM(活鱼)+Σ粒值+expired−endow−ate−gained−dropped+dashed==0 */
+            const Ld = r.state && r.state.ledger
+            if (Ld) {
+              let sumM = 0, sumDots = 0
+              for (const id in r.state.ents) {
+                const e = r.state.ents[id]
+                if (e.k === 'fish' && !e.dead) sumM += e.M
+                else if (e.k === 'drop') sumDots += e.v
+              }
+              const res8 = sumM + sumDots + Ld.expired - Ld.endow - Ld.ate - Ld.gained - Ld.dropped + Ld.dashed
+              ok('A8', 'S6 质量账本守恒（终态复算恒等式==0，一裁三账经济闭合）', res8 === 0,
+                `ΣM=${sumM} Σ粒=${sumDots} ledger=${JSON.stringify(Ld)} → 残差 ${res8}`)
+            }
+          }
           if (name === 'hunt') {
-            const kills = r.ledger.filter((e) => e.k === 'kill')
-            const dies = r.ledger.filter((e) => e.k === 'die')
-            ok('A7', 'S6 击杀链路：事件账本 {k:kill} ≥1', kills.length >= 1, `kill×${kills.length} die×${dies.length}`)
-            const bad = dies.filter((e) => e.drops !== Math.ceil(e.len / 2))
-            ok('A7', 'S6 die.drops==ceil(victimLen/2)（T6-B 掉落公式）', dies.length > 0 && bad.length === 0,
-              `${dies.length} 例全对（首例 len=${dies[0] && dies[0].len} drops=${dies[0] && dies[0].drops}）`)
+            if (deep) {
+              /* A7 吞噬链路（一裁三账逐条对账，§2.5 吞噬值表）：gain/drops 公式复算 */
+              const devours = r.ledger.filter((e) => e.k === 'devour')
+              ok('A7', 'S6 吞噬链路：事件账本 {k:devour} ≥1（API 席或生态内）', devours.length >= 1, `devour×${devours.length}`)
+              const bad = devours.filter((e) => {
+                const gain = Math.floor(e.mv * 11 / 20)
+                const dropT = e.mv - gain
+                let n = Math.ceil(dropT / 2); n = n < 3 ? 3 : n > 30 ? 30 : n
+                return e.gain !== gain || e.drops !== n
+              })
+              ok('A7', 'S6 devour 一裁三账对账（gain==floor(mv×11/20) 且 drops==clamp(ceil((mv−gain)/2),3,30)）',
+                devours.length > 0 && bad.length === 0,
+                `${devours.length} 例全对（首例 mv=${devours[0] && devours[0].mv} gain=${devours[0] && devours[0].gain} drops=${devours[0] && devours[0].drops}）`)
+            } else {
+              const kills = r.ledger.filter((e) => e.k === 'kill')
+              const dies = r.ledger.filter((e) => e.k === 'die')
+              ok('A7', 'S6 击杀链路：事件账本 {k:kill} ≥1', kills.length >= 1, `kill×${kills.length} die×${dies.length}`)
+              const bad = dies.filter((e) => e.drops !== Math.ceil(e.len / 2))
+              ok('A7', 'S6 die.drops==ceil(victimLen/2)（T6-B 掉落公式）', dies.length > 0 && bad.length === 0,
+                `${dies.length} 例全对（首例 len=${dies[0] && dies[0].len} drops=${dies[0] && dies[0].drops}）`)
+            }
           }
           if (name === 'full20') {
             const avgIncr = r.snaps.incrBytes.length ? Math.round(r.snaps.incrBytes.reduce((a, x) => a + x, 0) / r.snaps.incrBytes.length) : 0
             const fullRatio = r.snaps.n ? +(r.snaps.full / r.snaps.n * 100).toFixed(1) : 100
-            const myDies = r.ledger.filter((e) => e.k === 'die' && e.seat === room.playerSeat).length
+            const dieK = deep ? 'devour' : 'die'
+            const myDies = r.ledger.filter((e) => e.k === dieK && e.seat === room.playerSeat).length
             stat.dies.push(myDies)
-            ok(aid, 'S6 full20：全场任意 tick 蛇数 ≥20', r.minSnakes >= 20, `min=${r.minSnakes}`)
+            ok(aid, `S6 full20：全场任意 tick 活${deep ? '鱼' : '蛇'}数 ≥${deep ? 19 : 20}${deep ? '（吞噬重生窗 3s）' : ''}`,
+              r.minSnakes >= (deep ? 19 : 20), `min=${r.minSnakes}`)
             ok(aid, 'S6 full20：快照账本增量均 ≤850B/全量占比 ≤8%', avgIncr <= 850 && fullRatio <= 8, `增量均 ${avgIncr}B（n=${r.snaps.incrBytes.length}）/全量 ${fullRatio}%`)
           }
         }
@@ -1913,7 +2074,10 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         stat.win.length === statSeeds.length && wins >= 2,
         `胜 ${wins}/${stat.win.length}（${stat.notes.join('，')}）共 ${Math.round((Date.now() - t0) / 1000)}s`)
       if (name === 'win' && stat.n.length)
-        ok('A2', 'S6 成长曲线实测锚（三局中位 n≥100）', med(stat.n) >= 100, `中位 n=${med(stat.n)}（各局 ${stat.n.join('/')}）`)
+        ok('A2', gameId === 'deep-foodchain'
+          ? 'S6 成长曲线实测锚（三局中位 M≥500，§6.1 统计制）'
+          : 'S6 成长曲线实测锚（三局中位 n≥100）',
+          med(stat.n) >= (gameId === 'deep-foodchain' ? 500 : 100), `中位 ${gameId === 'deep-foodchain' ? 'M' : 'n'}=${med(stat.n)}（各局 ${stat.n.join('/')}）`)
       if (name === 'full20' && stat.dies.length)
         /* 存活锚阈值按 GAMES-107 实测重锚 3→5：BOT 单（GAMES-102 生态位人格层）上线后竞技场烈度上移——
            胜局（goal 达标）deaths 实测 5/7/1，历史 full20 样本 {3,4,5,6,9}，≤3 为 BOT 前时代单局锚；

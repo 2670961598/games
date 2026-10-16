@@ -1,0 +1,69 @@
+{
+  "slug": "deep-foodchain",
+  "title": "深海食物链",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.0.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 360,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "swarm": true,
+    "mercy": { "minFoeLose": 2, "hardFoeLose": 4, "majorM": 800 },
+    "desc": "三档=生态位（设计 §4/附决策 11）：casual 漂游仔（饲料位·不做密度场主动觅食=体型滞留 T0 低段·尸粒供给主力）/ balanced 觅食者（密度场+机会吞·嘴边 Δr 合格即吞不追击）/ competitive 猎手（体型键控四问树全开：Q1 威胁锥逃逸/Q2 拦截闭式解+dash 收口/Q3 密度场/Q4 晶簇带埋伏）。放水链（GAMES-102 范式）：真人连败（deaths≥minFoeLose 且 0 吞噬）→ 免猎 90s+让食 120px，重败（deaths≥hardFoeLose）→ 让食 200px；真人 M≥majorM 成长保护窗不猎（io 生态位让位）"
+  },
+  "scoring": {
+    "win": "轮末 score=floor(M/4)+kills×40 ≥320，榜首加冕海王",
+    "lose": "轮末 score<320（重生不限次，无惩罚面）",
+    "s2": "质量/吞噬数",
+    "s3": "被吞化粒（击杀回收率 45%）"
+  },
+  "description": "二十鱼同房深海渔场：吃萤藻长大、吞噬小鱼、避开大嘴。体型四档浮游鱼鲨鲸，每轮 6 分钟，海王加冕，被吞就化粒重来",
+  "net": {
+    "tech": "S6",
+    "gameId": "deep-foodchain",
+    "mode": "swarm-arena",
+    "seats": 24,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "move":  { "ws": "input", "keys": ["a"], "desc": "目标朝向 a∈[0,359] 整数度，10Hz 持续上报（心跳兼保活）；服务器按 ω(M) 角速度积分逼近——非瞬跳。本地预测同式（§5.4）" },
+        "dash":  { "ws": "input", "keys": ["dash"], "desc": "冲刺开关 0|1（变才上报）：×1.6 速度+每 0.5s −1 质量化 value-1 光点；仅 M≥30 可用，掉至 M<26 自动熄灭（§2.3）" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "轮末终态投影（仅测试房 maxTicks=3600 强制终局；生产房轮不清房、轮次入 state——见设计书 §1.1）",
+        "winner": "'A'=API 席轮末 score=floor(M/4)+kills×40 ≥320 ｜ 'B'=score <320",
+        "teams": { "A": [0], "B": [] },
+        "reason": "goal（轮末 score≥320） ｜ round-end（轮末未达标） ｜ timeout ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：join→live+首张全量快照（welcome.state 含 round 相位/排行榜/吞噬口径；快照 ents ≥20 鱼——秒配 20 实体）",
+        "A2 能赢：feed-hunt 策略（密度场觅食+机会吞噬+避大避墙）6 分钟轮末 score ≥320 且 M ≥500（成长曲线 §2.3 实测锚；统计制 §6.1）",
+        "A3 能输：idle 策略（a 恒定直行）贴缓流墙漂流被反复吞噬，轮末 score <320（实测典型 ≤120；吞噬其的 bot 分计入但不破判据）",
+        "A4 操作注入→快照反映 <100ms：move 后下一 snapSeq 头角度朝目标收敛（ω 积分首拍可断言）",
+        "A5 断线重连 <10s：$reconnect 全量快照恢复 M/score/kills/skin（AOI 全量+自身状态，点实体无 path）",
+        "A6 排行榜断言：state.leaderboard top5 score 严格非增 && 榜首==全场 argmax(score) && 轮末 king==榜首（全程任意 tick 抽样成立）",
+        "A7 吞噬链路：devour-hunt 策略事件账本 {k:'devour'} ≥1 且 gain==floor(mv×11/20) 且 drops==clamp(ceil((mv−gain)/2),3,30)（§2.5 吞噬值表逐条对账——一裁三账）",
+        "A8 质量账本守恒：testapi 账本探针任意 tick 抽样 ΣM(活鱼)+Σ粒值+expired−endow−ate−gained−dropped+dashed==0（§5.3 恒等式）"
+      ],
+      "script": {
+        "seed": 20261017, "timeScale": 3, "startDelayMs": 600, "maxTicks": 3600,
+        "scenarios": {
+          "win":   { "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-hunt" },
+          "lose":  { "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
+          "hunt":  { "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "devour-hunt" },
+          "full20":{ "botLevels": [null, "competitive","competitive","competitive", "balanced","balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "feed-hunt", "asserts": ["全场任意 tick 活鱼数 ≥19（吞噬重生窗 3s 内 ≥19、稳态 20）", "快照账本增量均 ≤850B/全量占比 ≤8%", "排行榜 A6", "质量账本 A8", "存活到轮末（API 席 deaths 三局中位 ≤5，GAMES-107 重锚继承）"] }
+        }
+      }
+    }
+  }
+}
