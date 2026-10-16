@@ -7,6 +7,7 @@
  * ===================================================================== */
 
 const LEVEL_CN = { casual: '休闲', balanced: '均衡', competitive: '竞技' }
+const RULE_CN = { gomoku: '五子', reversi: '黑白', cascade: '井字' } // 多规则常驻房名（GAMES-155）
 
 export class BotHost {
   constructor({ rooms, log = () => {} } = {}) {
@@ -18,9 +19,11 @@ export class BotHost {
 
   /** 上线一款联机游戏：常驻配置 + Bot 工厂（residents: 常驻镇模式 GAMES-52；swarm: 群房
    * 巨房模式 GAMES-99——解构白名单漏收该字段时 cfg.swarm 恒 undefined，ensureSwarm 成死码，
-   * snake-king 静默落回通用补房路径（bots=seats 满填+名不带巨房），浏览器面才可目击） */
-  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false, swarm = 0 }) {
-    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents, swarm })
+   * snake-king 静默落回通用补房路径（bots=seats 满填+名不带巨房），浏览器面才可目击；
+   * rules: 多规则常驻房 GAMES-155——每模式各一 casual 房（设计 §1.1「三模式各自常驻
+   * Bot 房，秒进秒换」），房数帽按游戏总量计） */
+  register({ gameId, minLive = 2, levels = ['casual', 'balanced'], maxRooms = 4, seats, residents = false, swarm = 0, rules = null }) {
+    this.games.set(gameId, { minLive, levels, maxRooms, seats, residents, swarm, rules })
   }
 
   /** 统一接口：spawnBot(gameId, level) → Bot（输入生成闭包，由房间按帧调用） */
@@ -49,6 +52,7 @@ export class BotHost {
       const all = this.rooms.roomsFor(gameId).filter((r) => r.phase !== 'ended' && !r.test)
       if (cfg.residents) { this.ensureResidents(gameId, cfg, all); continue }
       if (cfg.swarm) { this.ensureSwarm(gameId, cfg, all); continue }
+      if (cfg.rules) { this.ensureRules(gameId, cfg, all); continue }
       const pureBot = all.filter((r) => this.rooms.humanCount(r) === 0 && r.spectators.size === 0)
       if (pureBot.length >= cfg.minLive || all.length >= cfg.maxRooms) continue
       const level = cfg.levels[pureBot.length % cfg.levels.length]
@@ -64,6 +68,26 @@ export class BotHost {
         startDelayMs: 1000, // bot 房快速入 live，feed 尽快可见
       })
       this.log({ k: 'bothost-spawn', gameId, level })
+    }
+  }
+
+  /* ---------- 多规则常驻房（GAMES-155 yi-pavilion §7）：每模式（rule）各一 casual 房
+   * ——设计 §1.1「三模式各自常驻 Bot 房，秒进秒换」；房数帽按该游戏总房数计（上限 6）。
+   * 真人进房后该房非纯 bot，按该 rule 缺口补新房；终局 3s 补房（rooms.onEnded → ensure）。 */
+  ensureRules(gameId, cfg, all) {
+    const sim = this.rooms.sims.get(gameId)
+    for (const rule of cfg.rules) {
+      const pureBot = all.filter((r) => this.rooms.humanCount(r) === 0 && r.spectators.size === 0 && r.state && r.state.rule === rule)
+      if (pureBot.length >= 1 || all.length >= cfg.maxRooms) continue
+      const bots = []
+      for (let i = 0; i < sim.META.seats; i++) bots.push({ level: 'casual' })
+      this.rooms.create({
+        gameId, rule,
+        name: `${sim.META.title} · ${RULE_CN[rule] || rule}房`,
+        bots,
+        startDelayMs: 1000, // bot 房快速入 live，feed 尽快可见
+      })
+      this.log({ k: 'bothost-spawn', gameId, rule })
     }
   }
 

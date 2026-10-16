@@ -94,6 +94,10 @@ export class TestHost {
         autopilot: body.autopilot === true,
         track: typeof body.track === 'string' ? body.track : null,
         laps: Number.isInteger(body.laps) ? body.laps : null,
+        // S5 多规则（GAMES-155，设计 §6 剧本策略）：rule/handicap 测试房房参——
+        // 三模式各一剧本（win-gomoku/win-reversi/win-cascade）按 rule 建房
+        rule: typeof body.rule === 'string' ? body.rule : null,
+        handicap: Number.isInteger(body.handicap) ? body.handicap : null,
       })
     } catch (err) {
       return { status: 400, body: { ok: false, error: String(err && err.message || err) } }

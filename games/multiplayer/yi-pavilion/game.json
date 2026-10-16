@@ -1,0 +1,75 @@
+{
+  "slug": "yi-pavilion",
+  "title": "弈界棋阁",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "tap",
+    "secondary": "tap-confirm"
+  },
+  "avgDurationSec": 300,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "takeOver": "casual(单步超时)/tendency-inherit(持续托管)",
+    "desc": "超时单步=casual 随手代走一步（托管粒度谱系第三作：element/tactics 整回合→本作单步，§5.5）；断线/主动托管=balanced 核+倾向继承（attackBias/solidBias 盘面代理复算，§4.6）；afk 三分离（连续 3 全超时步零 op 认负）；多规则统一框架=feat 特征提取器接口（加第六棋种零改三档决策机，附决策 9）"
+  },
+  "scoring": {
+    "win": "五子=五连告成；黑白=终局数子多；井字=母盘三连或占盘数多；对方棋钟归零/afk/认输",
+    "lose": "被五连/被数子/被母盘三连或占盘落后/己方棋钟归零/连续 3 全超时步/认输",
+    "s2": "五子=最长连（15 路攻杀深度）",
+    "s3": "黑白=子差与角数（收官质量）；井字=占盘数"
+  },
+  "description": "五子连珠、黑白翻转、连环井字三棋合一：触点落子，回合全服务器裁决，随手托管棋局不断。",
+  "net": {
+    "tech": "S5",
+    "gameId": "yi-pavilion",
+    "mode": "1v1-board",
+    "seats": 2,
+    "teams": { "A": [0], "B": [1] },
+    "api": {
+      "spec": 1,
+      "ops": {
+        "select":  { "ws": "-", "keys": [], "desc": "本地选中/预落（零上行）：客户端跑同源 RULES 复算 legal——非法格压暗/威胁角标/送位盘描边（§3.2），不占 op 通道" },
+        "place":   { "ws": "op", "keys": ["cell"], "desc": "落子：cell=r·W+c（0..224）；三规则同 payload——五子=空格+让子手序、黑白=8 向夹击合法位、井字=送位窗∩活盘；非法 {k:'reject',why}；成功即自动换手（无 endTurn）" },
+        "host":    { "ws": "op", "keys": ["on"], "desc": "主动托管开关（棋局不断）；任意合法 op 或 resume 即夺回" },
+        "concede": { "ws": "op", "keys": [], "desc": "认负 → end{reason:'resign'}" }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "roomParams": { "rule": "gomoku|reversi|cascade（房间绑定，创建参数；quick 带 rule）", "handicap": "仅五子 0|2|3（黑连放 N 手后白起；quick 恒 0）" },
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）+ quip",
+        "winner": "'A'=席0(黑/先手) ｜ 'B'=席1(白/后手) ｜ 'draw'",
+        "teams": { "A": [0], "B": [1] },
+        "reason": "five（五连） ｜ meta（母盘三连） ｜ boards（占盘数） ｜ count（黑白数子） ｜ timeout（60000 tick 硬顶即时判定） ｜ clock（240s 总时钟归零） ｜ afk（连续3全超时步） ｜ resign ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：boot(waiting)→live welcome（room.duel={engine:'yi-board-int-v1',rule,hash} 声明块+初始盘面：黑白中央四子/井字全空/五子全空+双方 clock 240000）",
+        "A2 能赢：三模式各一剧本——five-line(A)/corner-greedy(黑白数子)/sub-perfect(母盘三连或占盘) A 席终态胜（vs casual 随手）",
+        "A3 能输：idle 剧本 B 席 afk 终态（3×30s 全超时步 casual 代走后认负——超时自动走子/托管路径一并覆盖）",
+        "A4 place 注入→ruling 回执 ≤10 tick（服务端同钟）",
+        "A5 断线重连 <10s：$disconnect 后托管续走（该步完成）→ $reconnect welcome 全量恢复（盘面/双 clock/turn/last/moveNo/handicap/托管标志）",
+        "A6 确定性双跑：同 seed 同 rule 两房终态 stateHash 与输入日志（ops+系统事件）逐字节相等；且在线终态 hash == 回放器重放 hash"
+      ],
+      "script": {
+        "seed": 20261016, "timeScale": 8, "startDelayMs": 600, "maxTicks": 60000,
+        "scenarios": {
+          "win-gomoku":  { "rule": "gomoku",  "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "five-line" },
+          "win-reversi": { "rule": "reversi", "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "corner-greedy" },
+          "win-cascade": { "rule": "cascade", "botLevels": [null, "casual"],      "expectWinner": "A", "policy": "sub-perfect" },
+          "lose":        { "rule": "gomoku",  "botLevels": [null, "competitive"], "expectWinner": "B", "policy": "idle" },
+          "deterministic": {
+            "runs": 2, "rule": "gomoku", "botLevels": [null, "balanced"], "expectWinner": "any",
+            "policy": "five-line",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志(ops 序列含 timeout-move/pass 系统事件)逐字节相等 && stateHash == replayHash"
+          }
+        }
+      }
+    }
+  }
+}

@@ -25,7 +25,7 @@ const CATALOG = [
   { name: '苍穹争锋', track: 'T4 物理', tech: 'S4' },
   { name: '钢铁洪流', track: 'T4 物理', tech: 'S4', on: true, url: '/games/multiplayer/iron-torrent/index.html' },
   { name: '元素对决', track: 'T5 回合', tech: 'S5', on: true, url: '/games/multiplayer/element-duel/index.html' },
-  { name: '弈界棋阁', track: 'T5 回合', tech: 'S5' },
+  { name: '弈界棋阁', track: 'T5 回合', tech: 'S5', on: true, url: '/games/multiplayer/yi-pavilion/index.html' },
   { name: '深夜狼人', track: 'T5 回合', tech: 'S5' },
   { name: '蛇王争霸', track: 'T6 海量', tech: 'S6', on: true, url: '/games/multiplayer/snake-king/index.html' },
   { name: '深海食物链', track: 'T6 海量', tech: 'S6' },

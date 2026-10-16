@@ -70,7 +70,7 @@ export class RoomManager {
   // opts.seed：确定性 seed 覆盖（测试 API 钉死地图用；缺省仍按 roomId 派生）；
   // opts.test：隔离测试房标记——不进 feed（matches）、不被 quick 命中、不计 BotHost 配额；
   // opts.timeScale：测试房假时钟倍速（仅影响 live 帧推进节奏，帧内容与真人房逐字节同构）。
-  create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp, seed, test = false, timeScale = 1, delayMs = 0, autopilot = false, track = null, laps = null }) {
+  create({ gameId, name, bots = [], startDelayMs = 3000, maxTicks, hp, seed, test = false, timeScale = 1, delayMs = 0, autopilot = false, track = null, laps = null, rule = null, handicap = null }) {
     const sim = this.sims.get(gameId)
     if (!sim) throw new Error(`game-unknown: ${gameId}`)
     // 房间 ID 前缀：缺省 gameId 首段；sim 可经 META.roomPrefix 指定（empire-sprout→emp：
@@ -81,7 +81,9 @@ export class RoomManager {
     // S7 扩展（GAMES-109 speed-kart）：delayMs=测试房延迟注入（§5.6 api 臂，双向各垫一半）、
     // autopilot=服务器节拍自动驾驶席（A6 确定性双跑——HTTP 注入有墙钟抖动，tick 锁定才可逐字节断言）、
     // track/laps=房参覆写（§5.8）
-    const state = sim.create(seedVal, { maxTicks, hp, test, autopilot, track, laps })
+    // S5 多规则扩展（GAMES-155 yi-pavilion，设计 §5.3）：rule/handicap=房间绑定参数
+    // （创建即绑定、局中不可换 §1.1；多规则=数据不是代码分叉——其他 sim 忽略未知 opts 零感知）
+    const state = sim.create(seedVal, { maxTicks, hp, test, autopilot, track, laps, rule: rule || undefined, handicap: handicap == null ? undefined : handicap })
     const seats = []
     for (let i = 0; i < sim.META.seats; i++) {
       const botCfg = bots[i] || null // {level} | null → 空位等人
@@ -179,17 +181,20 @@ export class RoomManager {
     return { ok: true, seat: target.seat, takeover: wasBot }
   }
 
-  /** 快速匹配：挑最新可入的 live/waiting 房，无则建房（bot 补位） */
-  quick(connCtx, { gameId, level, maxTicks } = {}) {
+  /** 快速匹配：挑最新可入的 live/waiting 房，无则建房（bot 补位）。
+   *  S5 多规则（GAMES-155，设计 §1.1）：quick {gameId, rule, level?}——每模式独立
+   *  房池（rule 匹配才可入；无 rule 参数=不限，存量语义零变更）。 */
+  quick(connCtx, { gameId, level, maxTicks, rule } = {}) {
     const sim = this.sims.get(gameId)
     if (!sim) return { error: 'game-unknown' }
     const joinable = [...this.rooms.values()]
-      .filter((r) => r.gameId === gameId && !r.test && r.phase !== 'ended' && this.humanCount(r) < r.seats.length)
+      .filter((r) => r.gameId === gameId && !r.test && r.phase !== 'ended' && this.humanCount(r) < r.seats.length
+        && (!rule || (r.state && r.state.rule === rule)))
       .sort((a, b) => (b.phase === 'live' ? 1 : 0) - (a.phase === 'live' ? 1 : 0) || b.createdAt - a.createdAt)
     if (joinable.length > 0) return this.join(connCtx, { roomId: joinable[0].id, mode: 'play' })
     const bots = []
     for (let i = 0; i < sim.META.seats; i++) bots.push({ level: 'balanced' })
-    const room = this.create({ gameId, bots, startDelayMs: 3000, maxTicks })
+    const room = this.create({ gameId, bots, startDelayMs: 3000, maxTicks, rule: rule || null })
     return this.join(connCtx, { roomId: room.id, mode: 'play' })
   }
 
@@ -480,7 +485,7 @@ export class RoomManager {
   sendWelcome(ctx) {
     const room = ctx.room
     const s = ctx.role === 'player' ? room.seats[ctx.seat] : null
-    const extra = room.sim.welcomeExtra ? room.sim.welcomeExtra() : null // S4 物理/S5 牌局声明块（协议 §6）
+    const extra = room.sim.welcomeExtra ? room.sim.welcomeExtra(room) : null // S4 物理/S5 牌局/多规则声明块（协议 §6；GAMES-155 起携 room 供 per-rule 下发）
     let msg = {
       t: 'welcome', roomId: room.id, gameId: room.gameId,
       role: ctx.role, seat: ctx.role === 'player' ? ctx.seat : undefined,

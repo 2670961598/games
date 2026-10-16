@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#F2EBDC">
+  <title>弈界棋阁 · 三棋合一</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #F2EBDC; height: 100%; overflow: hidden; touch-action: none; }
+    #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+    canvas { display: block; touch-action: none; }
+    .boot { color: #6B5433; font: 600 13px/1.5 system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="stage"><span class="boot" id="boot">连接网关…</span><canvas id="cv" width="375" height="667"></canvas></div>
+  <script src="sim.cjs"></script>
+  <script src="client.js"></script>
+</body>
+</html>

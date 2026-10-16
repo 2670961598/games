@@ -987,6 +987,89 @@ const POLICIES = {
   }
 }
 
+/* ---------- yi-pavilion S5 三模式策略（GAMES-155 设计 §6 剧本策略） ----------
+ * five-line（win-gomoku/A6）：①winNow 必走 ②对方成五点必堵 ③否则沿中心两列
+ * （c=7,8，被堵平移一列）纵向铺型——vs casual（30% 概率堵截）必胜。零 rng。
+ * corner-greedy（win-reversi）：合法手 argmax（角 +1000｜边 +100｜翻转数｜X/C −500）；
+ * 无手随服自动 pass；终局数子胜。零 rng。
+ * sub-perfect（win-cascade）：①②底座反应同上；子盘内恒查 SUB 完美解表（定盘
+ * 满值/未定取对手视角完美值之负）+母盘贪心（中心盘优先/避送位危险格）。零 rng。
+ * 三策略读 state 非读 sim 内部（pool pot-solver 先例——复用 sim.cjs 单源导出 feat）。 */
+{
+  let YP = null
+  const yp = () => (YP || (YP = createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/yi-pavilion/sim.cjs'))))
+  POLICIES['five-line'] = (state, seat) => {
+    if (!state || state.over || state.turn !== seat) return {}
+    const K = yp()
+    const F = K.feat(state, seat)
+    if (F.winNow.length) return { op: { k: 'place', cell: F.winNow[0] } }
+    if (F.mustBlock.length) return { op: { k: 'place', cell: F.mustBlock[0] } }
+    for (const c of [7, 8, 6, 9, 5, 10]) {
+      const rows = []
+      for (let r = 0; r < 15; r++) if (state.board[r * 15 + c] === seat + 1) rows.push(r)
+      let target = -1
+      if (rows.length) {
+        rows.sort((a, b) => a - b)
+        const up = rows[rows.length - 1] + 1, dn = rows[0] - 1
+        if (up < 15 && state.board[up * 15 + c] === 0) target = up * 15 + c
+        else if (dn >= 0 && state.board[dn * 15 + c] === 0) target = dn * 15 + c
+      } else target = 7 * 15 + c // 列中心起手
+      if (target >= 0 && state.board[target] === 0) return { op: { k: 'place', cell: target } }
+    }
+    const legal = K.legal(state, seat)
+    return legal.length ? { op: { k: 'place', cell: legal[0] } } : {}
+  }
+  POLICIES['corner-greedy'] = (state, seat) => {
+    if (!state || state.over || state.turn !== seat) return {}
+    const K = yp()
+    const legal = K.legal(state, seat)
+    if (!legal.length) return {} // 无合法手：服务器自动 pass（§2.3——零延迟零耗时）
+    let best = null, bs = -1e9
+    for (const cell of legal) {
+      const r = (cell / 8) | 0, c = cell % 8
+      const corner = (r === 0 || r === 7) && (c === 0 || c === 7)
+      const edge = r === 0 || r === 7 || c === 0 || c === 7
+      const xc = (r === 1 || r === 6) && (c === 1 || c === 6)
+      let s = K.reversiFlips(state.board, seat, cell).length
+      if (corner) s += 1000
+      else if (edge) s += 100
+      if (xc) s -= 500
+      if (s > bs) { bs = s; best = cell } // 严格大于=平值取低格（格序 tie-break，零 rng）
+    }
+    return { op: { k: 'place', cell: best } }
+  }
+  POLICIES['sub-perfect'] = (state, seat) => {
+    if (!state || state.over || state.turn !== seat) return {}
+    const K = yp()
+    const F = K.feat(state, seat)
+    if (F.winNow.length) return { op: { k: 'place', cell: F.winNow[0] } }
+    if (F.mustBlock.length) return { op: { k: 'place', cell: F.mustBlock[0] } }
+    const legal = K.legal(state, seat)
+    if (!legal.length) return {}
+    const fseat = seat === 0 ? 1 : 0
+    let best = null, bs = -1e9
+    for (const cell of legal) {
+      const sub = K.SUB_OF[cell]
+      const c9 = state.board.slice() // 假想入子取子盘完美值
+      c9[cell] = seat + 1
+      const cs = K.subCells3(sub)
+      const arr = new Array(9).fill(0)
+      for (let i = 0; i < 9; i++) arr[i] = c9[cs[i]]
+      const sv = K.SUB[(function () { let b = 0; for (let i = 8; i >= 0; i--) b = b * 3 + arr[i]; return b })()]
+      let s = 0
+      const won = (function () { for (const l of [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]) if (arr[l[0]] === seat + 1 && arr[l[1]] === seat + 1 && arr[l[2]] === seat + 1) return true; return false })()
+      if (won) s += 100 + (sub === 4 ? 30 : 0)
+      else if (sv) s += 40 * -sv.v // 未定：对手视角完美值取负（我方期望）
+      /* 送位危险：本手落位 (br,bc) 送对手子盘 (br,bc)——其可一步定盘则 −45（§2.4） */
+      const br = ((cell / 9) | 0) % 3, bc = (cell % 9) % 3
+      const tgt = br * 3 + bc
+      if (state.sub[tgt] === -1 && K.subClaimAt(c9, tgt, fseat).length) s -= 45
+      if (s > bs) { bs = s; best = cell }
+    }
+    return { op: { k: 'place', cell: best } }
+  }
+}
+
 /* ---------- speed-kart S7 策略（GAMES-109 设计 §6 剧本策略） ----------
  * racer-line：脚本侧复用单源 shared.cjs 的 policyInput（§4.1 赛车线控制器——读 state
  * 伪视图，pool pot-solver 先例：读 state 非读 sim 内部）；countdown 期油门置 0——
@@ -1136,7 +1219,10 @@ const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 :
  * S3+S4=30ms（GAMES-138 attempt2）：同 tick 墙钟 6.25ms，缺省 120ms=输入冻结 19 tick——
  * HTTP 帧取代理对 bot 每 tick 决策的采样劣势被放大（持球盲 dribble 朝向不可纠正是 A2
  * 乌龙主源之一，另见 strike-rush 门前解围修复）；30ms≈5 tick，同族口径。*/
-const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: script.scenarios.win.botLevels }
+/* GAMES-155 多规则剧本：scenario 名非 win/lose 起手（win-gomoku…）——smoke 房取
+ * 首剧本（rule/handicap 随剧本下发）；单 win 剧本游戏行为不变（undefined 键序列化即弃） */
+const smokeSc = script.scenarios.win || Object.values(script.scenarios)[0]
+const smokeCfg = { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: script.maxTicks, botLevels: smokeSc.botLevels, rule: smokeSc.rule, handicap: smokeSc.handicap }
 const tSmoke = Date.now()
 let smoke = null, smokeEnd = { phase: null, tick: 0, seatKept: false, resumeMs: -1, reflMs: -1, startedSeen: false, welcome2Seen: false, feedLeak: false, tickAfter: 0 }
 try {
@@ -1215,6 +1301,21 @@ try {
       ok('A1', 'S4 首张全量快照（full=1，4 坦克+弹道列表）', !!firstFull
         && firstFull.msg.ents.length >= 4 && Array.isArray(firstFull.msg.projs),
         firstFull ? `snapSeq=${firstFull.msg.snapSeq} ents=${firstFull.msg.ents.length} tiles=${firstFull.msg.tiles && firstFull.msg.tiles.length}` : '未见快照')
+    } else if (meta.net.tech === 'S5' && gameId === 'yi-pavilion') {
+      /* S5 回合权威第三证（GAMES-155 多规则）：welcome.state=canonical 全量盘面（零隐藏
+         信息——观战与对局视图同形）+ room.duel 声明块（一套 engine hash 护栏三模式 +
+         rule 随房绑定下发，设计 §5/§6 A1）；黑白中央四子/五子井字全空为初始布局锚 */
+      const yr = (smoke.state && smoke.state.rule) || 'gomoku'
+      const yN = { gomoku: 225, reversi: 64, cascade: 81 }[yr]
+      const yb = smoke.state && smoke.state.board
+      const yseeded = yr === 'reversi' ? yb && yb.filter((v) => v).length === 4 : yb && yb.every((v) => !v)
+      ok('A1', `S5 welcome.state canonical 盘面（rule=${yr} 尺寸+初始布局+双 clock 240s）`,
+        !!(yb && yb.length === yN && yseeded && smoke.state.clock[0] === 240000 && smoke.state.clock[1] === 240000),
+        `rule=${yr} board=${yb && yb.length} clock=${smoke.state && smoke.state.clock.join('/')}`)
+      const ywel = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.duel)
+      ok('A1', 'S5 room.duel 声明块（engine+rule+hash——单哈希全量覆盖三模式）',
+        !!ywel && ywel.msg.room.duel.engine === 'yi-board-int-v1' && ywel.msg.room.duel.rule === yr && Number.isInteger(ywel.msg.room.duel.hash),
+        ywel ? `${ywel.msg.room.duel.engine}#${ywel.msg.room.duel.hash} rule=${ywel.msg.room.duel.rule}` : '未见声明块')
     } else if (meta.net.tech === 'S5') {
       /* S5 回合权威（GAMES-88）：welcome.state 牌局骨架（双英雄 24HP/9 格棋盘/牌组 20）
          + room.duel 声明块（引擎版本护栏，设计 §5.1）——手牌迷雾：己方牌面/对方张数（§5.3） */
@@ -1383,7 +1484,7 @@ try {
       : meta.net.tech === 'S6' ? { a: 90, boost: 0, frame: 1 }
       : meta.net.tech === 'S7' ? { st: 40, th: 1, frame: 1 }
       : meta.net.tech === 'S4' ? { op: { k: 'shot', ang: 0, pow: 700, spinV: 0, spinS: 0 } }
-      : meta.net.tech === 'S5' ? { op: { k: 'pick', hero: 0 } }
+      : meta.net.tech === 'S5' ? (gameId === 'yi-pavilion' ? { op: { k: 'place', cell: 99999 } } : { op: { k: 'pick', hero: 0 } }) /* yi（GAMES-155）：无 pick 前置相位——注入越界 place → reject ruling（≤10 tick 回执证据，tactics reject not-deploy 同口径） */
       : meta.net.tech === 'S1+S5' ? { op: { k: 'endTurn' } } /* S1+S5（GAMES-118）：deploy 期注入 endTurn → ruling 回执（reject not-deploy 亦为 ≤10 tick 回执证据，§6 A4） */
       : { mx: 63, my: 0, fire: 0 }
     const inj = await gwInput(smoke.roomId, smoke.playerSeat, 'ctrl', injPayload)
@@ -1405,7 +1506,7 @@ try {
     }
     smokeEnd.reflMs = refl ? refl.ts - receivedAt : -1
     ok('A4', `操作注入→${isS2 ? '快照 ack 反映' : meta.net.tech === 'S5' ? 'ruling 回执' : '帧反映'} <100ms`, !!refl && smokeEnd.reflMs < 100, smokeEnd.reflMs >= 0 ? `实测 ${smokeEnd.reflMs}ms（timeScale=${smokeCfg.timeScale}x）` : '3s 内未见反映')
-    if (meta.net.tech === 'S5') {
+    if (meta.net.tech === 'S5' && gameId === 'element-duel') {
       /* S5 双席 pick 齐 → mulligan 起手发放：deckSeed 双流派生（§5.5 单据指定断言）；
          发牌后 deck=20−3/20−4 张、起手 3/5（后手含微粒）——牌序由 deckSeed 派生 */
       let st5 = r4.json, c5 = c4, dealt = null
@@ -1465,7 +1566,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
     if (Array.isArray(sc.arms)) {
       const armRuns = []
       for (let ai = 0; ai < sc.arms.length; ai++) {
-        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0, autopilot: sc.autopilot === true })
+        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
         const rr = created.json && created.json.ok ? created.json : null
         if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
         const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
@@ -1542,7 +1643,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
     if (sc.runs && sc.runs > 1) {
       const runs = []
       for (let ri = 0; ri < sc.runs; ri++) {
-        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, autopilot: sc.autopilot === true })
+        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
         const rr = created.json && created.json.ok ? created.json : null
         if (!rr) { ok(aid, `${name} 建房 run${ri + 1}`, false, `HTTP ${created.status}`); break }
         const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
@@ -1609,7 +1710,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
       const s0 = Date.now()
       let roomL = null
       try {
-        const created = await gw('POST', '/api/test/room', { gameId, seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, autopilot: sc.autopilot === true })
+        const created = await gw('POST', '/api/test/room', { gameId, seed, timeScale: script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
         roomL = created.json && created.json.ok ? created.json : null
         if (!roomL) return { seed, failCreate: `HTTP ${created.status} ${created.json && created.json.error}` }
         const tickMs = (roomL.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
