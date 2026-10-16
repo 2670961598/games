@@ -228,7 +228,7 @@
       S.shakeT0 = now // 成五/母盘三连震屏 150ms（§3.3）
     }
     if (ev.k === 'turn') {
-      S.banners.push({ txt: S.spectator ? (ev.seat === 0 ? '黑方行棋' : '白方行棋') : (ev.seat === S.seat ? '你的回合' : '对方行棋'), c1: ev.seat === 0 ? COL_A : COL_B, t0: now, sys: 1, turn: 1, rec: fxT('F15') })
+      S.banners.push({ txt: S.spectator ? (ev.seat === 0 ? '黑方行棋' : '白方行棋') : (ev.seat === S.seat ? '你的回合' : '对方行棋'), c1: ev.seat === 0 ? COL_A : COL_B, t0: now, sys: 1, turn: 1, seat: ev.seat, rec: fxT('F15') })
       sfx.play('turn')
     }
     if (ev.k === 'timeout-move') { S.banners.push({ txt: '超时托管代走', c1: '#9D6BE8', t0: now, sys: 1 }); sfx.play('timeout') }
@@ -309,7 +309,8 @@
 
   /* ---------- 绘制 ---------- */
   function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath() }
-  /* 棋子：A 圆（天）/ B 方（地）——形色双编码（§7）；从缘描边=阵营第二通道 */
+  /* 棋子：A 圆（天）/ B 方（地）——形色双编码（§7）；子缘=阵营第二通道
+   * （A 实心单缘线 / B 双线描边——内缘细线，实心/双线 §7 原文；小尺寸装饰流不画内线） */
   function drawStone(cx, cy, seat, size, alpha, scale) {
     const g = geo()
     const r = (size || g.cs * 0.38) * (scale === undefined ? 1 : scale)
@@ -317,10 +318,19 @@
     ctx.globalAlpha = alpha === undefined ? 1 : alpha
     ctx.translate(cx, cy)
     if (seat === 0) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fillStyle = COL_A; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#8A5B14'; ctx.stroke() }
-    else { const r2 = r * 0.9; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-r2, -r2, r2 * 2, r2 * 2, r * 0.22) : roundRect(-r2, -r2, r2 * 2, r2 * 2, r * 0.22); ctx.fillStyle = COL_B; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#1A6E84'; ctx.stroke() }
+    else {
+      const r2 = r * 0.9; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-r2, -r2, r2 * 2, r2 * 2, r * 0.22) : roundRect(-r2, -r2, r2 * 2, r2 * 2, r * 0.22); ctx.fillStyle = COL_B; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#1A6E84'; ctx.stroke()
+      if (r2 > 8) { ctx.lineWidth = 1.1; ctx.strokeStyle = 'rgba(26,110,132,0.9)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-r2 + 3.4, -r2 + 3.4, r2 * 2 - 6.8, r2 * 2 - 6.8, r * 0.12) : roundRect(-r2 + 3.4, -r2 + 3.4, r2 * 2 - 6.8, r2 * 2 - 6.8, r * 0.12); ctx.stroke() } // B 双线描边内缘线
+    }
     ctx.fillStyle = 'rgba(255,252,240,0.85)'
     ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.32, r * 0.16, 0, Math.PI * 2); ctx.fill() // 高光
     ctx.restore()
+  }
+  /* 回合指示点（形色双编码 §7/hud-font-standard §3：席 0 琥珀圆点 / 席 1 青方点——
+   * 对局思考呼吸、观战指示、回合横幅标共用管线，色盲下形状通道独立成立；fillStyle 由调用方设） */
+  function turnDot(cx, cy, seat) {
+    if (seat === 0) { ctx.beginPath(); ctx.arc(cx, cy, 3.8, 0, Math.PI * 2); ctx.fill() }
+    else ctx.fillRect(cx - 3.4, cy - 3.4, 6.8, 6.8)
   }
   const mmss = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
   const coordName = (cell) => { const g = geo(); return `${String.fromCharCode(65 + (cell % g.n))}${g.n - ((cell / g.n) | 0)}` }
@@ -352,7 +362,7 @@
       const br = 0.42 + 0.38 * Math.sin(now / 380)
       ctx.globalAlpha = 0.55 + 0.45 * br
       ctx.fillStyle = v.turn === 0 ? COL_A : COL_B
-      ctx.beginPath(); ctx.arc(16, 18, 3.6, 0, Math.PI * 2); ctx.fill()
+      turnDot(16, 18, v.turn)
       ctx.fillStyle = '#8A7A5C'
       ctx.fillText(S.spectator ? '观战 · 玩家' + (v.turn === 0 ? 'A（黑）' : 'B（白）') + ' 行棋' : '对方思考中…', 26, 22)
       ctx.globalAlpha = 1
@@ -618,6 +628,7 @@
       ctx.save(); ctx.globalAlpha = t < 0.8 ? 1 : (1 - t) / 0.2
       ctx.fillStyle = 'rgba(58,46,31,0.88)'; ctx.fillRect(0, 240 + i * 38, W, 34)
       ctx.fillStyle = b.c1; ctx.fillRect(0, 240 + i * 38, W, 3)
+      if (b.turn && b.seat !== undefined) { ctx.fillStyle = b.seat === 0 ? COL_A : COL_B; turnDot(24, 257 + i * 38, b.seat) } // 回合横幅形状通道（席 0 圆/席 1 方——色条+文字外第三证，双编码 §7）
       ctx.fillStyle = '#F2EBDC'; ctx.font = F1(13); ctx.textAlign = 'center'; ctx.fillText(b.txt, W / 2, 263 + i * 38)
       ctx.restore()
     })
@@ -629,6 +640,7 @@
       const tin = Math.min(1, (now - S.overAt) / 450)
       ctx.fillStyle = `rgba(58,46,31,${(0.93 * Math.min(1, tin * 1.8)).toFixed(3)})`; ctx.fillRect(0, 0, W, H)
       ctx.fillStyle = r.winner === 'draw' ? '#D8CBB0' : r.winner === 'A' ? COL_A : COL_B
+      if (r.winner !== 'draw') drawStone(W / 2, 96, r.winner === 'A' ? 0 : 1, 15) // 胜负横幅形色双编码（§7）：胜方棋形子（圆/方）先于大字落位——平局双色对分屏（F09）自有形
       ctx.save(); ctx.translate(W / 2, 150); ctx.scale(1.3 - 0.3 * tin, 1.3 - 0.3 * tin)
       ctx.font = F0(34); ctx.textAlign = 'center'
       ctx.fillText(r.winner === 'draw' ? '平局' : S.spectator ? '玩家' + r.winner + ' 胜' : meWin ? '胜利' : '败北', 0, 0)
