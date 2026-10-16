@@ -382,6 +382,7 @@ RULES = {
 | ③afk 认负 | 连续 3 全超时步（零 op） | — | 防白嫖；①②不计入 |
 
 - 托管不改 seat.kind（名册稳定）；任意合法 op 或 resume 即夺回；feed/名牌外显「托管」徽标。
+- **接管边界口径（QA1 O-1 裁量，GAMES-157 文档化）**：「②持续接管至终局或回归」的边界=§1.6 通道 8 全员离线 15s abandon——零真人房（全席断线且重连窗尽）不再无限烧资源打满，托管续走在账至 abandon 触发即止；席面上「棋局不断」断言的适用域=至少一真人在线或 abandon 窗未尽。两节语义衔接：§5.5 描述席内接管行为，§1.6 描述房级生命周期，零真人=房级规则优先。
 - 并发裁决（tactics §5.4 串行语义照搬）：op 按到达序串行；place 与步限超时竞态先到者生效（超时先到则该步转 casual 代走并 `{k:'timeout-move'}` 入账，随后到达的该席 op reject not-your-turn）；重复提交幂等 reject（cell 已占）。
 
 ### 5.6 确定性与回放（S5 纪律第三证）
@@ -475,7 +476,7 @@ RULES = {
 
 - **房间参数**：seats=2；房间 ID 前缀 `yi-`（=gameId 首段缺省，无需 roomPrefix 覆盖；feed 字典序追加全序末位 **element- < emp- < iron- < moba- < mmo- < net- < pool- < slg- < snake- < speed- < street- < tactics- < yi-**——net-check 房序断言按新全序复核，element 排序纪律先例）；BotHost 常驻房 **3 个**（每模式各一 casual，终局 3s 补房、上限 6 房）；`quick {gameId, rule, level?}` 秒配。
 - **game.json 元数据**：`type:'multiplayer'`、`tier:'normal'`、`orientation:'portrait'`、`avgDurationSec:300`、`scoring` 分模式（win/lose 各 rule 一句+s2/s3=特色统计：五子 longest/黑白 discs 差/井字 boards）、`controls:{primary:'tap', secondary:'tap-confirm'}`；`net` 节全文见 §6。
-- **入房体验红线**（协议 §5）：点击加入→可操作 <2s（LAN）；重连 10s+1 拍窗；真人加入 bot 让位；满员旁观收 ruling（全公开视图）。本作特有检查：**静默期无消息是正常态**（事件驱动，element 先例）+ **黑白自动 pass 连跳是设计态**（勿当丢步报警）。
+- **入房体验红线**（协议 §5）：点击加入→可操作 <2s（LAN）；重连 10s+1 拍窗；真人加入 bot 让位；满员旁观收 ruling（全公开视图）。本作特有检查：**静默期无消息是正常态**（事件驱动，element 先例）+ **黑白自动 pass 连跳是设计态**（勿当丢步报警）。**quick 让位继承口径（QA1 O-4 裁量，GAMES-157 文档化）**：bot 让位承接的是「席位」不是「新局」——可入 moveNo 已深的中局房（继承前任断线席的盘面与棋钟）；对真玩家是特性（T5-A 随手托管谱系：中途接盘正是托管玩法的入口），观战/重连语义不受影响；测试侧须以 concede+reload 换新房隔离（QA1 件已加防线）。
 - **登记**：交付时同步回填 `docs/game-quality.json`（`net.tech:'S5'`、`bot:{levels:3, takeOver:'casual(单步)/tendency-inherit(持续托管)'}`、单链计数）。
 
 ## 8. 创意采纳记录（creative-bank-v1 通用池检索取材——本作无专属条目）

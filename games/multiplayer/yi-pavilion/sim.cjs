@@ -617,7 +617,7 @@ function applyOp(st, seat, op, fromBot) {
     if (fl && fl.n > st.stats[seat].maxFlip) st.stats[seat].maxFlip = fl.n
   }
   if (st.rule === 'cascade' && preWin >= 2 && events.some((e) => e.k === 'win-line')) st.stats[seat].doubleWin = 1
-  logOp(st, seat, 'place', { cell })
+  logOp(st, seat, 'place', { cell, fb: fromBot === true ? 1 : 0 }) // fb=bot 通道标记（F2：回放须按原通道重放，防 afkStreak 误清零）
   /* ⑤胜负检查（④pass 在换手内） */
   const fin = R.end(st)
   if (fin) { emit(st, events, 'all'); endGame(st, fin.winner, fin.reason); return { ok: true } }
@@ -712,11 +712,24 @@ function simulatePlace(st, seat, cell) {
   if (r && r.reject) return null
   return cl
 }
+/* 底座反应求交（F1 修复·GAMES-157）：feat 提取器跨规则复用，winNow/mustBlock 按规则
+ * 语义可含「对己非法」格——reversi mustBlock=对手可翻角（不查己方夹击）；cascade
+ * winNow/mustBlock=定盘成点（不查送位窗/死盘）。盲返 → applyOp 拒绝 → 决策流 rng 定桩
+ * 同格重试 → 烧穿步限×3 假 afk（QA1 §6.1）。产出与 legal 求交=一处防线全链自愈：
+ * 三档 bot+托管层①casual 代走②hosted 同脑路径，及导出面消费方（api-check 策略/客户端
+ * 红角提示）。gomoku 产出恒空格=合法，求交恒等（对照模式零扰动）。 */
+function featOf(st, seat) {
+  const f = RULES[st.rule].feat(st, seat)
+  const lg = RULES[st.rule].legal(st, seat)
+  f.winNow = f.winNow.filter((c) => lg.includes(c))
+  f.mustBlock = f.mustBlock.filter((c) => lg.includes(c))
+  return f
+}
 /* casual 随手（§4.2：rng 随机+30% 底座反应） */
 function casualNext(st, seat) {
   const rng = botRng(st, seat, 9100 + decIdx(st, seat))
   const R = RULES[st.rule]
-  const f = RULES[st.rule].feat(st, seat)
+  const f = featOf(st, seat)
   if (rng() < 0.3) { // 共享底座反应（附决策 9：规则性反应非棋力——casual 30% 命中）
     if (f.winNow.length) return f.winNow[0]
     if (f.mustBlock.length) return f.mustBlock[0]
@@ -731,11 +744,11 @@ function casualNext(st, seat) {
 }
 /* balanced 价值评估（§4.3：ΔV argmax，tie-break 格序——零随机） */
 function balancedNext(st, seat, opts = {}) {
-  const F0 = RULES[st.rule].feat(st, seat)
-  if (F0.winNow.length) return F0.winNow[0] // 恒执行底座反应（§4.1）
+  const F0 = featOf(st, seat)
+  if (F0.winNow.length) return F0.winNow[0] // 恒执行底座反应（§4.1；F1：产出已与 legal 求交）
   if (F0.mustBlock.length) return F0.mustBlock[0]
   const pool = candidates(st, seat)
-  let best = null, bestD = 0
+  let best = null, bestD = -Infinity
   const aQ8 = opts.attackQ8 || 256, sQ8 = opts.solidQ8 || 256
   for (const cell of pool) {
     const cl = simulatePlace(st, seat, cell)
@@ -744,11 +757,12 @@ function balancedNext(st, seat, opts = {}) {
     const d = ((F1.ownV * aQ8) >> 8) - ((F1.foeV * sQ8) >> 8) - (((F0.ownV * aQ8) >> 8) - ((F0.foeV * sQ8) >> 8))
     if (d > bestD) { bestD = d; best = cell } // 严格大于=平值取低格（格序 tie-break）
   }
-  return best
+  return best // F1 第二成因（GAMES-157）：全候选 ΔV≤0 位面原返 null→烧步限假 afk
+  // （「有合法手一步不走」同症状）；argmax 含负值=劣势局走最不差手（零随机语义不变）
 }
 /* competitive 三件套（§4.4 per-rule 深化——零随机） */
 function competitiveNext(st, seat) {
-  const F0 = RULES[st.rule].feat(st, seat)
+  const F0 = featOf(st, seat)
   if (F0.winNow.length) return F0.winNow[0]
   if (F0.mustBlock.length) return F0.mustBlock[0]
   if (st.rule === 'reversi') { // 末局完全搜索：空格 ≤10 → α-β minimax 以最终子差收官（<200ms 预算）
@@ -928,7 +942,9 @@ function serialize(st) {
 }
 function hashState(st) { return fnv1a32(serialize(st)) }
 /* 回放器（§5.6：重放输入日志即整局复算；托管代走已固化为 $timeout 标记——回放重跑
- * casual（决策流 keyed 确定性）；自动 pass 由结算管线重算，日志 pass 条目跳过） */
+ * casual（决策流 keyed 确定性）；自动 pass 由结算管线重算，日志 pass 条目跳过；
+ * F2（GAMES-157）：place 按 fb 标记还原通道——bot 通道（代走/托管/bot 席）不重置
+ * afkStreak，人类 op 才复位。旧日志无 fb=按人类重放（afk 免检局口径不变）） */
 function replayOps(seed, ops, maxTicks) {
   let rule = 'gomoku', handicap = 0
   if (ops[0] && ops[0].k === 'room') { rule = RULE_NAMES.includes(ops[0].rule) ? ops[0].rule : 'gomoku'; handicap = ops[0].handicap || 0 }
@@ -939,7 +955,7 @@ function replayOps(seed, ops, maxTicks) {
     if (o.k === '$timeout') { timeoutStep(st); continue }
     if (o.k === 'host') applyOp(st, o.s, { k: 'host', on: !!o.on })
     else if (o.k === 'concede') applyOp(st, o.s, { k: 'concede' })
-    else if (o.k === 'place') applyOp(st, o.s, { k: 'place', cell: o.cell })
+    else if (o.k === 'place') applyOp(st, o.s, { k: 'place', cell: o.cell }, o.fb === 1 ? true : undefined)
   }
   return st
 }
@@ -953,7 +969,7 @@ const ENGINE_HASH = fnv1a32(JSON.stringify({
 return {
   META, LEVELS, RULES, RULE_NAMES, ENGINE_HASH, CLOCK_MS, STEP_TICKS, BOT_DELAY,
   fnv1a32, mulberry32, create, step, applyOp, brain, viewFor, serialize, hashState, replayOps,
-  feat: (st, seat) => RULES[st.rule].feat(st, seat), legal: (st, seat) => RULES[st.rule].legal(st, seat),
+  feat: featOf, legal: (st, seat) => RULES[st.rule].legal(st, seat),
   candidates, casualNext, balancedNext, competitiveNext, hostedNext, tendencyOf, quip,
   SUB, subClaimAt, cascadeWindow, SUB_OF, subCells3, subStateOf, chainLen, winLineCells, reversiFlips,
   CORNERS, WGT,
