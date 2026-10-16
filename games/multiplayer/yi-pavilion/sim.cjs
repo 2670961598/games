@@ -725,64 +725,152 @@ function featOf(st, seat) {
   f.mustBlock = f.mustBlock.filter((c) => lg.includes(c))
   return f
 }
-/* casual 随手（§4.2：rng 随机+30% 底座反应） */
-function casualNext(st, seat) {
+/* ---------- Bot 观测面（GAMES-158：决策通道使用率+放水计数——不入 state/hash） ---------- */
+const chanStats = {}
+function chanTick(ch) { chanStats[ch] = (chanStats[ch] || 0) + 1 }
+function chanReset() { for (const k of Object.keys(chanStats)) delete chanStats[k] }
+const botStats = { mercy: 0, mercyDeep: 0, yield: 0 }
+/* casual 随手（§4.2：rng 随机+30% 底座反应；GAMES-158 失误率可调参化——reactP/
+ * cornerP 缺省 0.3 与原硬编码逐字节同决策（rng 消费序不变），放水 L2 降档核与
+ * bot-check 梯度面经 opts 调档） */
+function casualNext(st, seat, opts = {}) {
+  const reactP = opts.reactP === undefined ? 0.3 : opts.reactP
+  const cornerP = opts.cornerP === undefined ? 0.3 : opts.cornerP
   const rng = botRng(st, seat, 9100 + decIdx(st, seat))
   const R = RULES[st.rule]
   const f = featOf(st, seat)
-  if (rng() < 0.3) { // 共享底座反应（附决策 9：规则性反应非棋力——casual 30% 命中）
-    if (f.winNow.length) return f.winNow[0]
-    if (f.mustBlock.length) return f.mustBlock[0]
+  if (rng() < reactP) { // 共享底座反应（附决策 9：规则性反应非棋力——casual 30% 命中）
+    if (f.winNow.length) { chanTick('winNow'); return f.winNow[0] }
+    if (f.mustBlock.length) { chanTick('mustBlock'); return f.mustBlock[0] }
   }
   const pool = candidates(st, seat)
   if (!pool.length) return null
-  if (st.rule === 'reversi' && rng() < 0.3) { // 抢角意识（§4.2）
+  if (st.rule === 'reversi' && rng() < cornerP) { // 抢角意识（§4.2）
     const corner = pool.filter((c) => CORNERS.includes(c))
-    if (corner.length) return corner[0]
+    if (corner.length) { chanTick('corner'); return corner[0] }
   }
+  chanTick('rnd')
   return pool[(rng() * pool.length) | 0]
 }
-/* balanced 价值评估（§4.3：ΔV argmax，tie-break 格序——零随机） */
+/* balanced 特征权重调优（GAMES-158 §1：三规则各一通道深化——特征提取器产出面
+ * 不动（RULES.feat 冻结=客户端红角提示同源零漂移），决策核消费加项）：
+ *  五子 thrW：成型威胁通道并入 ΔV（结果态活三以上成点 ±thrW/个——「这手成三
+ *   下手被双杀」的浅层预判，窗口分只计静态型不计时序差）；
+ *  黑白 mobW：己手后对手合法手数压制（经典行动性原则：翻少占先、闷死对手）；
+ *  井字 sendW：所送子盘对手一步定盘点数惩罚加深（feat −45 之外的决策级加权）。 */
+const BAL_TUNE = { gomoku: { thrW: 400 }, reversi: { mobW: 3 }, cascade: { sendW: 24 } }
+// mobW 梯度锚定（GAMES-158 实测 20 局/格）：行动性压制是黑白第一原则——bal 12/5 时
+// comp(16) 梯度塌到 50%（同原则近同权=无分化，悬崖在 3↔5）；bal 3/comp 16 =
+// comp>bal 20/20 且 bal>cas 20/20（档间主原则权重留 5 倍差）。
+/* balanced 价值评估（§4.3：ΔV argmax，tie-break 格序——零随机；opts.noise=放水 L1
+ * 特征权重扰动：决策流独立键 rng（9500 段），每候选 ±noise 整数噪声——仅摆动
+ * argmax 邻近项不破合法性；无 noise 时零 rng 消费=基线逐字节不变） */
 function balancedNext(st, seat, opts = {}) {
   const F0 = featOf(st, seat)
-  if (F0.winNow.length) return F0.winNow[0] // 恒执行底座反应（§4.1；F1：产出已与 legal 求交）
-  if (F0.mustBlock.length) return F0.mustBlock[0]
+  if (F0.winNow.length) { chanTick('winNow'); return F0.winNow[0] } // 恒执行底座反应（§4.1；F1：产出已与 legal 求交）
+  if (F0.mustBlock.length) { chanTick('mustBlock'); return F0.mustBlock[0] }
   const pool = candidates(st, seat)
   let best = null, bestD = -Infinity
   const aQ8 = opts.attackQ8 || 256, sQ8 = opts.solidQ8 || 256
+  const nz = opts.noise || 0
+  const rngN = nz ? botRng(st, seat, 9500 + decIdx(st, seat)) : null
+  const tune = BAL_TUNE[st.rule]
   for (const cell of pool) {
     const cl = simulatePlace(st, seat, cell)
     if (!cl || cl.over) { if (cl && cl.over && cl.result.winner === (seat === 0 ? 'A' : 'B')) return cell; continue }
     const F1 = RULES[st.rule].feat(cl, seat)
-    const d = ((F1.ownV * aQ8) >> 8) - ((F1.foeV * sQ8) >> 8) - (((F0.ownV * aQ8) >> 8) - ((F0.foeV * sQ8) >> 8))
+    let d = ((F1.ownV * aQ8) >> 8) - ((F1.foeV * sQ8) >> 8) - (((F0.ownV * aQ8) >> 8) - ((F0.foeV * sQ8) >> 8))
+    if (st.rule === 'gomoku') { // 威胁评估深度（GAMES-158）：活三以上成点计数 ±thrW
+      for (const t of F1.threats) if (t.lv >= 8000) d += tune.thrW
+      for (const t of F1.danger) if (t.lv >= 8000) d -= tune.thrW
+    } else if (st.rule === 'reversi') { // 行动性压制（GAMES-158）：对手后手合法手数
+      d -= tune.mobW * RULES.reversi.legal(cl, foe(seat)).length
+    } else if (st.rule === 'cascade') { // 送位评价（GAMES-158）：所送盘对手定盘点数
+      const tgt = (((cell / 9) | 0) % 3) * 3 + ((cell % 9) % 3)
+      if (cl.sub[tgt] === -1) d -= tune.sendW * subClaimAt(cl.board, tgt, foe(seat)).length
+    }
+    if (nz) d += ((rngN() * 2 - 1) * nz) | 0
     if (d > bestD) { bestD = d; best = cell } // 严格大于=平值取低格（格序 tie-break）
   }
+  if (best !== null) chanTick('score')
   return best // F1 第二成因（GAMES-157）：全候选 ΔV≤0 位面原返 null→烧步限假 afk
   // （「有合法手一步不走」同症状）；argmax 含负值=劣势局走最不差手（零随机语义不变）
 }
-/* competitive 三件套（§4.4 per-rule 深化——零随机） */
-function competitiveNext(st, seat) {
+/* ---------- 开局树（GAMES-158 §3 双证载体）：competitive 前几手确定性提议 ----------
+ * 只提议不替决策：提议经 BOOK_BONUS 入搜索评分（定式枝 vs 搜索安全网——见
+ * competitiveNext 注），底座反应 winNow/mustBlock 恒先执行；提议格被占/非法 →
+ * 无奖金自然落回搜索。三规则各一枝：五子=天元+斜翼（直指开局族）；黑白=极化
+ * 原则（argmin 翻转避 X/C，零 rng）；井字=中心盘中心格起手+目标盘心/角定枝。
+ * 放水局摘除（opts.noBook——让力局不走定式，决策可分性随降档）。 */
+const BOOK_BONUS = 900
+/* cells 锚定（GAMES-158 实测）：天元+马步镜像对 [112,98,126]（(7,7)+(6,8)+(8,6)，
+ * 非共线=单堵不死）与搜索自由选择同构——book 一致 6/6 且 comp>bal 20/20；主斜
+ * 三连 [112,96,128] 共线单堵即死（bonus 制下搜索仅 2/6 认可；硬接管版实测
+ * 16/16→8/16 丢强度——GAMES-121 教训双向实锤）。 */
+const BOOK = { gomoku: { plies: 3, cells: [112, 98, 126] }, reversi: { plies: 6 }, cascade: { plies: 3 } }
+function bookNext(st, seat) {
+  const B = BOOK[st.rule]
+  if (!B) return null
+  const own = decIdx(st, seat)
+  if (own >= B.plies) return null
+  if (st.rule === 'gomoku') return st.board[B.cells[own]] === 0 ? B.cells[own] : null
+  if (st.rule === 'reversi') { // 极化原则枝：最少翻转、X/C 负位 +100 罚（平值取低格）
+    let best = null, bd = Infinity
+    for (const cell of RULES.reversi.legal(st, seat)) {
+      const n = reversiFlips(st.board, seat, cell).length + (WGT[cell] < 0 ? 100 : 0)
+      if (n < bd) { bd = n; best = cell }
+    }
+    return best
+  }
+  if (own === 0) return st.board[40] === 0 ? 40 : null // 中心盘中心格（送对手回中心盘=最强起手定式）
+  const tgt = cascadeWindow(st)
+  if (tgt === null) return null // 被送自由盘：开局树不覆盖，落搜索
+  const claim = subClaimAt(st.board, tgt, seat) // 目标盘可一步定盘 → 定盘点（与搜索同构）
+  if (claim.length) return claim[0]
+  const cs = subCells3(tgt)
+  for (const i of [4, 0, 8, 2, 6]) if (st.board[cs[i]] === 0) return cs[i] // 盘心→四角定枝
+  return null
+}
+/* competitive 深化三件套（§4.4 + GAMES-158 §1 增强——零随机） */
+function competitiveNext(st, seat, opts = {}) {
   const F0 = featOf(st, seat)
-  if (F0.winNow.length) return F0.winNow[0]
-  if (F0.mustBlock.length) return F0.mustBlock[0]
-  if (st.rule === 'reversi') { // 末局完全搜索：空格 ≤10 → α-β minimax 以最终子差收官（<200ms 预算）
+  if (F0.winNow.length) { chanTick('winNow'); return F0.winNow[0] }
+  if (F0.mustBlock.length) { chanTick('mustBlock'); return F0.mustBlock[0] }
+  /* 开局树（GAMES-158）：只提议不替决策——提议格入评分加 BOOK_BONUS（静态开局
+   * ΔV 差 << 奖金 → 定式枝胜出=构造性指纹；威胁位面（≥8000 级）搜索压倒奖金 →
+   * 安全网零让渡。GAMES-121 教训双向实锤：硬接管开局（首三手固定主斜）对深化
+   * balanced 可读可堵——实测 gomoku 梯度 16/16→8/16，改奖金制回 16/16。） */
+  const bk = opts.noBook ? null : bookNext(st, seat)
+  if (st.rule === 'reversi') { // 末局完全搜索：空格 ≤12 → α-β minimax 以最终子差收官（GAMES-158 精确解窗 10→12）
     let empty = 0
     for (let c = 0; c < 64; c++) if (st.board[c] === 0) empty++
-    if (empty <= 10) {
+    if (empty <= 12) {
+      chanTick('endgame')
       const best = reversiEndgame(st, seat, -65, 65, 0)
       if (best.cell !== null && best.cell !== undefined) return best.cell
     }
   }
   const pool = candidates(st, seat)
   const scored = []
+  const nz = opts.noise || 0
+  const rngN = nz ? botRng(st, seat, 9600 + decIdx(st, seat)) : null // L1 扰动流（独立键段 9600）
   for (const cell of pool) {
     const cl = simulatePlace(st, seat, cell)
     if (!cl) continue
     if (cl.over) { if (cl.result.winner === (seat === 0 ? 'A' : 'B')) return cell; continue }
     const F1 = RULES[st.rule].feat(cl, seat)
     let d = F1.score - F0.score
+    if (nz) d += ((rngN() * 2 - 1) * nz) | 0
+    if (bk !== null && bk !== undefined && cell === bk) d += BOOK_BONUS
     /* 五子 danger 偏置（§4.4：lv≥8000 威胁分 ×11÷10 向零取整——防守预判可执行式） */
-    if (st.rule === 'gomoku') for (const t of F1.danger) if (t.lv >= 8000) d -= (t.lv * 11 / 10) | 0
+    if (st.rule === 'gomoku') {
+      for (const t of F1.danger) if (t.lv >= 8000) { d -= (t.lv * 11 / 10) | 0; chanTick('danger') }
+      /* 双威胁构造（GAMES-158 §1：结果态己方活三以上成点 ≥2 → +30000——同时两个
+       * 不败攻击点=必胜形（对手一手只能堵一个）；窗分静态计型不计时序双杀） */
+      let myThr = 0
+      for (const t of F1.threats) if (t.lv >= 8000) myThr++
+      if (myThr >= 2) d += 30000
+    }
     /* 井字：SUB 完美解子盘项（§4.4-3——着点后子盘完美值）+ 双威胁构造 +15 */
     if (st.rule === 'cascade') {
       const sub = SUB_OF[cell]
@@ -790,11 +878,29 @@ function competitiveNext(st, seat) {
       const sv = SUB[subIndexOf(c9)]
       if (sv) d += 200 * (cl.sub[sub] === seat + 1 ? 1 : -sv.v) // 定盘=满值；未定=对手视角完美值取负
       if (cascadeWinCells(cl, seat).length >= 2) d += 15
+      /* 送位策略深化（GAMES-158：SUB 已完美——深化送位面）：本手落位 (br,bc) 把对手
+       * 送进子盘 tgt——对手视角 SUB 完美值取负加权（送进必败盘 +、必胜盘 −）；
+       * 视角逐离（parity 行棋方≠实际被送方）取反近似（确定性启发，子盘层已完美）。 */
+      const tgt = (((cell / 9) | 0) % 3) * 3 + ((cell % 9) % 3)
+      if (cl.sub[tgt] === -1) {
+        const { c9: t9 } = subStateOf(cl.board, tgt)
+        let n1 = 0, n2 = 0
+        for (const x of t9) { if (x === 1) n1++; else if (x === 2) n2++ }
+        const svT = SUB[subIndexOf(t9)]
+        if (svT) {
+          const pm = n1 === n2 ? 1 : 2 // SUB parity 行棋方（subSolve 闭式）
+          const vFoe = pm === foe(seat) + 1 ? svT.v : -svT.v // 实际被送方视角（parity≠实际 → 取反近似）
+          d += 60 * -vFoe
+          chanTick('sub')
+        }
+      }
     }
+    if (st.rule === 'reversi') d -= 16 * RULES.reversi.legal(cl, foe(seat)).length // 行动性压制（GAMES-158：竞技档权重）
     scored.push({ cell, d, cl })
   }
   scored.sort((a, b) => b.d - a.d || a.cell - b.cell)
   if (!scored.length) return null
+  chanTick('score')
   /* 一层前瞻（五子束宽 3 / 井字母盘 2-ply）：对手最强应手反评估（§4.4） */
   const beam = st.rule === 'gomoku' ? 3 : scored.length
   let best = scored[0].cell, bestV = -Infinity
@@ -810,6 +916,7 @@ function competitiveNext(st, seat) {
     }
     if (v > bestV) { bestV = v; best = s.cell }
   }
+  if (bk !== null && bk !== undefined && best === bk) chanTick('book')
   return best
 }
 /* 黑白末局 α-β（§4.4-2：以最终子差最优收官；节点=合法手剪枝） */
@@ -872,15 +979,49 @@ function hostedNext(st, seat) { // 持续托管（§5.5 层②）：balanced 核
   const t = tendencyOf(st, seat)
   return balancedNext(st, seat, t)
 }
+/* ---------- 陪玩放水链（GAMES-158 §2——棋类适配；tactics/pool 先例的回合棋形） ----------
+ * 信号源=网关 pulse 台账 env.foeLose[seat]（1v1：对席真人连败局数，rooms.js seats=2
+ * 分支直采——META.pulseTeam 为团队作信号位，本作 1v1 走缺省台账零网关改动）；阈值
+ * game.json bot.mercy 经适配器 env.mercy 注入（离线确定性不读文件，缺省兜底）。
+ * L1 连败（≥minFoeLose）→ 棋力轻让：ΔV 特征权重扰动 ±5（决策级分叉、结果不保证翻）；
+ * L2 重败（≥hardFoeLose）→ 棋力降档（competitive 摘三件套+开局树落 balanced 核
+ * +±13；balanced 落 casual 核 reactP 0.55）+ 生态位让位（yield 概率 0.35 改走零反应
+ * 随手=主动劣手，连败让出可争席位）。casual 已最弱不适用；hosted/超时代走不经此
+ * （托管连续性优先，GAMES-63 口径）。
+ * 确定性口径（GAMES-140/149 范式）：env 缺省（离线直调/回放/纯 bot 房）→ 全链
+ * 不可达——分支门在 foeLose 判定之后、扰动 rng 短路其后：无 env 时零额外 rng
+ * 消费，决策与纯档位逐字节相同（回放零扰动）；扰动流独立键段（9700）不与
+ * 决策流（9100/47000）争用。 */
+const MERCY_DFT = { minFoeLose: 2, hardFoeLose: 3 }
+const YIELD_P = 0.35
 /* ---------- brain（Bot 宿主统一入口；决策流 keyed——同 seed 同决策） ---------- */
-function brain(state, seat, level) {
+function brain(state, seat, level, rng, env) {
   const st = state
   if (!st || st.over || st.turn !== seat) return {}
   if (gated(st, seat, level)) return {}
+  const fl = env && env.foeLose ? env.foeLose[seat] || 0 : 0
+  const mc = (env && env.mercy) || MERCY_DFT
+  const mercy = fl >= (mc.hardFoeLose || 3) ? 2 : fl >= (mc.minFoeLose || 2) ? 1 : 0
   let mv = null
-  if (level === 'casual') mv = casualNext(st, seat)
-  else if (level === 'competitive') mv = competitiveNext(st, seat)
-  else mv = balancedNext(st, seat)
+  if (!mercy) { // 纯档位路径（env 缺省恒此枝——零扰动基线）
+    if (level === 'casual') mv = casualNext(st, seat)
+    else if (level === 'competitive') mv = competitiveNext(st, seat)
+    else mv = balancedNext(st, seat)
+  } else {
+    botStats.mercy++
+    if (mercy >= 2) botStats.mercyDeep++
+    if (mercy === 1) { // L1：特征权重扰动（轻让——opsLog 可见分叉，结果不保证翻）
+      if (level === 'casual') mv = casualNext(st, seat)
+      else if (level === 'competitive') mv = competitiveNext(st, seat, { noise: 5, noBook: true })
+      else mv = balancedNext(st, seat, { noise: 5 })
+    } else { // L2：降档+让位
+      const rngY = botRng(st, seat, 9700 + decIdx(st, seat))
+      if (rngY() < YIELD_P) { botStats.yield++; mv = casualNext(st, seat, { reactP: 0 }) } // 主动劣手（零反应随手）
+      else if (level === 'casual') mv = casualNext(st, seat)
+      else if (level === 'competitive') mv = balancedNext(st, seat, { noise: 13 })
+      else mv = casualNext(st, seat, { reactP: 0.55 })
+    }
+  }
   if (mv === null || mv === undefined) return {}
   return { op: { k: 'place', cell: mv } }
 }
@@ -971,6 +1112,7 @@ return {
   fnv1a32, mulberry32, create, step, applyOp, brain, viewFor, serialize, hashState, replayOps,
   feat: featOf, legal: (st, seat) => RULES[st.rule].legal(st, seat),
   candidates, casualNext, balancedNext, competitiveNext, hostedNext, tendencyOf, quip,
+  bookNext, BOOK, chanStats, chanReset, botStats, MERCY_DFT, YIELD_P, BAL_TUNE,
   SUB, subClaimAt, cascadeWindow, SUB_OF, subCells3, subStateOf, chainLen, winLineCells, reversiFlips,
   CORNERS, WGT,
 }
