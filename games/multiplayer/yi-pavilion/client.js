@@ -24,11 +24,60 @@
   /* 棋盘几何（§7 布局：三模式同框架 359×359 居中；格宽=路数定模式指纹） */
   const GEO = { gomoku: { n: 15, cs: 24, x: 8, y: 68 }, reversi: { n: 8, cs: 44, x: 12, y: 68 }, cascade: { n: 9, cs: 39, x: 13, y: 68 } }
 
-  /* ---------- 音效位（平台范式默认静音——只记账，on=true 才委托 PlatformAudio） ---------- */
+  /* ---------- 音效位（makeSound 平台范式：总闸门默认静音——只记账+持久触达集，
+   * on=true 才委托 PlatformAudio/WebAudio 占位；GAMES-150/141 同式。落子木声三模式
+   * 差异化（§3.1 叩枰）/翻子串声/连线声/非法音/胜利乐句/终局收棋全槽在册） ---------- */
   const sfx = {
-    on: false, calls: [],
-    play(tag) { this.calls.push({ tag, at: performance.now() }); if (!this.on) return; const h = window.PlatformAudio; if (h && typeof h.play === 'function') { try { h.play('yi-pavilion:' + tag, '') } catch {} } },
+    on: false,
+    slots: ['place-gomoku', 'place-reversi', 'place-cascade', 'flip', 'sub', 'line', 'win', 'lose', 'draw', 'collect', 'reject', 'turn', 'host', 'yield', 'tick', 'timeout', 'enter', 'mode'],
+    calls: [], fired: {}, ac: null,
+    play(tag) {
+      this.calls.push({ tag, at: performance.now() }); this.fired[tag] = 1
+      if (this.calls.length > 300) this.calls.shift()
+      if (!this.on) return
+      const h = window.PlatformAudio
+      if (h && typeof h.play === 'function') { try { h.play('yi-pavilion:' + tag, ''); return } catch {} }
+      try { /* WebAudio 简音色占位（多人客户端本地化口径，GAMES-131/141 同式） */
+        if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)()
+        const a = this.ac, t = a.currentTime
+        const big = tag === 'win' || tag === 'lose' || tag === 'collect', click = tag === 'sub' || tag === 'reject' || tag === 'tick' || tag === 'host' || tag === 'yield' || tag === 'mode' || tag === 'flip'
+        const note = (f0, f1, dur, type, at) => { const o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), at + dur); g.gain.setValueAtTime(0.05, at); g.gain.exponentialRampToValueAtTime(0.0001, at + dur); o.connect(g); g.connect(a.destination); o.start(at); o.stop(at + dur + 0.02) }
+        if (tag === 'win') { note(523, 523, 0.12, 'triangle', t); note(659, 659, 0.12, 'triangle', t + 0.13); note(784, 784, 0.22, 'triangle', t + 0.26) } // 胜利乐句（三音上行）
+        else if (big) note(220, 70, 0.34, 'square', t)
+        else if (tag === 'place-gomoku') note(180, 90, 0.1, 'triangle', t)   // 叩枰低木声
+        else if (tag === 'place-reversi') note(420, 210, 0.09, 'triangle', t)
+        else if (tag === 'place-cascade') note(330, 150, 0.09, 'triangle', t)
+        else note(click ? 760 : 440, click ? 1100 : 220, click ? 0.08 : 0.12, click ? 'square' : 'triangle', t)
+      } catch { /* 无音频环境静默 */ }
+    },
   }
+
+  /* ---------- GAMES-159 FXLIST：[id, 名称, fb|state]——fb=反馈类（事件→首绘
+   * ≤80ms 红线，台账断言），state=状态类（持续态只报数）。fxT 打触发时戳、fxD 打
+   * 首绘时延（fxLedger 供 feel-check 复跑；设计 §3.1/§3.3 juice 清单落地）。 ---------- */
+  const FXLIST = [
+    ['F01', 'landBounce', 'fb'],       // 落子落下弹跳（place → 瞬态子 0.6 缩放弹入 120ms+落点涟漪+叩枰音——三模式差异化音位）
+    ['F02', 'flipWave', 'fb'],         // 吃子翻子动画（flip → 切比雪夫距序翻子波 40ms/子，首翻 ≤40ms 启动红线 §3.1）
+    ['F03', 'winLineTrace', 'fb'],     // 五子连线高亮描线（win-line → 金线自起端贯穿 900ms+连线声）
+    ['F04', 'subClaimPulse', 'fb'],    // 井字子盘占领脉冲（sub → 盘面闪色 300ms+扩张描边+图章弹入盖章）
+    ['F05', 'lastRing', 'fb'],         // 最后一手标记环（place → 金环收敛弹入+恒亮金环系 §3.2）
+    ['F06', 'thinkBreath', 'state'],   // 思考中对手指示呼吸（对方行棋 → 顶栏指示点呼吸+文案渐隐渐现）
+    ['F07', 'illegalShake', 'fb'],     // 非法着点抖动+红闪（reject → 盘体 150ms 抖动+红罩 250ms+非法音）
+    ['F08', 'winFlow', 'fb'],          // 胜利连线流光（win-line → 流光沿金线巡回+成五震屏 150ms §3.3）
+    ['F09', 'endSweep', 'fb'],         // 终局收棋动画（end → 胜=双色子雨/败=压暗收拢/平=双色对分屏——胜负分歧+收棋音）
+    ['F10', 'spectProgress', 'state'], // 观战手数进度条（spectator → 顶栏进度条随 moveNo 推进）
+    ['F11', 'modeTransition', 'fb'],   // 模式切换转场（换式开局 → 盘面 400ms 缩放淡入转场+转场音）
+    ['F12', 'hostToast', 'fb'],        // 托管激活提示（host → 托管/夺回钮脉冲环 600ms+横幅）
+    ['F13', 'yieldHint', 'fb'],        // 让位提示（放水链 UI 面：就席落位环——bot 席位让位完成时点，street-soccer F08 同源）
+    ['F14', 'boardUnfold', 'fb'],      // 棋盘入场铺展（首局 adopt → 盘自中心铺展 450ms+入场音）
+    ['F15', 'turnBanner', 'fb'],       // 回合切换横幅（turn → 本地 banner 0ms+900ms 非阻塞 §3.1）
+    ['F16', 'clockAlert', 'state'],    // 棋钟告急呼吸（<30s 红呼吸+每秒滴答 §3.1）
+    ['F17', 'legalBreath', 'state'],   // 可落点亮呼吸（黑白/井字合法集微亮呼吸——可落点即合法手 §3.2）
+    ['F18', 'prePlace', 'fb'],         // 五子预落子确认圈（tap → 半透明子+确认圈 0ms 本地 §3.1）
+  ]
+  const fxLedger = []
+  function fxT(id) { fxLedger.push({ id, trig: performance.now(), lat: null }); if (fxLedger.length > 240) fxLedger.shift(); return fxLedger[fxLedger.length - 1] }
+  function fxD(rec) { if (rec && rec.lat == null) rec.lat = Math.max(0, Math.round(performance.now() - rec.trig)) }
 
   /* ---------- HUD 字号登记表（HF 体系：P0 ≥13px/600 · P1 ≥11px · P2 ≥9px） ---------- */
   const HF_REGISTRY = {}
@@ -68,6 +117,16 @@
     fx: [], banners: [], flipFx: [], result: null, over: false, overAt: 0,
     err: '', connLost: false, pick: null, // pick=模式选择浮层（无 room 且未选模式）
     hint: true, help: false,
+    /* GAMES-159 手感层瞬态（fx 层只读消费状态+裁决事件——sim/brain 零改动） */
+    shakeT0: -1e9, redT0: -1e9, redRec: null,            // F07 非法/成五震屏抖动+红罩
+    enterT0: -1e9, enterRec: null, entered: false,       // F14 入场铺展
+    transT0: -1e9, transRec: null,                       // F11 模式切换转场
+    yieldT0: -1e9, yieldRec: null,                       // F13 让位提示环
+    hostT0: -1e9, hostRec: null,                         // F12 托管钮脉冲
+    endFx: null,                                         // F09 终局收棋（胜负分歧）
+    preRec: null, thinkOn: false, thinkRec: null,        // F18/F06
+    spectRec: null, legalRec: null, clockRec: null, lastTick: -1, // F10/F17/F16
+    qa: {},                                             // fxScene 注入位（calm 清空）
   }
   const rs = () => (S.spectator ? 0 : S.seat)
   const ruleOf = () => (S.view && S.view.rule) || S.rule || 'gomoku'
@@ -106,53 +165,79 @@
       if (m.room && m.room.duel) { S.rule = m.room.duel.rule; if (SIM && m.room.duel.hash !== SIM.ENGINE_HASH) S.banners.push({ txt: '引擎版本更新，建议刷新', c1: '#B0542A', t0: performance.now(), sys: 1 }) }
       if (m.room && m.room.seats) S.roster = m.room.seats
       adopt(m.state)
+      if (!S.spectator) { S.yieldT0 = performance.now(); S.yieldRec = fxT('F13'); sfx.play('yield') } // F13 让位提示环：就席=bot 席位让位完成时点（street-soccer F08 同源）
       report('welcome', { seat: S.seat, rule: ruleOf(), spectator: S.spectator, engine: m.room && m.room.duel ? m.room.duel.hash : null })
       return
     }
-    if (m.t === 'seat') { S.roster = m.seats; return }
+    if (m.t === 'seat') {
+      /* F13 让位提示（放水链 UI 面）：名册 bot→human=生态位让位可观测位 */
+      if (S.roster && m.seats && S.roster.some((o, i) => o && o.kind === 'bot' && m.seats[i] && m.seats[i].kind === 'human' && i !== S.seat)) {
+        S.yieldT0 = performance.now(); S.yieldRec = fxT('F13'); sfx.play('yield')
+        S.banners.push({ txt: 'Bot 让出席位 · 真人对局', c1: '#C9A227', t0: performance.now(), sys: 1 })
+      }
+      S.roster = m.seats; return
+    }
     if (m.t === 'started') { adopt(m.state); return }
     if (m.t === 'ruling') { adopt(m.state); for (const ev of m.events || []) onEvent(ev); return }
     if (m.t === 'end') {
       S.over = true; S.result = m.result; S.overAt = performance.now()
-      const meWin = m.result && m.result.winner === (rs() === 0 ? 'A' : 'B')
-      sfx.play(m.result && (m.result.winner === 'draw' || meWin) ? 'win' : 'lose')
-      report('end', { winner: m.result && m.result.winner, reason: m.result && m.result.reason })
+      const w = m.result && m.result.winner
+      const meWin = w === (rs() === 0 ? 'A' : 'B')
+      /* F09 终局收棋（胜负分歧 §3.3）：胜=双色子雨/败=压暗收拢/平=双色对分屏（观战=胜色子雨呈现） */
+      S.endFx = { t0: S.overAt, kind: w === 'draw' ? 'draw' : meWin || S.spectator ? 'win' : 'lose', rec: fxT('F09') }
+      sfx.play(w === 'draw' ? 'draw' : meWin ? 'win' : 'lose'); sfx.play('collect')
+      report('end', { winner: w, reason: m.result && m.result.reason })
       return
     }
     if (m.t === 'closed') { S.connLost = true }
   }
   function adopt(v) {
+    const now = performance.now()
+    const prevRule = S.view && S.view.rule
     S.view = v
     S.rule = v && v.rule
-    S.deadlineAt = performance.now() + (v && v.timerMs || 0)
-    S.clockAt = performance.now()
+    S.deadlineAt = now + (v && v.timerMs || 0)
+    S.clockAt = now
     S.clockBase = v && v.clock ? [v.clock[0], v.clock[1]] : [240000, 240000]
+    /* F14 入场铺展（首局）／F11 模式切换转场（换式开局） */
+    if (!S.entered) { S.entered = true; S.enterT0 = now; S.enterRec = fxT('F14'); sfx.play('enter') }
+    else if (prevRule && prevRule !== (v && v.rule)) { S.transT0 = now; S.transRec = fxT('F11'); sfx.play('mode') }
   }
-  /* 事件→演出层（§3.1/§3.3 juice——全部非阻塞） */
+  /* 事件→演出层（§3.1/§3.3 juice——全部非阻塞；fxT 触发时戳→fxD 首绘时延台账） */
   function onEvent(ev) {
     const now = performance.now()
     if (ev.k === 'place') {
-      sfx.play('place')
+      sfx.play('place-' + ruleOf()) // 落子木声三模式差异化（§3.1 叩枰）
       const p = cellXY(ev.cell)
-      S.fx.push({ k: 'land', x: p.x + geo().cs / 2, y: p.y + geo().cs / 2, t0: now })
+      S.fx.push({ k: 'land', x: p.x + geo().cs / 2, y: p.y + geo().cs / 2, seat: ev.seat, t0: now, rec: fxT('F01') })
+      S.fx.push({ k: 'ring', x: p.x + geo().cs / 2, y: p.y + geo().cs / 2, t0: now, rec: fxT('F05') })
       S.pre = -1
     }
     if (ev.k === 'flip') { // 翻转波：切比雪夫距离序 40ms/子（首翻 ≤40ms 启动红线 §3.1）
       const src = S.view && S.view.last2 >= 0 ? cellXY(S.view.last2) : null
       const sx = src ? src.x + geo().cs / 2 : W / 2, sy = src ? src.y + geo().cs / 2 : H / 2
-      for (const c of ev.cells) { const p = cellXY(c); S.flipFx.push({ x: p.x + geo().cs / 2, y: p.y + geo().cs / 2, to: ev.seat, t0: now + Math.max(0, (Math.max(Math.abs(p.x + geo().cs / 2 - sx), Math.abs(p.y + geo().cs / 2 - sy)) / geo().cs) | 0) * 40 }) }
+      let waveRec = null
+      for (const c of ev.cells) { const p = cellXY(c); S.flipFx.push({ x: p.x + geo().cs / 2, y: p.y + geo().cs / 2, to: ev.seat, t0: now + Math.max(0, (Math.max(Math.abs(p.x + geo().cs / 2 - sx), Math.abs(p.y + geo().cs / 2 - sy)) / geo().cs) | 0) * 40, rec: waveRec || (waveRec = fxT('F02')) }) }
       sfx.play('flip')
     }
-    if (ev.k === 'pass') S.banners.push({ txt: '无子可下 · 让手', c1: '#8A7A5C', t0: now, sys: 1 })
-    if (ev.k === 'sub') { sfx.play('sub'); S.fx.push({ k: 'stamp', sub: ev.idx, t0: now }) }
-    if (ev.k === 'win-line' || ev.k === 'end') { sfx.play('win'); if (ev.cells) S.fx.push({ k: 'goldline', cells: ev.cells, t0: now }) }
+    if (ev.k === 'pass') { S.banners.push({ txt: '无子可下 · 让手', c1: '#8A7A5C', t0: now, sys: 1 }); sfx.play('turn') }
+    if (ev.k === 'sub') { sfx.play('sub'); S.fx.push({ k: 'stamp', sub: ev.idx, t0: now }); S.fx.push({ k: 'subflash', sub: ev.idx, owner: ev.owner, t0: now, rec: fxT('F04') }) }
+    if (ev.k === 'win-line' || ev.k === 'end') {
+      sfx.play('line')
+      if (ev.cells) S.fx.push({ k: 'goldline', cells: ev.cells, t0: now, rec: fxT('F03'), flowRec: fxT('F08') })
+      S.shakeT0 = now // 成五/母盘三连震屏 150ms（§3.3）
+    }
     if (ev.k === 'turn') {
-      S.banners.push({ txt: S.spectator ? (ev.seat === 0 ? '黑方行棋' : '白方行棋') : (ev.seat === S.seat ? '你的回合' : '对方行棋'), c1: ev.seat === 0 ? COL_A : COL_B, t0: now, sys: 1, turn: 1 })
+      S.banners.push({ txt: S.spectator ? (ev.seat === 0 ? '黑方行棋' : '白方行棋') : (ev.seat === S.seat ? '你的回合' : '对方行棋'), c1: ev.seat === 0 ? COL_A : COL_B, t0: now, sys: 1, turn: 1, rec: fxT('F15') })
       sfx.play('turn')
     }
-    if (ev.k === 'timeout-move') S.banners.push({ txt: '超时托管代走', c1: '#9D6BE8', t0: now, sys: 1 })
-    if (ev.k === 'host') { S.banners.push({ txt: ev.on ? '托管中·随时夺回' : '已夺回', c1: '#9D6BE8', t0: now, sys: 1 }); sfx.play('host') }
-    if (ev.k === 'reject') { S.banners.push({ txt: '此处不可落子', c1: '#B0542A', t0: now, sys: 1 }); sfx.play('reject'); report('reject', ev.why || '') }
+    if (ev.k === 'timeout-move') { S.banners.push({ txt: '超时托管代走', c1: '#9D6BE8', t0: now, sys: 1 }); sfx.play('timeout') }
+    if (ev.k === 'host') { S.banners.push({ txt: ev.on ? '托管中·随时夺回' : '已夺回', c1: '#9D6BE8', t0: now, sys: 1 }); sfx.play('host'); S.hostT0 = now; S.hostRec = fxT('F12') }
+    if (ev.k === 'reject') {
+      S.banners.push({ txt: '此处不可落子', c1: '#B0542A', t0: now, sys: 1 }); sfx.play('reject')
+      S.shakeT0 = now; S.redT0 = now; S.redRec = fxT('F07') // 非法着点抖动+红闪（0ms 本地同管线）
+      report('reject', ev.why || '')
+    }
   }
   /* 本地复算（§3.2：同源 RULES——非法格压暗/威胁角标/送位盘描边，零上行） */
   function legalSet() {
@@ -211,10 +296,12 @@
     if (c < 0) { S.pre = -1; return }
     if (v.turn !== S.seat) { S.pre = -1; return }
     const legal = legalSet()
-    if (legal && !legal.has(c)) { sfx.play('reject'); S.pre = -1; return } // 非法格压暗即拒点（本地 0ms §3.1）
+    if (legal && !legal.has(c)) { // 非法格压暗即拒点（本地 0ms §3.1——抖动+红闪同管线）
+      sfx.play('reject'); S.shakeT0 = performance.now(); S.redT0 = performance.now(); S.redRec = fxT('F07'); S.pre = -1; return
+    }
     if (ruleOf() === 'gomoku') { // 两段式：同格再点=确认（§1.7 预落 0ms 本地）
       if (S.pre === c) { sendOp({ k: 'place', cell: c }); S.pre = -1 }
-      else S.pre = c
+      else { S.pre = c; S.preRec = fxT('F18') } // F18 预落子确认圈
       return
     }
     sendOp({ k: 'place', cell: c })
@@ -238,7 +325,11 @@
   const mmss = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
   const coordName = (cell) => { const g = geo(); return `${String.fromCharCode(65 + (cell % g.n))}${g.n - ((cell / g.n) | 0)}` }
   let lastT = 0, fpsAcc = 0, fpsN = 0, fpsShown = 0
-  function render() {
+  /* perf() 计量（GAMES-159）：rafGap 首帧不播种（GAMES-141 恒 0fps 死码防线）；
+   * cost=render 体耗时滚动窗 240 帧（p95/jank 供 feel-check FE-5） */
+  let lastTS = 0, rafGaps = [], rafAvg = 0, costs = [], costP95 = 0, costJank = 0
+  function render(ts) {
+    const tRender0 = performance.now()
     const now = performance.now()
     if (lastT) { fpsAcc += now - lastT; fpsN++; if (fpsAcc >= 500) { fpsShown = Math.round(1000 / (fpsAcc / fpsN)); fpsAcc = 0; fpsN = 0 } }
     lastT = now
@@ -246,22 +337,66 @@
     if (!S.view) { drawPick(now); requestAnimationFrame(render); return }
     const v = S.view
     const g = geo()
+    /* F07/F08 震屏（150ms 衰减抖动——非法着点/成五震屏，全画布平移不影响输入命中区） */
+    let shaken = false
+    const shk = now - S.shakeT0 < 150 ? 1 - (now - S.shakeT0) / 150 : 0
+    if (shk > 0) { ctx.save(); ctx.translate(Math.round(Math.sin(now / 12) * 4 * shk), Math.round(Math.cos(now / 9) * 2 * shk)); shaken = true }
     /* 顶栏 56px（§7）：对方名牌+棋色标/托管徽标/对方棋钟 P0/手数 */
     const clock = (sx) => { let ms = S.clockBase[sx]; if (v.turn === sx && !v.over) ms -= now - S.clockAt; return mmss(ms) }
     ctx.textAlign = 'left'
     ctx.font = F1(12); ctx.fillStyle = '#8A7A5C'
-    ctx.fillText(S.spectator ? '观战 · 玩家' + (v.turn === 0 ? 'A（黑）' : 'B（白）') : v.turn === S.seat ? '轮到你落子' : '对方思考中…', 12, 22)
+    /* F06 思考中对手指示呼吸（对方行棋 → 指示点呼吸+文案渐隐渐现；观战恒呼吸指示当前方） */
+    const thinkOn = !v.over && (v.turn !== S.seat || S.spectator || S.qa.think)
+    if (thinkOn) {
+      if (!S.thinkOn) { S.thinkOn = true; S.thinkRec = fxT('F06') }
+      const br = 0.42 + 0.38 * Math.sin(now / 380)
+      ctx.globalAlpha = 0.55 + 0.45 * br
+      ctx.fillStyle = v.turn === 0 ? COL_A : COL_B
+      ctx.beginPath(); ctx.arc(16, 18, 3.6, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#8A7A5C'
+      ctx.fillText(S.spectator ? '观战 · 玩家' + (v.turn === 0 ? 'A（黑）' : 'B（白）') + ' 行棋' : '对方思考中…', 26, 22)
+      ctx.globalAlpha = 1
+      fxD(S.thinkRec)
+    } else {
+      S.thinkOn = false
+      ctx.fillText(S.spectator ? '观战 · 玩家' + (v.turn === 0 ? 'A（黑）' : 'B（白）') : v.turn === S.seat ? '轮到你落子' : '对方思考中…', 12, 22)
+    }
+    /* F10 观战手数进度条（spectator → 顶栏下缘进度条随 moveNo 推进；qa.spect=fxScene 注入位） */
+    if ((S.spectator || S.qa.spect) && !v.over) {
+      if (!S.spectRec) S.spectRec = fxT('F10')
+      const cap = { gomoku: 225, reversi: 60, cascade: 81 }[ruleOf()] || 200
+      ctx.fillStyle = 'rgba(58,46,31,0.14)'; ctx.fillRect(0, 55, W, 3)
+      ctx.fillStyle = 'rgba(201,162,39,0.75)'; ctx.fillRect(0, 55, W * Math.min(1, v.moveNo / cap), 3)
+      fxD(S.spectRec)
+    }
     drawStone(20, 42, 1 - rs(), g.cs * 0.24)
     ctx.font = F1(12); ctx.fillStyle = INK
     ctx.fillText((S.spectator ? '玩家' : '对手') + '·' + (rs() === 0 ? '白后' : '黑先'), 36, 46)
     ctx.textAlign = 'right'
     const tclk = clock(1 - rs())
-    ctx.font = F0(15); ctx.fillStyle = (S.clockBase[1 - rs()] - (v.turn === 1 - rs() ? now - S.clockAt : 0)) < 30000 && !v.over ? '#C0392B' : INK
+    /* F16 棋钟告急（<30s 红呼吸+每秒滴答 §3.1；qa.clock=fxScene 注入位） */
+    const clockAlert = (sx) => !v.over && !!(S.qa.clock || (S.clockBase[sx] - (v.turn === sx ? now - S.clockAt : 0)) < 30000)
+    const alertOn = clockAlert(1 - rs()) || clockAlert(rs())
+    if (alertOn) { if (!S.clockRec) S.clockRec = fxT('F16'); ctx.globalAlpha = 0.55 + 0.45 * Math.sin(now / 220); fxD(S.clockRec); if (v.turn === rs()) { const sec = ((S.clockBase[rs()] - (now - S.clockAt)) / 1000) | 0; if (sec !== S.lastTick) { S.lastTick = sec; sfx.play('tick') } } }
+    ctx.font = F0(15); ctx.fillStyle = clockAlert(1 - rs()) ? '#C0392B' : INK
     ctx.fillText(tclk, W - 12, 42)
+    if (alertOn) ctx.globalAlpha = 1
     ctx.font = F1(11); ctx.fillStyle = '#8A7A5C'
     ctx.fillText('第 ' + (v.moveNo + 1) + ' 手', W - 12, 22)
     if (v.host && (v.host[0] || v.host[1])) { ctx.font = F1(11); ctx.fillStyle = '#9D6BE8'; ctx.fillText('托管', W - 74, 22) }
-    /* 棋盘（榧木亮盘+深褐格线——识图锚 §7） */
+    /* 棋盘（榧木亮盘+深褐格线——识图锚 §7）——F14 入场铺展/F11 转场变换域（HUD 不入变换） */
+    ctx.save()
+    const entT = Math.min(1, Math.max(0, (now - S.enterT0) / 450))
+    const trT = Math.min(1, Math.max(0, (now - S.transT0) / 400))
+    if (entT < 1 || trT < 1) {
+      const tt = entT < 1 ? entT : trT
+      const ease = 1 - Math.pow(1 - tt, 3)
+      const bx0 = g.x + g.n * g.cs / 2, by0 = g.y + g.n * g.cs / 2
+      ctx.globalAlpha = Math.min(1, 0.25 + 0.75 * ease)
+      ctx.translate(bx0, by0); ctx.scale(0.86 + 0.14 * ease, 0.86 + 0.14 * ease); ctx.translate(-bx0, -by0)
+      if (entT < 1) fxD(S.enterRec)
+      if (trT < 1) fxD(S.transRec)
+    }
     ctx.fillStyle = BOARD_C
     roundRect(g.x - 6, g.y - 6, g.n * g.cs + 12, g.n * g.cs + 12, 8); ctx.fill()
     ctx.strokeStyle = '#B49A62'; ctx.lineWidth = 2; roundRect(g.x - 6, g.y - 6, g.n * g.cs + 12, g.n * g.cs + 12, 8); ctx.stroke()
@@ -286,13 +421,15 @@
         if (owner === 1 || owner === 2) { ctx.fillStyle = owner === 1 ? 'rgba(232,163,61,0.10)' : 'rgba(61,200,232,0.12)'; ctx.fillRect(x + 1, y + 1, g.cs * 3 - 2, g.cs * 3 - 2) } // 归属压色 8% 蒙层
       }
     }
-    /* 黑白可落点亮呼吸（§3.2：可落点即合法手——新手不用背规则） */
+    /* 黑白可落点亮呼吸（§3.2：可落点即合法手——新手不用背规则；F17 台账） */
     const legal = (!S.spectator && v.turn === S.seat && ruleOf() !== 'gomoku') ? legalSet() : null
     if (legal) {
+      if (!S.legalRec) S.legalRec = fxT('F17')
       const pulse = 0.16 + 0.08 * Math.sin(now / 300)
       ctx.fillStyle = `rgba(58,46,31,${pulse.toFixed(3)})`
       for (const c of legal) { const p = cellXY(c); ctx.fillRect(p.x + g.cs * 0.32, p.y + g.cs * 0.32, g.cs * 0.36, g.cs * 0.36) }
-    }
+      fxD(S.legalRec)
+    } else S.legalRec = null
     /* 送位盘呼吸描边（井字可读性命门 §3.2：一眼看出被送去了哪个盘） */
     if (ruleOf() === 'cascade' && v.last >= 0 && !v.over) {
       const br = ((v.last / 9) | 0) % 3, bc = (v.last % 9) % 3
@@ -317,20 +454,32 @@
       if (!seatV) continue
       const p = cellXY(c)
       const cx = p.x + g.cs / 2, cy = p.y + g.cs / 2
-      /* 翻转波中的子：缩放收张换色（40ms/子 §3.1——state 真值已全量，表现层不阻塞） */
+      /* 翻转波中的子：缩放收张换色（40ms/子 §3.1——state 真值已全量，表现层不阻塞；F02 台账） */
       const key = cx + ':' + cy
       const ff = flipActive.get(key)
-      if (ff) { const t = (now - ff.t0) / 160; drawStone(cx, cy, t < 0.5 ? 1 - ff.to : ff.to, undefined, Math.abs(1 - 2 * t) * 0.6 + 0.4); continue }
-      /* 落子弹入 120ms（§3.1 非阻塞） */
-      let scale = 1
-      for (const f of S.fx) if (f.k === 'land' && f.x === cx && f.y === cy) { const t = (now - f.t0) / 120; if (t >= 0 && t < 1) scale = 0.6 + 0.4 * (1 + Math.sin(Math.PI * Math.min(1, t * 1.4 - 0.2))) * 1; scale = 0.6 + 0.4 * Math.min(1, t * 1.6) }
-      drawStone(cx, cy, seatV - 1, undefined, 1, scale)
+      if (ff) { const t = (now - ff.t0) / 160; drawStone(cx, cy, t < 0.5 ? 1 - ff.to : ff.to, undefined, Math.abs(1 - 2 * t) * 0.6 + 0.4); fxD(ff.rec); continue }
+      drawStone(cx, cy, seatV - 1, undefined, 1, 1)
+    }
+    /* F01 落子落下弹跳（瞬态层：事件自带席位——ruling 全量真值到达前也笃定落位+落点涟漪 240ms） */
+    for (const f of S.fx) if (f.k === 'land' && now - f.t0 < 240) {
+      const t = (now - f.t0) / 120
+      if (t >= 0 && t < 1) { drawStone(f.x, f.y, f.seat === undefined ? 0 : f.seat, undefined, 1, 0.6 + 0.4 * Math.min(1, t * 1.6) + 0.14 * Math.sin(Math.PI * t)); fxD(f.rec) }
+      const rt = (now - f.t0) / 240
+      if (rt >= 0 && rt < 1) { ctx.strokeStyle = `rgba(58,46,31,${(0.4 * (1 - rt)).toFixed(3)})`; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(f.x, f.y, g.cs * (0.3 + 0.45 * rt), 0, Math.PI * 2); ctx.stroke() }
+    }
+    /* F05 最后一手标记环弹入（金环自 0.78 收敛至恒亮位——两步对照环系 §3.2） */
+    for (const f of S.fx) if (f.k === 'ring' && now - f.t0 < 200) {
+      const t = (now - f.t0) / 200
+      ctx.strokeStyle = `rgba(201,162,39,${(1 - t).toFixed(3)})`; ctx.lineWidth = 2.2
+      ctx.beginPath(); ctx.arc(f.x, f.y, g.cs * (0.44 + 0.34 * t), 0, Math.PI * 2); ctx.stroke()
+      fxD(f.rec)
     }
     /* 最后两步对照环（§3.2：金环 last+淡环上上手） */
     if (v.last2 >= 0) { const p = cellXY(v.last2); ctx.strokeStyle = 'rgba(58,46,31,0.35)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(p.x + g.cs / 2, p.y + g.cs / 2, g.cs * 0.44, 0, Math.PI * 2); ctx.stroke() }
     if (v.last >= 0) { const p = cellXY(v.last); ctx.strokeStyle = '#C9A227'; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.arc(p.x + g.cs / 2, p.y + g.cs / 2, g.cs * 0.44, 0, Math.PI * 2); ctx.stroke() }
-    /* 五子预落子（§1.7：半透明+确认圈 0ms 本地） */
+    /* 五子预落子（§1.7：半透明+确认圈 0ms 本地；F18 台账） */
     if (S.pre >= 0) {
+      fxD(S.preRec)
       const p = cellXY(S.pre)
       drawStone(p.x + g.cs / 2, p.y + g.cs / 2, S.seat, undefined, 0.45)
       ctx.strokeStyle = '#C9A227'; ctx.lineWidth = 2
@@ -361,15 +510,41 @@
         ctx.restore()
       }
     }
-    /* 胜利金线（§3.3 juice） */
+    /* F03 胜利金线描线（自起端贯穿 900ms）+F08 流光（亮点沿金线巡回 §3.3） */
     for (const f of S.fx) if (f.k === 'goldline' && now - f.t0 < 900) {
       const t = (now - f.t0) / 900
       ctx.save(); ctx.globalAlpha = 1 - t * 0.6; ctx.strokeStyle = '#C9A227'; ctx.lineWidth = 3.5
       const pts = f.cells.map((c) => { const p = cellXY(c); return [p.x + g.cs / 2, p.y + g.cs / 2] })
       const a = pts[0], b2 = pts[pts.length - 1]
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(a[0] + (b2[0] - a[0]) * Math.min(1, t * 1.3), a[1] + (b2[1] - a[1]) * Math.min(1, t * 1.3)); ctx.stroke()
+      fxD(f.rec)
+      if (t < 1) { // 流光在描线到达尾端后开始巡回更醒目——全程在场亦可
+        const ft = ((now - f.t0) / 260) % 1
+        ctx.beginPath(); ctx.arc(a[0] + (b2[0] - a[0]) * ft, a[1] + (b2[1] - a[1]) * ft, 4.5, 0, Math.PI * 2); ctx.fillStyle = '#FFE9A8'; ctx.fill()
+        fxD(f.flowRec)
+      }
       ctx.restore()
     }
+    /* F04 井字子盘占领脉冲（盘面闪色 300ms+扩张描边；图章弹入在归属位叠加 §3.3） */
+    for (const f of S.fx) if (f.k === 'subflash' && now - f.t0 < 320) {
+      const t = (now - f.t0) / 320
+      const bi = ((f.sub / 3) | 0), bj = f.sub % 3
+      const x = g.x + bj * 3 * g.cs, y = g.y + bi * 3 * g.cs
+      const oc = f.owner === 2 ? '61,200,232' : f.owner === 1 ? '232,163,61' : '58,46,31'
+      ctx.fillStyle = `rgba(${oc},${(0.32 * (1 - t)).toFixed(3)})`
+      ctx.fillRect(x + 1, y + 1, g.cs * 3 - 2, g.cs * 3 - 2)
+      ctx.strokeStyle = `rgba(${oc},${(0.8 * (1 - t)).toFixed(3)})`; ctx.lineWidth = 2.5
+      ctx.strokeRect(x + 1 - 6 * t, y + 1 - 6 * t, g.cs * 3 - 2 + 12 * t, g.cs * 3 - 2 + 12 * t)
+      fxD(f.rec)
+    }
+    /* F07 非法着点红闪罩（抖动在画布平移层；250ms 衰减红罩盖盘） */
+    if (now - S.redT0 < 250) {
+      const t = (now - S.redT0) / 250
+      ctx.fillStyle = `rgba(192,57,43,${(0.16 * (1 - t)).toFixed(3)})`
+      ctx.fillRect(g.x - 6, g.y - 6, g.n * g.cs + 12, g.n * g.cs + 12)
+      fxD(S.redRec)
+    }
+    ctx.restore() /* 盘面变换域收尾（F14/F11） */
     /* 状态条 28px（§7：模式名 P1+最后手坐标 P0+送位盘提示） */
     ctx.fillStyle = '#E7DCC4'; ctx.fillRect(0, 430, W, 28)
     ctx.textAlign = 'left'; ctx.font = F1(12); ctx.fillStyle = INK
@@ -392,9 +567,18 @@
     drawStone(20, 570, rs(), 11)
     ctx.textAlign = 'left'; ctx.font = F1(12); ctx.fillStyle = INK
     ctx.fillText('你·' + (rs() === 0 ? '黑先' : '白后'), 36, 575)
+    /* F13 让位提示环（放水链 UI 面：就席=bot 席位让位完成时点——落位环 800ms） */
+    if (now - S.yieldT0 < 800) {
+      const t = (now - S.yieldT0) / 800
+      ctx.strokeStyle = `rgba(201,162,39,${(1 - t).toFixed(3)})`; ctx.lineWidth = 2.5
+      ctx.beginPath(); ctx.arc(20, 570, 14 + 26 * t, 0, Math.PI * 2); ctx.stroke()
+      fxD(S.yieldRec)
+    }
     const mclk = clock(rs())
-    ctx.font = F0(16); ctx.fillStyle = (S.clockBase[rs()] - (v.turn === rs() ? now - S.clockAt : 0)) < 30000 && !v.over ? '#C0392B' : INK
+    ctx.font = F0(16); ctx.fillStyle = clockAlert(rs()) ? '#C0392B' : INK
+    if (clockAlert(rs())) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(now / 220)
     ctx.fillText(mclk, 12, 606)
+    if (clockAlert(rs())) ctx.globalAlpha = 1
     if (v.timerMs > 0 && v.turn === S.seat && !v.over) { ctx.font = F1(11); ctx.fillStyle = '#8A7A5C'; ctx.fillText('步限 ' + Math.ceil((S.deadlineAt - now) / 1000) + 's', 12, 626) }
     if (!S.spectator) {
       const btn = (x, w, label, active, danger) => {
@@ -408,6 +592,13 @@
       btn(BTN.host.x, BTN.host.w, v.host && v.host[S.seat] ? '夺回' : '托管', !!(v.host && v.host[S.seat]))
       btn(BTN.concede.x, BTN.concede.w, S.concedeArm && now - S.concedeArm < 2500 ? '再点认输' : '认输', false, S.concedeArm && now - S.concedeArm < 2500)
       btn(BTN.help.x, BTN.help.w, '?', S.help)
+      /* F12 托管激活提示（host 事件 → 钮位脉冲环 600ms） */
+      if (now - S.hostT0 < 600) {
+        const t = (now - S.hostT0) / 600
+        ctx.strokeStyle = `rgba(157,107,232,${(1 - t).toFixed(3)})`; ctx.lineWidth = 2.5
+        roundRect(BTN.host.x - 3 - 6 * t, BTN.host.y - 3 - 6 * t, BTN.host.w + 6 + 12 * t, BTN.host.h + 6 + 12 * t, 10); ctx.stroke()
+        fxD(S.hostRec)
+      }
     }
     /* ? 速览浮层（§1.7：当前规则一图一句） */
     if (S.help) {
@@ -419,10 +610,11 @@
       ctx.font = F1(12); ctx.fillStyle = S.hint ? '#C9A227' : '#9FB0A0'
       ctx.fillText(S.hint ? '威胁提示：开（点此关闭）' : '威胁提示：关（点此开启）', W / 2, 496)
     }
-    /* 横幅 */
+    /* 横幅（F15 回合切换=turn 横幅台账；全部非阻塞 900ms） */
     S.banners = S.banners.filter((b) => now - b.t0 < 900)
     S.banners.forEach((b, i) => {
       const t = (now - b.t0) / 900
+      fxD(b.rec)
       ctx.save(); ctx.globalAlpha = t < 0.8 ? 1 : (1 - t) / 0.2
       ctx.fillStyle = 'rgba(58,46,31,0.88)'; ctx.fillRect(0, 240 + i * 38, W, 34)
       ctx.fillStyle = b.c1; ctx.fillRect(0, 240 + i * 38, W, 3)
@@ -454,11 +646,40 @@
       ctx.fillStyle = '#C9BFA6'; roundRect(195, H - 96, 140, 52, 10); ctx.fill()
       ctx.fillStyle = INK; ctx.fillText('回大厅', 265, H - 64)
     }
+    /* F09 终局收棋动画（胜负分歧 §3.3：胜=双色子雨/败=压暗收拢/平=双色对分屏；结算页之上非阻塞） */
+    if (S.over && S.endFx) {
+      const et = now - S.endFx.t0
+      fxD(S.endFx.rec)
+      if (S.endFx.kind === 'win') {
+        for (let i = 0; i < 26; i++) { // 双色子雨（确定性相位算式——无 rng，双跑可复现）
+          const x = (i * 61 + 13) % W, sp = 130 + (i % 5) * 46
+          const y = ((et / 1000 * sp + i * 53) % (H + 60)) - 30
+          drawStone(x, y, i % 2, 7, 0.8)
+        }
+      } else if (S.endFx.kind === 'lose') {
+        const c = Math.min(0.4, et / 900 * 0.4)
+        ctx.fillStyle = `rgba(26,18,10,${c.toFixed(3)})`; ctx.fillRect(0, 0, W, 90); ctx.fillRect(0, H - 90, W, 90) // 上下压幕收拢
+        ctx.strokeStyle = `rgba(192,57,43,${(0.5 * Math.max(0, 1 - et / 1200)).toFixed(3)})`; ctx.lineWidth = 3; ctx.strokeRect(4, 4, W - 8, H - 8)
+      } else {
+        const c = Math.min(0.12, et / 400 * 0.12)
+        ctx.fillStyle = `rgba(232,163,61,${c.toFixed(3)})`; ctx.fillRect(0, 0, W / 2, H)
+        ctx.fillStyle = `rgba(61,200,232,${c.toFixed(3)})`; ctx.fillRect(W / 2, 0, W / 2, H) // 双色子对分屏
+      }
+    }
     /* 页脚 P2（§7） */
     ctx.fillStyle = '#8A7A5C'; ctx.font = F2(9); ctx.textAlign = 'left'
     ctx.fillText('yi-pavilion · v1.0.0 · S5', 10, H - 3)
     S.fx = S.fx.filter((f) => now - f.t0 < 1000)
     S.flipFx = S.flipFx.filter((f) => now - f.t0 < 1000)
+    if (shaken) ctx.restore() /* F07/F08 震屏平移收尾 */
+    /* perf() 计量收尾（rafGap 首帧不播种；cost 滚动窗 240 帧） */
+    if (ts) {
+      if (lastTS) { rafGaps.push(ts - lastTS); if (rafGaps.length > 240) rafGaps.shift(); rafAvg = rafGaps.reduce((a, b) => a + b, 0) / rafGaps.length }
+      lastTS = ts
+    }
+    costs.push(performance.now() - tRender0); if (costs.length > 240) costs.shift()
+    costJank = costs.filter((c) => c > 25).length / costs.length * 100
+    const sorted = costs.slice().sort((a, b) => a - b); costP95 = sorted[Math.floor(sorted.length * 0.95)] || 0
     requestAnimationFrame(render)
   }
   function wrapText(txt, cx, y, maxW, lh) {
@@ -527,6 +748,10 @@
     if (otimer) { clearInterval(otimer); otimer = null }
     S.offline = true; S.spectator = false; S.seat = 0; S.over = false; S.result = null
     S.fx = []; S.banners = []; S.flipFx = []; S.err = ''; S.connLost = false; S.pre = -1
+    S.shakeT0 = -1e9; S.redT0 = -1e9; S.redRec = null; S.enterT0 = -1e9; S.enterRec = null; S.entered = false
+    S.transT0 = -1e9; S.transRec = null; S.yieldT0 = -1e9; S.yieldRec = null; S.hostT0 = -1e9; S.hostRec = null
+    S.endFx = null; S.preRec = null; S.thinkOn = false; S.thinkRec = null; S.spectRec = null
+    S.legalRec = null; S.clockRec = null; S.lastTick = -1; S.qa = {}
     S.offlineLevel = ['casual', 'balanced', 'competitive'][Math.max(0, Math.min(2, (Number(level) || 1) - 1))] || 'balanced'
     S.rule = rule && GEO[rule] ? rule : (S.rule && GEO[S.rule] ? S.rule : 'gomoku')
     osalt++
@@ -544,6 +769,47 @@
         offlineDrain()
       }
     }, 10)
+  }
+
+  /* ---------- 手感场景驱动（QA 取证入口：事件类走 fxProbe 同管线；本地/状态类在
+   * 此——GAMES-150 fxScene 同式；'calm' 清瞬态供冻结帧采样）。 ---------- */
+  function emptyCell() { const v = S.view, g = geo(); if (!v) return 0; for (let c = 0; c < g.n * g.n; c++) if (!v.board[c]) return c; return 0 }
+  function endScene(kind) { // F09 终局收棋（QA 驱动：胜/败/平三分支+收棋音位）
+    const now = performance.now()
+    S.over = true; S.overAt = now
+    S.result = { winner: kind === 'draw' ? 'draw' : rs() === 0 ? 'A' : 'B', reason: 'feel-probe', scores: {}, quip: '' }
+    S.endFx = { t0: now, kind, rec: fxT('F09') }
+    sfx.play(kind === 'draw' ? 'draw' : kind === 'win' ? 'win' : 'lose'); sfx.play('collect')
+    return true
+  }
+  function fxScene(name) {
+    const now = performance.now()
+    if (name === 'calm') { // 冻结帧采样位：清瞬态（持续态由 view 派生重建）
+      S.fx.length = 0; S.flipFx.length = 0; S.banners.length = 0
+      S.shakeT0 = -1e9; S.redT0 = -1e9; S.redRec = null; S.hostT0 = -1e9; S.yieldT0 = -1e9
+      S.thinkOn = false; S.thinkRec = null; S.spectRec = null; S.legalRec = null; S.clockRec = null
+      S.pre = -1; S.preRec = null; S.qa = {}
+      return true
+    }
+    if (name === 'placeG' || name === 'placeR' || name === 'placeC') { // 落子木声三模式差异化（§3.1 QA 驱动面）
+      const rule = name === 'placeG' ? 'gomoku' : name === 'placeR' ? 'reversi' : 'cascade'
+      const save = S.rule, sv = S.view && S.view.rule
+      S.rule = rule; if (S.view) S.view.rule = rule // ruleOf() 以 view.rule 优先——驱动面临时切式（geometry+音位），取格后还原
+      onEvent({ k: 'place', seat: 1 - rs(), cell: emptyCell() })
+      S.rule = save; if (S.view) S.view.rule = sv
+      return true
+    }
+    if (name === 'pre') { S.pre = emptyCell(); S.preRec = fxT('F18'); return true } // F18 五子预落确认圈
+    if (name === 'yield') { S.yieldT0 = now; S.yieldRec = fxT('F13'); sfx.play('yield'); return true } // F13
+    if (name === 'enter') { S.enterT0 = now; S.enterRec = fxT('F14'); sfx.play('enter'); return true } // F14
+    if (name === 'transition') { S.transT0 = now; S.transRec = fxT('F11'); sfx.play('mode'); return true } // F11
+    if (name === 'clock') { S.qa.clock = true; S.clockRec = fxT('F16'); sfx.play('tick'); return true } // F16
+    if (name === 'spect') { S.qa.spect = true; return true } // F10（首绘打点）
+    if (name === 'think') { S.qa.think = true; return true } // F06（首绘打点）
+    if (name === 'end') return endScene('win')
+    if (name === 'endLose') return endScene('lose')
+    if (name === 'endDraw') return endScene('draw')
+    return false
   }
 
   /* ---------- HUD 自证 + 暴露（HF __applied 生效自证首日，票面指定） ---------- */
@@ -565,7 +831,13 @@
   window.__GAMES_DEBUG__.roomId = function () { return S.roomId }
   window.__GAMES_DEBUG__.seat = function () { return S.seat }
   window.__GAMES_DEBUG__.mode = function () { return S.offline ? 'offline' : 'net' }
-  window.__GAMES_DEBUG__.sfx = function () { return { slots: ['place', 'flip', 'sub', 'turn', 'host', 'reject', 'win', 'lose'], on: sfx.on, calls: sfx.calls.slice(-64) } }
+  window.__GAMES_DEBUG__.sfx = function () { return { slots: sfx.slots, on: sfx.on, calls: sfx.calls.slice(-64) } }
+  window.__GAMES_DEBUG__.sfxGroups = function () { return { slots: sfx.slots, on: sfx.on, calls: sfx.calls.slice(-64), fired: Object.assign({}, sfx.fired) } } // fired 持久触达集（GAMES-141 口径）
+  window.__GAMES_DEBUG__.fxList = function () { return FXLIST.map((f) => ({ id: f[0], name: f[1], cls: f[2] })) }
+  window.__GAMES_DEBUG__.fxLedger = function () { return fxLedger.map((l) => ({ id: l.id, trig: Math.round(l.trig), lat: l.lat })) }
+  window.__GAMES_DEBUG__.fxProbe = function (ev) { onEvent(ev); return true } // 合成事件走同一 onEvent 管线
+  window.__GAMES_DEBUG__.fxScene = fxScene
+  window.__GAMES_DEBUG__.perf = function () { return { fps: fpsShown, rafGapMs: +rafAvg.toFixed(2), costP95Ms: +costP95.toFixed(2), costJankPct: +costJank.toFixed(2) } }
   window.__GAMES_DEBUG__.fps = function () { return fpsShown }
   window.__GAMES_DEBUG__.engineHash = function () { return SIM && SIM.ENGINE_HASH }
 
