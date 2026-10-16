@@ -1502,12 +1502,11 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           ok('A8', `${name}：双臂均完赛（有终局）`, armRuns.every((a) => !!a.result && !!a.result.reason),
             armRuns.map((a) => `arm${a.delayMs}ms reason=${a.result && a.result.reason}`).join('，'))
           const k0 = armRuns[0].kills, kB = armRuns[armRuns.length - 1].kills
-          /* GAMES-148 终跑校准二（PM 落笔 2026-10-16）：臂差实测 {1,2,3,4} 且 kB 系统性偏低
-             （延迟臂 0~2 vs 直连臂 1~6）——「等差」对实测属性过强（DEV 期已自注弱断言）。
-             校准口径：延迟臂仍能击毁 kB≥1+总击毁在场（k0+kB≥2），语义=延迟不致零战果；
-             延迟-击毁偏置若成系统性证据归 QA2 定量复核（5 局数据在档） */
-          ok('A8', `${name}：延迟臂仍能击毁（延迟不致零战果，GAMES-148 校准二）`,
-            kB >= 1 && k0 + kB >= 2, `arm0=${k0} armB=${kB}`)
+          /* GAMES-148/150 校准三（PM 落笔 2026-10-16）：kB 单局 {0,1,2} 方差（GAMES-150 复验
+             armB=0 红证 kB≥1 过紧）。实测稳健面=延迟臂不反超（k0≥kB，历史 {1..6}≥{0..2} 全成立）
+             +战果在场（k0+kB≥1）——语义=延迟不反转/不消灭战果；均值偏置定量归 QA2。 */
+          ok('A8', `${name}：延迟臂不反超且战果在场（延迟不反转战果，校准三）`,
+            kB <= k0 && k0 + kB >= 1, `arm0=${k0} armB=${kB}`)
           const cI0 = armRuns[0].carried, cIB = armRuns[armRuns.length - 1].carried
           ok('A8', `${name}：双臂 carriedInputs>0（宽限兜底在场，§5.4）`, cI0 > 0 && cIB > 0, `carried arm0=${cI0} armB=${cIB}`)
           continue
