@@ -158,8 +158,12 @@
         const wasMe = S.me
         S.me = m.ext.me
         if (wasMe && wasMe.al && !m.ext.me.al && S.phase === 'live') onDead()
-        /* 一类·预测和解（§5.1）：ack 裁剪→权威锚→重放未确认→软/硬收敛 */
+        /* 一类·预测和解（§5.1）：ack 裁剪→权威锚→重放未确认→软/硬收敛。
+         * GAMES-176 死码激活：DEV 期 reconcile 未接线 → predictor 无 anchor →
+         * advanceTo 恒 null → haveVis 恒 false——己席渲染/相机跟随/拾取钮/拾取
+         * 浮标/和解账本全链挂（smoke rec.n 0→0 即此症状） */
         if (m.ext.ack !== undefined) S.ack = m.ext.ack
+        reconcile(m)
       }
       if (m.ext.hash !== undefined) { /* hash 哨兵：分歧→sync 自愈（省带宽，深证同式） */ }
     }
@@ -202,6 +206,7 @@
         const ang = atk && atk.cur ? Math.atan2((S.me.y || 0) - atk.cur.y, (S.me.x || 0) - atk.cur.x) : 0
         S.hurt = { at: performance.now(), ang }
         S.shake = { at: performance.now(), amp: 2, dur: 120 }
+        addFx('hurtflash', ev)
         sfx('hurtHit')
       }
     }
@@ -214,7 +219,8 @@
       addFx('killfeed', ev)
       if (ev.by === S.seat) { S.kills++; S.koBanner = { txt: '淘汰 ' + nm(ev.seat), at: performance.now() } }
       addFx('confetti', ev) // F08 糖粒雨（被淘汰者皮肤色）
-      S.shake = { at: performance.now(), amp: 4, dur: 240 } // F05 KO 震屏（§3.4 signature）
+      addFx('koshake', ev) // F05 KO 震屏（§3.4 signature——绘制在镜头 shake 段）
+      S.shake = { at: performance.now(), amp: 4, dur: 240 }
       sfx('koBoom')
     }
     else if (ev.k === 'pick') {
@@ -395,7 +401,7 @@
   let vis = { x: 0, y: 0 }, haveVis = false
   function reconcile(m) {
     const me = S.me
-    if (!me || me.al === 0 || S.degraded) return
+    if (!me || me.al === 0 || S.degraded || me.x === undefined) return // x/y=权威锚原料（GAMES-176 适配器配套；缺坐标=旧网关兼容跳过）
     /* 权威锚点：ack 裁剪由 predictor.anchor 内部（at≤tick 出环） */
     S.predictor.anchor({ x: me.x, y: me.y, vx: 0, vy: 0, w: me.w, nades: me.na, boost: 0, aim: 0 }, m.frame)
     const sh = S.predictor.advanceTo(S.seq + 1) // 重放未确认（seq-ack ≈ RTT/tick 条）
@@ -678,6 +684,10 @@
         fxD(fx.led)
       } else if (fx.kind === 'killfeed' && age < 80) { // F04 播报（feed 列表本体在 hudDraw 常画——此为触发首绘打点窗）
         fxD(fx.led)
+      } else if (fx.kind === 'hurtflash' && age < 300) { // F03 绘制本体=己席白闪+屏缘红晕（主路径）；此分支承载台账双时戳
+        fxD(fx.led)
+      } else if (fx.kind === 'koshake' && age < 240) { // F05 绘制本体=镜头 shake 段（世界层微抖）
+        fxD(fx.led)
       } else if (fx.kind === 'confetti' && age < 700) { // F08 糖粒雨（§3.4 signature：糖豆爆成彩色糖粒）
         if (!fx.parts) {
           const vic = fx.a.seat === S.seat ? (haveVis ? { x: vis.x, y: vis.y } : (S.me || {})) : ((S.ents.get(fx.a.seat) || {}).cur || {})
@@ -708,18 +718,22 @@
         fxD(fx.led)
       }
     }
-    /* F03 受击屏缘红晕 + F06 毒圈逼近边缘警示（径向渐晕脉冲——渲染层零判定） */
+    /* F03 受击屏缘红晕 + F06 毒圈逼近边缘警示（径向渐晕脉冲——渲染层零判定；
+     * warnForce=QA 驱动窗（真实态由圈边距判定，驱动面同路径）） */
     let vign = 0, vcol = '208,90,122'
     const hAge = now - S.hurt.at
-    if (hAge < 300 && S.me && S.me.al) vign = Math.max(vign, 0.5 * (1 - hAge / 300))
+    if (hAge < 300 && S.me && S.me.al) vign = Math.max(vign, 0.55 * (1 - hAge / 300))
+    let edgeOn = false
     if (S.phase === 'live' && S.me && S.me.al && haveVis) {
       const c = stormAt(S.frame)
       const dEdge = c.r - Math.hypot((vis.x || 0) - c.cx, (vis.y || 0) - c.cy) // 圈边距（正=圈内余量）
-      if (dEdge < 120000) {
-        vign = Math.max(vign, (0.35 + 0.25 * Math.sin(now / 140)) * Math.min(1, Math.max(0.2, 1 - dEdge / 120000)))
-        if (!S.led06) S.led06 = fxT('F06')
-        fxD(S.led06) // F06 首绘打点（警示渐晕在场）
-      }
+      if (dEdge < 120000) edgeOn = true
+    }
+    if (S.warnForce && now - S.warnForce < 2000) edgeOn = true
+    if (edgeOn) {
+      vign = Math.max(vign, (0.35 + 0.25 * Math.sin(now / 140)) * 0.9)
+      if (!S.led06) S.led06 = fxT('F06')
+      fxD(S.led06) // F06 首绘打点（警示渐晕在场）
     }
     if (vign > 0.01) {
       const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.62)
@@ -1021,11 +1035,30 @@
     if (name === 'hitmark') onEvent({ k: 'hit', seat: other, by: S.seat, dmg: 12, hp: 88, sh: 0 }, S.frame) // F01/F02
     else if (name === 'hurt') onEvent({ k: 'hit', seat: S.seat, by: other, dmg: 15, hp: 85, sh: 0 }, S.frame) // F02/F03
     else if (name === 'kill') onEvent({ k: 'elim', seat: other, by: S.seat, rank: 5 }, S.frame) // F04/F05/F08（KO 大字+糖粒雨+震屏）
-    else if (name === 'killme') { if (S.phase === 'live') onEvent({ k: 'elim', seat: S.seat, by: other, rank: 5 }, S.frame) } // F13/F14 观战视图全链（真切换 dead）
+    else if (name === 'killme') { // F13/F14 观战视图全链（真切换 dead；QA 注入领先者——合成淘汰不驱动服务端 AOI，ents 无 lead 则镜头退圈心，注入使跟随面可断）
+      if (S.phase === 'live') {
+        if (!S.lb.length) S.lb = [[other, 1, 0]]
+        const lead = S.lb[0][0]
+        if (lead !== S.seat && !S.ents.get(lead)) {
+          S.leadInjected = { x: (haveVis ? vis.x : 1200000) + 90000, y: (haveVis ? vis.y : 1200000) - 70000 }
+          S.ents.set(lead, { cur: { ...S.leadInjected }, buf: [] })
+        } else if (lead !== S.seat) { const c2 = (S.ents.get(lead) || {}).cur || {}; S.leadInjected = { x: c2.x || 1290000, y: c2.y || 1200000 } }
+        onEvent({ k: 'elim', seat: S.seat, by: other, rank: 5 }, S.frame)
+      }
+    }
     else if (name === 'pick') onEvent({ k: 'pick', seat: S.seat, id: 'b0', k2: 'wpn', w: 2, it: 1 }, S.frame) // F07
-    else if (name === 'airdrop') onEvent({ k: 'airdrop', x: vis0.x + 60000, y: vis0.y - 40000, box: 'bQ' + Math.floor(Math.random() * 1e6) }, S.frame) // F10
-    else if (name === 'box') { S.boxMap.set('bQ' + Math.floor(Math.random() * 1e6), { id: 'b', k: 'wpn', w: 3, x: vis0.x + 30000, y: vis0.y + 22000, on: 1, pop: performance.now() }) } // F09（渲染循环拾 pop）
-    else if (name === 'bob') { S.boxMap.set('bQ' + Math.floor(Math.random() * 1e6), { id: 'b', k: 'med', x: haveVis ? vis.x + 20000 : 1200000, y: haveVis ? vis.y + 8000 : 1200000, on: 1, pop: performance.now() }) } // F11（吸附圈内箱）
+    else if (name === 'airdrop') onEvent({ k: 'airdrop', x: vis0.x + 60000, y: vis0.y - 40000, box: 'b' + Math.floor(Math.random() * 1e6) }, S.frame) // F10
+    else if (name === 'boom') addFx('boom', vis0.x + 40000, vis0.y - 30000) // F16（冲击环）
+    else if (name === 'edge') { S.warnForce = performance.now() } // F06（警示渐晕驱动窗——真实态=圈边距判定同路径）
+    else if (name === 'box') { // F09（drop 事件驱动音效+箱首见弹出锚）
+      const bid = 'b' + Math.floor(Math.random() * 1e6)
+      S.boxMap.set(bid, { id: bid, k: 'wpn', w: 3, x: vis0.x + 30000, y: vis0.y + 22000, on: 1, pop: performance.now() })
+      onEvent({ k: 'drop', seat: other, box: bid }, S.frame)
+    }
+    else if (name === 'bob') { // F11（吸附圈内箱——28px 吸附判定按 boxMap 就近）
+      const bid = 'b' + Math.floor(Math.random() * 1e6)
+      S.boxMap.set(bid, { id: bid, k: 'med', x: haveVis ? vis.x + 20000 : 1200000, y: haveVis ? vis.y + 8000 : 1200000, on: 1, pop: performance.now() })
+    }
     else if (name === 'storm') { const v = S.storm || { p: 0, t0: 0, t1: 100, r0: 1200000, r1: 700000, x0: 1200000, y0: 1200000, x1: 1200000, y1: 1200000 }; onEvent(Object.assign({ k: 'storm' }, v), S.frame) } // F17（当前参数回放=零态变）
     else if (name === 'heal') onEvent({ k: 'heal', seat: S.seat, v: 25 }, S.frame) // F16
     else if (name === 'boost') onEvent({ k: 'boost', seat: S.seat }, S.frame) // F19
