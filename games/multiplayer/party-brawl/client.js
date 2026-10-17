@@ -627,10 +627,13 @@
     ctx.font = HF('P2', 'lb', 9, '400')
     ctx.textAlign = 'left'
     ctx.fillText((S.lb || []).slice(0, 3).map((x, i) => (i + 1) + '.击' + x[1]).join(' '), 14, H - 26)
-    /* 页脚 slug·version（P2 ≥9px） */
+    /* 页脚 slug·version（P2 ≥9px）——右对齐收口：左起 x=W−90 画 ~99px 越 375 右缘 ~9px
+     * 被截断（识图 20261017 实锤），改 textAlign right+右缘 8px 安全距 */
     ctx.fillStyle = 'rgba(255,255,255,0.5)'
     ctx.font = HF('P2', 'foot', 9, '400')
-    ctx.fillText('party-brawl · v1', W - 90, H - 6)
+    ctx.textAlign = 'right'
+    ctx.fillText('party-brawl · v1', W - 8, H - 6)
+    ctx.textAlign = 'left'
     /* 拾取钮浮现条件：28px 吸附圈内有箱（§3.3 ≤1 帧） */
     S.pickTarget = -1
     if (S.phase === 'live' && haveVis) {
