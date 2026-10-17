@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#4FB8E8">
+<title>派对大乱斗 · 糖豆岛缩圈生存</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #4FB8E8; height: 100%; overflow: hidden; touch-action: none; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; }
+  .boot { position: absolute; left: 0; right: 0; top: 48%; text-align: center; color: #17537A; font: 600 13px/1.5 system-ui, sans-serif; }
+</style>
+</head>
+<body>
+  <div id="stage"><span class="boot" id="boot">空降糖豆岛…</span><canvas id="cv" width="375" height="667"></canvas></div>
+  <script src="trig16.cjs"></script>
+  <script src="sim.cjs"></script>
+  <script src="client.js"></script>
+</body>
+</html>

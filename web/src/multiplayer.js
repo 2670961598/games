@@ -29,7 +29,7 @@ const CATALOG = [
   { name: '深夜狼人', track: 'T5 回合', tech: 'S5' },
   { name: '蛇王争霸', track: 'T6 海量', tech: 'S6', on: true, url: '/games/multiplayer/snake-king/index.html' },
   { name: '深海食物链', track: 'T6 海量', tech: 'S6', on: true, url: '/games/multiplayer/deep-foodchain/index.html' },
-  { name: '派对大乱斗', track: 'T6 海量', tech: 'S6' },
+  { name: '派对大乱斗', track: 'T6 海量', tech: 'S6+S7', on: true, url: '/games/multiplayer/party-brawl/index.html' }, // GAMES-172 上线（S6+S7 双记法第三款，设计附决策 1）
   { name: '极速卡丁', track: 'T7 预测', tech: 'S7', on: true, url: '/games/multiplayer/speed-kart/index.html' },
   { name: '幸存者小队', track: 'T7 预测', tech: 'S7' },
   { name: '迷宫突击', track: 'T7 预测', tech: 'S7' },
