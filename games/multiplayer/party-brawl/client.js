@@ -3,6 +3,13 @@
  * 依赖前置：trig16.cjs / sim.cjs（window.PartySim——与服务端同一段纯函数，
  * §5.1 单源纪律）。
  *
+ * GAMES-176 手感层（FEEL）：FXLIST 动效登记表（fb 反馈类 ≤80ms 首绘红线+
+ * fxLedger 双时戳台账）+ SND 音效位（makeSound 平台范式：总闸门默认静音只
+ * 记账）+ 四面交付——①战斗反馈 juice（受击闪白/微击退+kill feed+糖粒雨+箱
+ * 弹出+拾取浮标+毒圈边缘警示 §3.4）②ping 徽标观战同步（F-4 账本消费面）
+ * ③淘汰观战视图（镜头平滑跟领先者+tap 切换+信息卡——§4.3/§5.7 承接）
+ * ④观战 AOI 体验（边缘席位指示——O-1 后续）。
+ *
  * 多实体预测边界四类谱的客户端面（设计 §5.2 ★）：
  *   一类 己席=本地预测（makePredictor 同式走位积分；drag 即 tick 输入零等待，
  *        20Hz 采样+输入环形缓冲+上行 seq；快照 ack 和解：权威锚点回滚重放未确认
@@ -67,6 +74,9 @@
     predictor: P.makePredictor(),
     rec: { soft: 0, hard: 0, maxPx: 0, sum: 0, n: 0, pings: [] }, // 和解修正账本（§3.1/结算战报源）
     cam: { x: 1200000, y: 1200000 }, endInfo: null, koBanner: null, deadAt: 0,
+    startFrame: 0, deadFrame: 0, killedBy: -1,   // 淘汰信息卡原料（O-2 承接：在场时长/击杀者）
+    camMode: 'lead', feed: [],                    // 观战镜头模式（lead=跟领先者/free=圈心全景）+ kill feed 行
+    hurt: { at: -1e9, ang: 0 }, shake: { at: -1e9, amp: 0, dur: 1 }, // 受击/震屏渲染层状态（不入判定 §3.2）
   }
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d')
 
@@ -92,7 +102,7 @@
   function onMsg(m) {
     if (m.t === 'welcome') {
       S.room = m.roomId; S.seat = m.seat; S.role = m.role; S.tickMs = m.tickMs || 50
-      S.seed = m.seed; S.frame = m.frame
+      S.seed = m.seed; S.frame = m.frame; S.startFrame = m.frame // 淘汰信息卡在场时长锚（接管中局=入房拍起算）
       const st = m.state
       if (st && st.players) for (const p of st.players) if (p.seat !== S.seat) S.ents.set(p.seat, { cur: { ...p }, buf: [{ t: m.frame, p: { ...p } }], a: p.a })
       if (st && st.storm) { S.storm = mkStormView(st.storm, st.tick || 0); S.storm.ph = st.storm.ph }
@@ -166,7 +176,7 @@
         if (rec.buf.length > 4) rec.buf.shift()
       } else if (e.id) { // 三类·权威箱（乐观动画的对象面——不在渲染域预测）
         let bx = S.boxMap.get(e.id)
-        if (!bx && e.x !== undefined) { bx = { id: e.id, x: e.x, y: e.y, k: e.k, w: e.w, it: e.it, on: 1 }; S.boxMap.set(e.id, bx) }
+        if (!bx && e.x !== undefined) { bx = { id: e.id, x: e.x, y: e.y, k: e.k, w: e.w, it: e.it, on: 1, pop: performance.now() }; S.boxMap.set(e.id, bx) } // F09 弹出动画锚=首见拍（drop/airdrop 零推断 §5.2）
         if (bx && e.on !== undefined) bx.on = e.on
         if (bx && e.x !== undefined) { bx.x = e.x; bx.y = e.y; bx.k = e.k !== undefined ? e.k : bx.k; bx.w = e.w !== undefined ? e.w : bx.w; bx.it = e.it !== undefined ? e.it : bx.it }
       }
@@ -184,24 +194,108 @@
     else if (ev.k === 'nade') S.nades.set(ev.id, { id: ev.id, seat: ev.seat, x0: ev.px, y0: ev.py, ang: ev.ang, born: frame })
     else if (ev.k === 'pdie') S.projs.delete(ev.pid)
     else if (ev.k === 'boom') addFx('boom', ev.x, ev.y)
-    else if (ev.k === 'hit') { if (ev.by === S.seat) addFx('hitmark', null, null); addFx('dmgnum', ev) }
-    else if (ev.k === 'elim') {
-      if (ev.seat === S.seat) onDead()
-      if (ev.by === S.seat) { S.kills++; S.koBanner = { txt: '淘汰 ' + (S.ents.get(ev.seat) ? '' : '') + '对手', at: performance.now() } }
-      addFx('ko', ev)
+    else if (ev.k === 'hit') {
+      if (ev.by === S.seat) addFx('hitmark', null, null)
+      addFx('dmgnum', ev)
+      if (ev.seat === S.seat) { // F03 受击闪白+微击退感（渲染层 §3.2——攻击者方位入射向推 3px 回弹）
+        const atk = S.ents.get(ev.by)
+        const ang = atk && atk.cur ? Math.atan2((S.me.y || 0) - atk.cur.y, (S.me.x || 0) - atk.cur.x) : 0
+        S.hurt = { at: performance.now(), ang }
+        S.shake = { at: performance.now(), amp: 2, dur: 120 }
+        sfx('hurtHit')
+      }
     }
-    else if (ev.k === 'pick') { if (ev.seat === S.seat) addFx('pickok', null, null); else { const bx = S.boxMap.get(ev.id); if (bx) bx.on = 0 } }
-    else if (ev.k === 'drop' || ev.k === 'airdrop') { /* 三类生成=零推断（下张全量/增量箱记录） */ }
-    else if (ev.k === 'storm') { S.storm = mkStormView(ev); addFx('stormToast', null, null) }
-    else if (ev.k === 'heal') addFx('healfx', ev)
-    else if (ev.k === 'boost') if (ev.seat === S.seat) addFx('boostfx', null, null)
+    else if (ev.k === 'elim') {
+      if (ev.seat === S.seat) { S.killedBy = ev.by; onDead() }
+      /* F04 kill feed：「Px 淘汰 Py · 剩 N」（royale 播报面）；毒杀 by=-1 显示「毒圈」 */
+      const nm = (s2) => s2 >= 0 ? 'P' + (s2 + 1) : '毒圈'
+      S.feed.unshift({ txt: nm(ev.by) + ' 淘汰 ' + nm(ev.seat), at: performance.now(), mine: ev.by === S.seat || ev.seat === S.seat })
+      if (S.feed.length > 3) S.feed.pop()
+      addFx('killfeed', ev)
+      if (ev.by === S.seat) { S.kills++; S.koBanner = { txt: '淘汰 ' + nm(ev.seat), at: performance.now() } }
+      addFx('confetti', ev) // F08 糖粒雨（被淘汰者皮肤色）
+      S.shake = { at: performance.now(), amp: 4, dur: 240 } // F05 KO 震屏（§3.4 signature）
+      sfx('koBoom')
+    }
+    else if (ev.k === 'pick') {
+      if (ev.seat === S.seat) { addFx('pickbadge', null, null); sfx('pickUp') }
+      else { const bx = S.boxMap.get(ev.id); if (bx) bx.on = 0 }
+    }
+    else if (ev.k === 'drop') { sfx('boxDrop') } // F09 弹出动画锚在快照首见拍（三类生成=零推断，§5.2）
+    else if (ev.k === 'airdrop') { addFx('airdropMark', ev); sfx('airdropCue') } // F10 空投标落点（事件自带坐标）
+    else if (ev.k === 'storm') { S.storm = mkStormView(ev); addFx('stormToast', null, null); sfx('stormCue') }
+    else if (ev.k === 'heal') { addFx('healfx', ev); if (ev.seat === S.seat) sfx('healChime') }
+    else if (ev.k === 'boost') if (ev.seat === S.seat) { addFx('boostfx', null, null); sfx('boostWhoosh') }
   }
-  function onDead() { if (S.phase === 'live') { S.phase = 'dead'; S.deadAt = performance.now() } }
+  function onDead() { if (S.phase === 'live') { S.phase = 'dead'; S.deadAt = performance.now(); S.deadFrame = S.frame; S.camMode = 'lead' /* 镜头从死亡位 lerp 平滑切向领先者（§3.4 signature），不断崖跳切 */ } }
+  /* F13 观战镜头目标：lead=排行榜首（kills 最高存活者，1Hz lb）渲染插值位；
+   * free=圈心全景（闭式外推零带宽）。spectator AOI 圆心服务端同源跟随（GAMES-176） */
+  function specTargetPos() {
+    if (S.camMode === 'free' || !S.lb || !S.lb.length) { const c = stormAt(S.frame); return { x: c.cx, y: c.cy, seat: -1 } }
+    const lead = S.lb[0][0]
+    const rec = lead !== S.seat ? S.ents.get(lead) : null
+    if (!rec) { const c = stormAt(S.frame); return { x: c.cx, y: c.cy, seat: -1 } }
+    const ip = interp(rec, S.frame)
+    return { x: ip.x, y: ip.y, seat: lead }
+  }
+
+  /* ---------- GAMES-176 FXLIST：[id, 名称, fb|state]——fb=反馈类（事件→首绘 ≤80ms
+   * 红线，台账断言），state=状态类（持续态，只报数）。fxT 打触发时戳、fxD 打首绘
+   * 时延（fxLedger 供 feel-check 复跑；设计 §3.4 juice 清单落地）。 ---------- */
+  const FXLIST = [
+    ['F01', 'hitmark', 'fb'],      // 命中标记（hit by=me → 准星 X 闪 160ms，§3.4 命中三连）
+    ['F02', 'dmgnum', 'fb'],       // 伤害飘字（hit → P0 数字上飘 700ms，§3.4）
+    ['F03', 'hurtflash', 'fb'],    // 受击闪白+微击退感（hit me → 己席白闪 200ms+震屏 2px/120ms+渲染层外推 3px 回弹——纯渲染不入判定，§3.2 同律）
+    ['F04', 'killfeed', 'fb'],     // 击杀淘汰播报（elim → feed 行「Px 淘汰 Py·剩 N」4s 滚动+我杀=KO 大字 1.2s，§3.4 signature）
+    ['F05', 'koshake', 'fb'],      // KO 震屏（elim 可见 → 240ms 4px，§3.4 signature）
+    ['F06', 'stormedge', 'fb'],    // 毒圈逼近边缘警示（圈边距 <120px → 屏缘红紫渐晕脉冲，§3.4 缩圈行）
+    ['F07', 'pickbadge', 'fb'],    // 拾取确认环（pick me → 绿环扩散 200ms+吸入，§3.3）
+    ['F08', 'confetti', 'state'],  // 糖豆爆糖粒雨（elim → 14 粒皮肤色抛散 700ms，粒数∝signature，§3.4）
+    ['F09', 'boxpop', 'state'],    // 掉落箱弹出（新箱首见 → scale 弹跳 300ms+落地尘环，§3.4 空投行）
+    ['F10', 'airdropMark', 'state'], // 空投落点标记（airdrop → toast+金圈脉冲 2s+小地图金点，§3.4）
+    ['F11', 'pickupBob', 'state'], // 拾取浮标（吸附圈内有箱 → 28px 吸附圈虚线+最近箱高亮脉冲+箱顶 chevron 浮动，§3.3）
+    ['F12', 'pingBadge', 'state'], // ping 徽标常驻（末值+均值双读——F-4 账本展示面，玩家/观战同款 §5.7）
+    ['F13', 'specCam', 'state'],   // 观战镜头平滑跟随（淘汰/观战 → lerp 0.12 跟领先者，tap 切圈心全景——§4.3 承接）
+    ['F14', 'specCard', 'state'],  // 淘汰信息卡（rank/kills/在场时长/ping/击杀者——O-2 承接）
+    ['F15', 'edgePip', 'state'],   // 边缘席位指示（观战 → 屏外存活席位边缘三角+距离，O-1 后续）
+    ['F16', 'boom', 'state'],      // 爆炸冲击环（boom → 橙环扩散 400ms）
+    ['F17', 'healfx', 'state'],    // 医疗回复飘字（heal → 绿 +N 600ms）
+    ['F18', 'stormToast', 'state'], // 缩圈横幅（storm → 「圈开始收缩」1.6s，§3.4）
+    ['F19', 'boostfx', 'state'],   // 加速残影（boost → 我席拖尾淡影 500ms）
+  ]
+  const fxLedger = []
+  function fxT(id) { fxLedger.push({ id, trig: performance.now(), lat: null }); if (fxLedger.length > 240) fxLedger.shift(); return fxLedger[fxLedger.length - 1] }
+  function fxD(rec) { if (rec && rec.lat == null) rec.lat = Math.max(0, Math.round(performance.now() - rec.trig)) }
+
+  /* ---------- 音效位（makeSound 平台范式：总闸门默认静音只记账；开启后 WebAudio
+   * 简音色占位——多人客户端本地化口径，GAMES-131/141/150 同式） ---------- */
+  const SND = { on: false, slots: ['hurtHit', 'koBoom', 'pickUp', 'boxDrop', 'airdropCue', 'stormCue', 'finalBeat', 'healChime', 'boostWhoosh', 'endWhistle'], calls: [], fired: {}, ac: null }
+  function sfx(slot) {
+    SND.calls.push({ g: slot, at: Math.round(performance.now()) })
+    SND.fired[slot] = true // 持久触达集（calls 滚动窗会被高频命中音刷掉）
+    if (SND.calls.length > 300) SND.calls.shift()
+    if (!SND.on) return
+    try {
+      if (!SND.ac) SND.ac = new (window.AudioContext || window.webkitAudioContext)()
+      const a = SND.ac, o = a.createOscillator(), g = a.createGain(), t = a.currentTime
+      const big = { koBoom: 1, endWhistle: 1, airdropCue: 1 }
+      const tick = { pickUp: 1, healChime: 1, finalBeat: 1 }
+      o.type = big[slot] || tick[slot] ? 'square' : 'sine'
+      const f0 = big[slot] ? 150 : tick[slot] ? 880 : slot === 'hurtHit' ? 300 : slot === 'stormCue' ? 220 : 480
+      o.frequency.setValueAtTime(f0, t)
+      o.frequency.exponentialRampToValueAtTime(Math.max(60, f0 * 0.6), t + 0.12)
+      g.gain.setValueAtTime(0.08, t)
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+      o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.16)
+    } catch { /* 音色失败不阻断 */ }
+  }
 
   /* ---------- fx（事件驱动零 diff 触发；台账见 fxLedger） ---------- */
   const fxLedgerArr = []
   function addFx(kind, a, b) {
-    const fx = { kind, a, b, at: performance.now() }
+    const fx = { kind, a, b, at: performance.now(), led: null }
+    const item = FXLIST.find((x) => x[1] === kind)
+    if (item) fx.led = fxT(item[0])
     S.fx.push(fx)
     let e = fxLedgerArr.find((x) => x.kind === kind)
     if (!e) { e = { kind, n: 0 }; fxLedgerArr.push(e) }
@@ -218,6 +312,12 @@
     const t = e.changedTouches ? e.changedTouches[0] : e
     const r = cv.getBoundingClientRect()
     const x = (t.clientX - r.left) / r.width * W, y = (t.clientY - r.top) / r.height * H
+    /* 观战镜头切换（F13：tap 任意处 lead⇄free——淘汰后/旁观席同款，§4.3 承接） */
+    if (S.phase === 'dead' || (S.seat < 0 && S.phase === 'live')) {
+      S.camMode = S.camMode === 'lead' ? 'free' : 'lead'
+      e.preventDefault()
+      return
+    }
     /* 技能钮/拾取钮命中（右下区） */
     if (hitBtn(sklBtn, x, y)) { IN.skl = nextSkl(); return }
     if (S.pickTarget && hitBtn(pickBtn, x, y)) { IN.pick = S.pickTarget; addFx('picktry', null, null); return }
@@ -312,8 +412,13 @@
   }
 
   /* ---------- 渲染主循环（60fps：本地 sim 态间渲染+毒圈闭式外推+弹体重演） ---------- */
-  let lastT = performance.now(), rafN = 0
+  let lastT = performance.now(), rafN = 0, paused = false
+  const perfLog = { costs: [], gaps: [], lastAt: 0 } // FE-5 口径：帧成本注入法（vsync 免疫 games-167）
   function frame(now) {
+    const t0 = performance.now()
+    if (perfLog.lastAt) perfLog.gaps.push(t0 - perfLog.lastAt) // 首帧播种（GAMES-141 恒 0 死码教训）
+    perfLog.lastAt = t0
+    if (paused) { requestAnimationFrame(frame); return } // QA 冻结采样（GAMES-103 范式：保留末帧供识图）
     const dt = Math.min(50, now - lastT); lastT = now
     rafN++
     /* 本地 sim 时钟步进（20Hz 渲染插值近似：每帧按 dt 推进 predictor） */
@@ -325,6 +430,8 @@
     /* 二类重演推进（弹体按 tick 步进——事件帧起算的确定性积分） */
     stepProjs()
     draw(now)
+    perfLog.costs.push(performance.now() - t0)
+    if (perfLog.costs.length > 240) { perfLog.costs.shift(); perfLog.gaps.shift() }
     requestAnimationFrame(frame)
   }
   function stepProjs() {
@@ -347,13 +454,24 @@
     ctx.fillStyle = SEA
     ctx.fillRect(0, 0, W, H)
     if (S.phase === 'boot') { bootDraw(); return }
-    /* 镜头：己席（预测位）跟随；观战=圈心 */
+    /* 镜头：己席（预测位）跟随；观战（淘汰后/旁观席）=F13 平滑 lerp 0.12 跟领先者
+     * （tap 切圈心全景——§4.3 承接/§5.7；领先者坐标=AOI 跟随面服务端同源） */
     let camX = S.cam.x, camY = S.cam.y
     if (S.phase === 'live' && haveVis && S.me && S.me.al) { camX = vis.x; camY = vis.y }
-    else { const c = stormAt(S.frame); camX = c.cx; camY = c.cy }
+    else if (S.phase === 'dead' || (S.seat < 0 && S.phase === 'live')) {
+      const t = specTargetPos()
+      camX = S.cam.x + (t.x - S.cam.x) * 0.12
+      camY = S.cam.y + (t.y - S.cam.y) * 0.12
+      if (!S.led13) S.led13 = fxT('F13')
+      fxD(S.led13) // F13 首绘打点（lerp 每帧走——打点窗内即回）
+    } else { const c = stormAt(S.frame); camX = c.cx; camY = c.cy }
     S.cam.x = camX; S.cam.y = camY
+    /* F05/F03 震屏（KO 4px/240ms+受击 2px/120ms）：世界层 sin 微抖，HUD 不入——纯渲染层 §3.2 */
+    const shAge = now - S.shake.at
+    const sk = shAge < S.shake.dur ? (1 - shAge / S.shake.dur) * S.shake.amp : 0
+    const shx = sk ? Math.sin(now * 0.09) * sk * 1000 : 0, shy = sk ? Math.cos(now * 0.11) * sk * 1000 : 0
     const sc = 0.55 // 世界 milli→屏幕 px（2400px 岛/375 视口≈6.4×下采样）
-    const w2s = (x, y) => [W / 2 + (x - camX) * sc / 1000, H / 2 + (y - camY) * sc / 1000]
+    const w2s = (x, y) => [W / 2 + (x - camX - shx) * sc / 1000, H / 2 + (y - camY - shy) * sc / 1000]
 
     /* 岛（草绿+沙缘+树丛点缀——亮色竞技场底） */
     const c0 = stormAt(S.frame)
@@ -373,17 +491,27 @@
     /* 四类·闭式毒圈：当前白实线+目标白虚线+圈外红紫斜纹罩（§7 双编码：形状优先） */
     drawStorm(camX, camY, sc, w2s)
 
-    /* 三类·箱（武器箱方+武器色描边/道具箱圆+白描边——§7 双编码表） */
+    /* 三类·箱（武器箱方+武器色描边/道具箱圆+白描边——§7 双编码表）+F09 弹出动画
+     * （首见拍 300ms ease-out 回弹+落地尘环——§3.4 空投/掉落行） */
     for (const [id, bx] of S.boxMap) {
       if (!bx.on) continue
       const [sx, sy] = w2s(bx.x, bx.y)
       if (sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) continue
       const isWpn = bx.k === 'wpn' || bx.k === 'nade' || bx.k === 'drop'
+      const popAge = bx.pop ? now - bx.pop : 1e9
+      const k2 = popAge < 300 ? 0.25 + 0.75 * (1 - Math.pow(1 - popAge / 300, 2)) * (1 + Math.sin(popAge / 300 * Math.PI) * 0.3) : 1
       ctx.strokeStyle = isWpn ? (WCOL[bx.k === 'drop' ? bx.w : (bx.w !== undefined ? bx.w : 5)] || WHITE) : WHITE
       ctx.lineWidth = 2
       ctx.fillStyle = 'rgba(255,255,255,0.85)'
-      if (isWpn) { ctx.beginPath(); ctx.rect(sx - 7, sy - 7, 14, 14); ctx.fill(); ctx.stroke() }
-      else { ctx.beginPath(); ctx.arc(sx, sy, 8, 0, 7); ctx.fill(); ctx.stroke() }
+      if (isWpn) { ctx.beginPath(); ctx.rect(sx - 7 * k2, sy - 7 * k2, 14 * k2, 14 * k2); ctx.fill(); ctx.stroke() }
+      else { ctx.beginPath(); ctx.arc(sx, sy, 8 * k2, 0, 7); ctx.fill(); ctx.stroke() }
+      if (popAge < 300) { // 落地尘环
+        ctx.strokeStyle = 'rgba(245,222,156,' + (0.7 * (1 - popAge / 300)) + ')'
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(sx, sy, 10 + popAge / 300 * 14, 0, 7); ctx.stroke()
+        if (bx.led9 == null) bx.led9 = fxT('F09')
+        fxD(bx.led9)
+      }
     }
 
     /* 远人（100ms 插值；皮肤色+威胁红光圈） */
@@ -395,13 +523,21 @@
       const r = 12 + Math.floor((ip.sh || 0) / 30)
       drawBean(sx, sy, r, SKINS[seat % 8], ip.a, false, ip)
     }
-    /* 己席（预测位；白圈描边=阵营双编码形状通道 §7） */
+    /* 己席（预测位；白圈描边=阵营双编码形状通道 §7）+F03 受击微击退渲染偏移（3px 外推
+     * 回弹 200ms——纯渲染层不入判定/预测域，§3.2 同律） */
     if (S.me && S.me.al && haveVis) {
+      const hAge = now - S.hurt.at
+      const hK = hAge < 200 ? (1 - hAge / 200) : 0
+      const hDx = hK ? Math.cos(S.hurt.ang) * hK * 3 : 0, hDy = hK ? Math.sin(S.hurt.ang) * hK * 3 : 0
       const [sx, sy] = w2s(vis.x, vis.y)
-      drawBean(sx, sy, 12 + Math.floor((S.me.sh || 0) / 30), '#FFF3D6', IN.aim || 0, true, S.me)
+      drawBean(sx + hDx, sy + hDy, 12 + Math.floor((S.me.sh || 0) / 30), '#FFF3D6', IN.aim || 0, true, S.me)
       if (S.me.hp === undefined) { /* noop */ }
       ctx.strokeStyle = WHITE; ctx.lineWidth = 2.5
-      ctx.beginPath(); ctx.arc(sx, sy, 12 + Math.floor((S.me.sh || 0) / 30) + 4, 0, 7); ctx.stroke()
+      ctx.beginPath(); ctx.arc(sx + hDx, sy + hDy, 12 + Math.floor((S.me.sh || 0) / 30) + 4, 0, 7); ctx.stroke()
+      if (hK > 0) { // F03 受击闪白（200ms 白罩+屏缘红晕由 drawFx vignette 承担）
+        ctx.fillStyle = 'rgba(255,255,255,' + (0.75 * hK) + ')'
+        ctx.beginPath(); ctx.arc(sx + hDx, sy + hDy, 12 + Math.floor((S.me.sh || 0) / 30), 0, 7); ctx.fill()
+      }
     }
     /* 二类重演弹体（与武器同色+形差：手雷虚线弧/火箭尾焰） */
     for (const [pid, pr] of S.projs) {
@@ -423,7 +559,7 @@
       ctx.setLineDash([])
     }
     drawFx(now, w2s)
-    hudDraw(now)
+    hudDraw(now, w2s)
     touchDraw(now)
     if (S.phase === 'dead') deadDraw(now)
     if (S.phase === 'ended') endDraw()
@@ -511,10 +647,12 @@
         ctx.strokeStyle = 'rgba(255,179,92,' + (1 - age / 400) + ')'
         ctx.lineWidth = 3
         ctx.beginPath(); ctx.arc(sx, sy, 8 + age / 400 * 40, 0, 7); ctx.stroke()
+        fxD(fx.led)
       } else if (fx.kind === 'hitmark' && age < 160) {
         ctx.strokeStyle = 'rgba(255,255,255,' + (1 - age / 160) + ')'
         ctx.lineWidth = 2
         ctx.beginPath(); ctx.moveTo(W / 2 - 8, H / 2 - 8); ctx.lineTo(W / 2 + 8, H / 2 + 8); ctx.moveTo(W / 2 + 8, H / 2 - 8); ctx.lineTo(W / 2 - 8, H / 2 + 8); ctx.stroke()
+        fxD(fx.led)
       } else if (fx.kind === 'dmgnum' && age < 700) {
         const me = S.me
         const [sx, sy] = w2s((S.ents.get(fx.a.seat) || { cur: {} }).cur.x || 0, (S.ents.get(fx.a.seat) || { cur: {} }).cur.y || 0)
@@ -522,18 +660,72 @@
         ctx.font = HF('P0', 'dmg', 13, '700')
         ctx.textAlign = 'center'
         ctx.fillText('-' + fx.a.dmg, sx, sy - 16 - age / 700 * 14)
+        fxD(fx.led)
       } else if (fx.kind === 'healfx' && age < 600) {
         ctx.fillStyle = 'rgba(61,220,132,' + (1 - age / 600) + ')'
         ctx.font = HF('P0', 'heal', 13, '600')
         ctx.textAlign = 'center'
         ctx.fillText('+' + fx.a.v, W / 2, H / 2 - 30 - age / 600 * 10)
+        fxD(fx.led)
       } else if (fx.kind === 'stormToast' && age < 1600) {
         bannerDraw('圈开始收缩', age / 1600)
-      } else if (fx.kind === 'pickok' && age < 200) {
+        fxD(fx.led)
+      } else if (fx.kind === 'pickbadge' && age < 200) {
         ctx.strokeStyle = 'rgba(61,220,132,' + (1 - age / 200) + ')'
         ctx.lineWidth = 3
         ctx.beginPath(); ctx.arc(W / 2, H / 2, 20 + age / 2, 0, 7); ctx.stroke()
+        fxD(fx.led)
+      } else if (fx.kind === 'killfeed' && age < 80) { // F04 播报（feed 列表本体在 hudDraw 常画——此为触发首绘打点窗）
+        fxD(fx.led)
+      } else if (fx.kind === 'confetti' && age < 700) { // F08 糖粒雨（§3.4 signature：糖豆爆成彩色糖粒）
+        if (!fx.parts) {
+          const vic = fx.a.seat === S.seat ? (haveVis ? { x: vis.x, y: vis.y } : (S.me || {})) : ((S.ents.get(fx.a.seat) || {}).cur || {})
+          fx.parts = []
+          for (let i = 0; i < 14; i++) fx.parts.push({ dx: (Math.random() - 0.5) * 44, dy: -6 - Math.random() * 26, g: 0.12 + Math.random() * 0.1, c: SKINS[fx.a.seat % 8] })
+          fx.px = vic.x || 1200000; fx.py = vic.y || 1200000
+        }
+        const [sx, sy] = w2s(fx.px, fx.py)
+        const k2 = age / 700
+        for (const p2 of fx.parts) {
+          ctx.globalAlpha = 1 - k2
+          ctx.fillStyle = p2.c
+          ctx.fillRect(sx + p2.dx * k2 - 2, sy + p2.dy * k2 + p2.g * k2 * k2 * 160 - 2, 4, 4)
+        }
+        ctx.globalAlpha = 1
+        fxD(fx.led)
+      } else if (fx.kind === 'airdropMark' && age < 2000) { // F10 空投标落点（金圈脉冲+toast）
+        const [sx, sy] = w2s(fx.a.x, fx.a.y)
+        ctx.strokeStyle = 'rgba(255,224,102,' + (0.9 * (1 - age / 2000)) + ')'
+        ctx.lineWidth = 3
+        ctx.beginPath(); ctx.arc(sx, sy, 34 - age / 2000 * 18, 0, 7); ctx.stroke()
+        if (age < 1400) bannerDraw('空投标落点', age / 1400)
+        fxD(fx.led)
+      } else if (fx.kind === 'boostfx' && age < 500) {
+        ctx.strokeStyle = 'rgba(111,200,255,' + (1 - age / 500) + ')'
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(W / 2, H / 2, 16 + age / 500 * 26, 0, 7); ctx.stroke()
+        fxD(fx.led)
       }
+    }
+    /* F03 受击屏缘红晕 + F06 毒圈逼近边缘警示（径向渐晕脉冲——渲染层零判定） */
+    let vign = 0, vcol = '208,90,122'
+    const hAge = now - S.hurt.at
+    if (hAge < 300 && S.me && S.me.al) vign = Math.max(vign, 0.5 * (1 - hAge / 300))
+    if (S.phase === 'live' && S.me && S.me.al && haveVis) {
+      const c = stormAt(S.frame)
+      const dEdge = c.r - Math.hypot((vis.x || 0) - c.cx, (vis.y || 0) - c.cy) // 圈边距（正=圈内余量）
+      if (dEdge < 120000) {
+        vign = Math.max(vign, (0.35 + 0.25 * Math.sin(now / 140)) * Math.min(1, Math.max(0.2, 1 - dEdge / 120000)))
+        if (!S.led06) S.led06 = fxT('F06')
+        fxD(S.led06) // F06 首绘打点（警示渐晕在场）
+      }
+    }
+    if (vign > 0.01) {
+      const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.62)
+      g.addColorStop(0, 'rgba(' + vcol + ',0)')
+      g.addColorStop(1, 'rgba(' + vcol + ',' + vign.toFixed(3) + ')')
+      ctx.fillStyle = g
+      ctx.fillRect(0, 0, W, H)
     }
     if (S.koBanner && now - S.koBanner.at < 1200) bannerDraw(S.koBanner.txt, (now - S.koBanner.at) / 1200)
     if (S.fx.length > 40) S.fx = S.fx.filter((f) => now - f.at < 800)
@@ -547,8 +739,8 @@
     ctx.fillText(txt, W / 2, 226)
   }
 
-  /* ---------- HUD（顶栏+小地图+武器栏；HF __applied 自证） ---------- */
-  function hudDraw(now) {
+  /* ---------- HUD（顶栏+小地图+武器栏；HF __applied 自证；FEEL 面：feed/浮标/边缘指示） ---------- */
+  function hudDraw(now, w2s) {
     /* 顶栏 56px */
     ctx.fillStyle = 'rgba(23,83,122,0.82)'
     ctx.fillRect(0, 0, W, TOP_H)
@@ -574,12 +766,20 @@
       const left = Math.max(0, Math.ceil((S.storm.t1 - S.frame) * 50 / 1000))
       ctx.fillText('缩圈 ' + left + 's', 88, 44)
     }
-    /* ping 徽标（P0 13px/600，T7-A 升档） */
+    /* ping 徽标（P0 13px/600，T7-A 升档；F-4 账本展示面 F12：末值+滚动窗均值双读
+     * ——「低延迟竞技」卖点的可信口径；观战/淘汰态同款常驻（hudDraw 全相位跑）） */
     const ping = S.rec.pings.length ? S.rec.pings[S.rec.pings.length - 1] : 0
+    const pingAvg = S.rec.pings.length ? Math.round(S.rec.pings.reduce((a, b) => a + b, 0) / S.rec.pings.length) : 0
     ctx.fillStyle = ping > 250 ? '#FF8A7A' : ping > 120 ? '#FFE066' : '#7DE8A8'
     ctx.textAlign = 'right'
     ctx.font = HF('P0', 'ping', 13, '600')
     ctx.fillText(ping ? ping + 'ms' : '—', W - 76, 20)
+    if (S.rec.pings.length) { if (!S.led12) S.led12 = fxT('F12'); fxD(S.led12) } // F12 常驻态首绘打点
+    if (S.rec.pings.length >= 2) { // 均值小字（P2 9px——滚动窗 20 条≈100s 履历）
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'
+      ctx.font = HF('P2', 'pingavg', 9, '400')
+      ctx.fillText('均 ' + pingAvg, W - 76, 32)
+    }
     /* 右上小地图 Ø96：双圈+自位白点+密度点（圈即 HUD 主视觉 §7） */
     const mmR = 44, mmX = W - mmR - 8, mmY = TOP_H + mmR + 8
     ctx.fillStyle = 'rgba(23,83,122,0.55)'
@@ -638,17 +838,78 @@
     ctx.textAlign = 'right'
     ctx.fillText('party-brawl · v1', W - 8, H - 6)
     ctx.textAlign = 'left'
-    /* 拾取钮浮现条件：28px 吸附圈内有箱（§3.3 ≤1 帧） */
-    S.pickTarget = -1
+    /* 拾取钮浮现条件：28px 吸附圈内有箱（§3.3 ≤1 帧）；F11 浮标锚=最近箱对象 */
+    S.pickTarget = -1; S.pickBox = null
     if (S.phase === 'live' && haveVis) {
-      let bd = 28000 * 28000, tgt = -1
+      let bd = 28000 * 28000, tgt = -1, tbx = null
       for (const [id, bx] of S.boxMap) {
         if (!bx.on) continue
         const dx = bx.x - vis.x, dy = bx.y - vis.y
         const d2 = dx * dx + dy * dy
-        if (d2 < bd) { bd = d2; tgt = Number(id.slice(1)) }
+        if (d2 < bd) { bd = d2; tgt = Number(id.slice(1)); tbx = bx }
       }
-      S.pickTarget = tgt
+      S.pickTarget = tgt; S.pickBox = tbx
+    }
+    /* F04 kill feed（击杀淘汰播报：顶栏下右侧 3 行 4s 淡出；我参与行金色——§3.4） */
+    S.feed = S.feed.filter((f) => now - f.at < 4000)
+    for (let i = 0; i < S.feed.length; i++) {
+      const f = S.feed[i]
+      const k2 = Math.min(1, (now - f.at) / 200) * (1 - Math.max(0, (now - f.at - 3200) / 800))
+      ctx.fillStyle = f.mine ? 'rgba(255,224,102,' + (0.9 * k2) + ')' : 'rgba(23,83,122,' + (0.72 * k2) + ')'
+      ctx.fillRect(W - 158, TOP_H + 6 + i * 22, 150, 18)
+      ctx.fillStyle = f.mine ? INK : WHITE
+      ctx.font = HF('P1', 'feed', 11, '600')
+      ctx.textAlign = 'left'
+      ctx.fillText(f.txt, W - 152, TOP_H + 19 + i * 22)
+    }
+    /* F11 拾取浮标（28px 吸附圈虚线+最近箱高亮脉冲+箱顶 chevron 浮动——§3.3 可读面） */
+    if (S.pickTarget >= 0 && S.pickBox && S.phase === 'live' && haveVis) {
+      const [px2, py2] = [W / 2, H / 2]
+      const bob = Math.sin(now / 180) * 3
+      const [bxs, bys] = w2s(S.pickBox.x, S.pickBox.y)
+      const d2me = Math.hypot(S.pickBox.x - vis.x, S.pickBox.y - vis.y)
+      if (d2me < 60000) { // 箱在屏内才画 chevron（浮标=拾取对象指示）
+        ctx.strokeStyle = 'rgba(125,232,168,' + (0.7 + 0.3 * Math.sin(now / 150)) + ')'
+        ctx.lineWidth = 2.5
+        ctx.setLineDash([])
+        ctx.beginPath(); ctx.moveTo(bxs - 5, bys - 16 + bob); ctx.lineTo(bxs, bys - 22 + bob); ctx.lineTo(bxs + 5, bys - 16 + bob); ctx.stroke()
+        if (!S.led11) S.led11 = fxT('F11')
+        fxD(S.led11)
+      }
+      /* 吸附圈（世界 28px→屏幕；仅半透明提示，不抢钮面） */
+      ctx.strokeStyle = 'rgba(125,232,168,0.4)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 4])
+      ctx.beginPath(); ctx.arc(px2, py2, 28000 * 0.55 / 30, 0, 7); ctx.stroke()
+      ctx.setLineDash([])
+    }
+    /* F15 边缘席位指示（观战态：屏外存活席位→屏缘三角+距离 m——O-1 后续；mm 1Hz） */
+    if (S.phase === 'dead' || (S.seat < 0 && S.phase === 'live')) {
+      const cx2 = S.cam.x, cy2 = S.cam.y
+      let drew = false
+      for (const d of S.mm || []) {
+        if (d[0] === S.seat) continue
+        const [mx, my] = w2s(d[1] * 1000, d[2] * 1000)
+        if (mx > 20 && mx < W - 20 && my > TOP_H + 20 && my < H - 20) continue // 屏内不标
+        const ang = Math.atan2(my - H / 2, mx - W / 2)
+        const ex = Math.max(24, Math.min(W - 24, W / 2 + Math.cos(ang) * (W / 2 - 30)))
+        const ey = Math.max(TOP_H + 30, Math.min(H - 30, H / 2 + Math.sin(ang) * (H / 2 - 44)))
+        ctx.fillStyle = SKINS[d[0] % 8]
+        ctx.beginPath(); ctx.moveTo(ex + Math.cos(ang) * 7, ey + Math.sin(ang) * 7)
+        ctx.lineTo(ex + Math.cos(ang + 2.5) * 6, ey + Math.sin(ang + 2.5) * 6)
+        ctx.lineTo(ex + Math.cos(ang - 2.5) * 6, ey + Math.sin(ang - 2.5) * 6); ctx.fill()
+        const distM = Math.round(Math.hypot(d[1] * 1000 - cx2, d[2] * 1000 - cy2) / 1000)
+        ctx.fillStyle = 'rgba(255,255,255,0.75)'
+        ctx.font = HF('P2', 'pip', 9, '400')
+        ctx.textAlign = 'center'
+        ctx.fillText(distM + 'm', ex, ey + 18)
+        drew = true
+      }
+      if (drew) { if (!S.led15) S.led15 = fxT('F15'); fxD(S.led15) }
+    }
+    /* 决赛圈心跳（alive≤3 低鼓点 1Hz——§3.4 终局张力；静音记账只留 fired 证据） */
+    if (S.phase === 'live' && S.alive <= 3 && S.alive > 1) {
+      if (now - (S.lastBeat || 0) > 700) { S.lastBeat = now; sfx('finalBeat') }
     }
   }
   /* ---------- 触控件（射击钮 Ø72+技能钮 Ø56+拾取钮 Ø64+浮动摇杆） ---------- */
@@ -690,17 +951,30 @@
     }
   }
   function deadDraw(now) {
+    /* F14 淘汰信息卡（O-2 承接 §4.3）：rank/击杀/在场时长/ping 双读/击杀者——半卡不遮
+     * 观战场（下移 H/3 带+世界层照常渲染，观战内容=KO 横幅/feed/边缘指示） */
+    const secs = Math.max(0, Math.round((S.deadFrame - S.startFrame) * 50 / 1000))
+    const killer = S.killedBy >= 0 ? 'P' + (S.killedBy + 1) : '毒圈'
+    const ping = S.rec.pings.length ? S.rec.pings[S.rec.pings.length - 1] : 0
+    const pingAvg = S.rec.pings.length ? Math.round(S.rec.pings.reduce((a, b) => a + b, 0) / S.rec.pings.length) : 0
     ctx.fillStyle = 'rgba(23,83,122,0.72)'
     ctx.fillRect(0, H / 3, W, H / 3)
     ctx.fillStyle = WHITE
     ctx.textAlign = 'center'
     ctx.font = HF('P0', 'dead', 15, '700')
-    ctx.fillText('被淘汰 · 排名 ' + ((S.me && S.me.rank) || '—'), W / 2, H / 3 + 36)
+    ctx.fillText('被淘汰 · 排名 ' + ((S.me && S.me.rank) || '—'), W / 2, H / 3 + 26)
     ctx.font = HF('P1', 'deadsub', 11, '400')
-    ctx.fillText('观战余局（镜头=圈心）· 战报：击杀 ' + S.kills, W / 2, H / 3 + 60)
+    ctx.fillText('击杀 ' + S.kills + ' · 在场 ' + Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') + ' · 被 ' + killer + ' 淘汰', W / 2, H / 3 + 48)
+    ctx.fillText('延迟 ' + (ping || '—') + 'ms（均 ' + (pingAvg || '—') + '）—— 链路没吃掉你的走位', W / 2, H / 3 + 68)
+    ctx.fillStyle = '#7DE8A8'
+    ctx.font = HF('P1', 'deadcta', 11, '600')
+    ctx.fillText(S.camMode === 'lead' ? '观战：跟随领先者（tap 切圈心全景）' : '观战：圈心全景（tap 切回领先者）', W / 2, H / 3 + 92)
+    if (!S.led14) S.led14 = fxT('F14')
+    fxD(S.led14)
   }
   function endDraw() {
     const r = S.endInfo || {}
+    if (!S.endWhistled) { S.endWhistled = 1; sfx('endWhistle') }
     ctx.fillStyle = 'rgba(23,83,122,0.88)'
     ctx.fillRect(0, 0, W, H)
     ctx.fillStyle = WHITE
@@ -715,7 +989,7 @@
       '—— 延迟补偿战报 ——',
       '和解回填 ' + rec.n + ' 次（软收敛 ' + rec.soft + '/硬回滚 ' + rec.hard + '）',
       '修正量中位 ' + (rec.n ? Math.round(rec.sum / rec.n / 10) / 10 : 0) + 'px · 峰值 ' + Math.round(rec.maxPx / 10) / 10 + 'px',
-      'ping 末值 ' + (rec.pings.length ? rec.pings[rec.pings.length - 1] : '—') + 'ms',
+      'ping 末值 ' + (rec.pings.length ? rec.pings[rec.pings.length - 1] : '—') + 'ms · 均值 ' + (rec.pings.length ? Math.round(rec.pings.reduce((a, b) => a + b, 0) / rec.pings.length) : '—') + 'ms',
       '链路没吃掉你的走位。',
     ]
     lines.forEach((l, i) => ctx.fillText(l, W / 2, 180 + i * 24))
@@ -738,13 +1012,50 @@
     }
   }, 5000)
 
-  /* ---------- debug 面（perf-smoke/识图契约） ---------- */
+  /* ---------- debug 面（perf-smoke/识图/feel-check 契约） ---------- */
+  const pingAvgOf = () => S.rec.pings.length ? Math.round(S.rec.pings.reduce((a, b) => a + b, 0) / S.rec.pings.length) : 0
+  function fxScene(name) { // 手感场景驱动（QA 取证入口：合成事件走同一 onEvent 管线）
+    const other = (S.seat + 1) % 20
+    const vis0 = haveVis ? vis : { x: 1200000, y: 1200000 }
+    if (name === 'hitmark') onEvent({ k: 'hit', seat: other, by: S.seat, dmg: 12, hp: 88, sh: 0 }, S.frame) // F01/F02
+    else if (name === 'hurt') onEvent({ k: 'hit', seat: S.seat, by: other, dmg: 15, hp: 85, sh: 0 }, S.frame) // F02/F03
+    else if (name === 'kill') onEvent({ k: 'elim', seat: other, by: S.seat, rank: 5 }, S.frame) // F04/F05/F08（KO 大字+糖粒雨+震屏）
+    else if (name === 'killme') { if (S.phase === 'live') onEvent({ k: 'elim', seat: S.seat, by: other, rank: 5 }, S.frame) } // F13/F14 观战视图全链（真切换 dead）
+    else if (name === 'pick') onEvent({ k: 'pick', seat: S.seat, id: 'b0', k2: 'wpn', w: 2, it: 1 }, S.frame) // F07
+    else if (name === 'airdrop') onEvent({ k: 'airdrop', x: vis0.x + 60000, y: vis0.y - 40000, box: 'bQ' + Math.floor(Math.random() * 1e6) }, S.frame) // F10
+    else if (name === 'box') { S.boxMap.set('bQ' + Math.floor(Math.random() * 1e6), { id: 'b', k: 'wpn', w: 3, x: vis0.x + 30000, y: vis0.y + 22000, on: 1, pop: performance.now() }) } // F09（渲染循环拾 pop）
+    else if (name === 'bob') { S.boxMap.set('bQ' + Math.floor(Math.random() * 1e6), { id: 'b', k: 'med', x: haveVis ? vis.x + 20000 : 1200000, y: haveVis ? vis.y + 8000 : 1200000, on: 1, pop: performance.now() }) } // F11（吸附圈内箱）
+    else if (name === 'storm') { const v = S.storm || { p: 0, t0: 0, t1: 100, r0: 1200000, r1: 700000, x0: 1200000, y0: 1200000, x1: 1200000, y1: 1200000 }; onEvent(Object.assign({ k: 'storm' }, v), S.frame) } // F17（当前参数回放=零态变）
+    else if (name === 'heal') onEvent({ k: 'heal', seat: S.seat, v: 25 }, S.frame) // F16
+    else if (name === 'boost') onEvent({ k: 'boost', seat: S.seat }, S.frame) // F19
+    else if (name === 'specfree') { S.camMode = S.camMode === 'lead' ? 'free' : 'lead' } // F13 镜头模式切换（不切 phase 的轻量驱动）
+    return true
+  }
   window.__GAMES_DEBUG__ = {
     hudFonts,
-    state: () => ({ phase: S.phase, seat: S.seat, frame: S.frame, ack: S.ack, seq: S.seq, alive: S.alive, rec: S.rec, fxLedger: fxLedgerArr }),
+    state: () => ({
+      phase: S.phase, seat: S.seat, role: S.role, frame: S.frame, ack: S.ack, seq: S.seq, alive: S.alive, rec: S.rec,
+      fxLedger: fxLedgerArr, camMode: S.camMode, specSeat: S.phase === 'dead' || S.seat < 0 ? specTargetPos().seat : -1,
+      cam: { x: Math.round(S.cam.x), y: Math.round(S.cam.y) }, ping: S.rec.pings.length ? S.rec.pings[S.rec.pings.length - 1] : 0, pingAvg: pingAvgOf(),
+      feedN: S.feed.length, killedBy: S.killedBy, deadFrame: S.deadFrame, startFrame: S.startFrame, kills: S.kills, rank: S.me && S.me.rank,
+    }),
     stormNow: () => stormAt(S.frame),
     projsN: () => S.projs.size,
     entsN: () => S.ents.size,
+    pause: (v) => { paused = !!v },
+    perf: () => {
+      const cs = perfLog.costs.slice(-180), gs = perfLog.gaps.slice(-180)
+      const avg = cs.length ? cs.reduce((a, b) => a + b, 0) / cs.length : 0
+      const sorted = cs.slice().sort((a, b) => a - b)
+      const gAvg = gs.length ? gs.reduce((a, b) => a + b, 0) / gs.length : 0
+      return { n: cs.length, costAvgMs: +avg.toFixed(2), costP95Ms: +(sorted[Math.floor(sorted.length * 0.95)] || 0).toFixed(2), costJankPct: +(cs.filter((c) => c > 25).length / Math.max(1, cs.length) * 100).toFixed(2), rafGapMs: +gAvg.toFixed(1) }
+    },
+    fxProbe: (ev) => { onEvent(ev, S.frame); return true }, // 合成事件走同一 onEvent 管线
+    fxScene,
+    fxList: () => FXLIST.map((f) => ({ id: f[0], name: f[1], cls: f[2] })),
+    fxLedger: () => fxLedger.map((l) => ({ id: l.id, trig: Math.round(l.trig), lat: l.lat })),
+    sfxGroups: () => ({ on: SND.on, slots: SND.slots.slice(), fired: Object.keys(SND.fired), calls: SND.calls.slice() }),
+    sndOn: (v) => { SND.on = !!v },
   }
   connect()
 })()

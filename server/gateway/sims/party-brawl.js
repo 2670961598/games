@@ -58,12 +58,16 @@ function emitOne(room, ctxRec, r, opt = {}) {
   const b = connBook(ctxRec.ctx)
   const seat = ctxRec.seat
   const own = seat >= 0 ? st.players[seat] : null
-  /* 圈即 AOI（§5.4 新面②）：圆心=己席坐标、r=min(500, r_storm+240)+15px 滞回；
-   * spectator 镜头点 r 固定 460（§5.7）；淘汰席保持末圈（观战转位前视野锚） */
+  /* 圈即 AOI（§5.4 新面②）：圆心=己席坐标、r=min(500, r_storm+240)+15px 滞回。
+   * GAMES-176 O-2 承接（观战镜头跟随领先者——§5.7「AOI 圆心=镜头点」设计本义）：
+   * 已淘汰席/旁观席圆心=排行榜首存活者（st.lb[0]，每拍重算；客户端镜头 lerp 补平滑），
+   * r 固定 460（O-1 修复值）；lb 空（终拍/异常）回退圈心 */
   const c = P.stormOf(st, st.tick)
+  const leadRec = st.lb && st.lb.length ? st.players[st.lb[0][0]] : null
+  const lead = leadRec && leadRec.alive ? leadRec : null
   let cx = b.cx, cy = b.cy, rr = b.aoiR
   if (own && own.alive) { cx = own.x; cy = own.y; rr = Math.min(500000, c.r + 240000) }
-  else if (own && !own.alive) { rr = Math.min(500000, c.r + 240000) }
+  else if (lead) { cx = lead.x; cy = lead.y; rr = 460000 }
   else { cx = c.cx; cy = c.cy; rr = 460000 }
   if (rr + 15000 > b.aoiR) b.aoiR = rr // 15px 滞回带（只扩不缩防抖动，mmo GAMES-53 口径）
   b.cx = cx; b.cy = cy
