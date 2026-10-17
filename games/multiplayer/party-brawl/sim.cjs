@@ -784,9 +784,10 @@ function brainImpl(st, seat, level, rng, env) {
   mem.dt--
   const outSkl = mem.skl || 0, outPick = mem.pick !== undefined ? mem.pick : -1
   mem.skl = 0; mem.pick = -1 // 离散脉冲一次性（防决策间隔内逐拍重触发——cd 外的重复消费）
-  /* F-3 开火距离门（逐拍实时）：贴身 ≤40px（枪口偏移 16px+敌命中半径上限 18px+余量）
-   * 停火——弹几何打不中重叠/贴身敌（枪口已越过敌身），继续射=空耗弹匣一整 reload 窗；
-   * 决策拍间隔内敌距可收敛穿透，门必须在消费拍实时量距；拳无弹体不受门 */
+  /* F-3 开火距离门（逐拍实时）：贴身 ≤31px（=枪口偏移 16px+敌命中半径 15px 的几何必中界）
+   * 停火——弹几何打不中重叠敌（枪口已越过敌身），继续射=空耗弹匣一整 reload 窗；
+   * 31-40px 段弹段扫掠可中（合理杀伤）不入门；决策拍间隔内敌距可收敛穿透，门必须在
+   * 消费拍实时量距；拳无弹体不受门 */
   let fireOut = mem.fire
   if (fireOut && p.w > 0) {
     let dmin2 = Infinity
@@ -796,7 +797,7 @@ function brainImpl(st, seat, level, rng, env) {
       const dd2 = ddx * ddx + ddy * ddy
       if (dd2 < dmin2) dmin2 = dd2
     }
-    if (isqrtM(dmin2) <= 40000) fireOut = 0
+    if (isqrtM(dmin2) <= 31000) fireOut = 0
   }
   return { mx: mem.mx, my: mem.my, aim: mem.aim || p.aim, fire: fireOut, skl: outSkl, pick: outPick }
 }
