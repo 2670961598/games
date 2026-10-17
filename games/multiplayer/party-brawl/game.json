@@ -1,0 +1,102 @@
+{
+  "slug": "party-brawl",
+  "title": "派对大乱斗",
+  "type": "multiplayer",
+  "tier": "normal",
+  "levels": 1,
+  "specVersion": "1.1.0",
+  "version": "1.0.0",
+  "orientation": "portrait",
+  "entry": "index.html",
+  "controls": {
+    "primary": "drag",
+    "secondary": "tap"
+  },
+  "avgDurationSec": 330,
+  "bot": {
+    "levels": ["casual", "balanced", "competitive"],
+    "takeover": "casual",
+    "swarm": true,
+    "desc": "三档=缩圈决策树 Z0 圈预算根键控同树改阈值（设计 §4，royale Bot 新领域配方）：casual 游走豆（安全系数 0.95 拖到毒边+drift ±18°+仅反击 3s 记仇+医疗 40% 健忘）/ balanced 圈心豆（0.8+机会交战+饿武优先最近箱）/ competitive 决赛豆（0.7 敢拖+主动 HUNT+lead 闭式解预判+HP<70 即用医疗）。决策间隔 30/12/8 tick；rng=mulberry32(seed^seat) 确定性",
+    "mercy": {
+      "minFoeLose": 2,
+      "hardFoeLose": 4,
+      "desc": "放水链（设计 §4.4，GAMES-112/166 三层范式 royale 化）：真人连败≥2 瞄准误差×1.8~2+不抢其近旁箱（生态位让位）；≥4 对该席免猎窗+决赛圈让圈心。连败源=终局 rank pulse（rank≤5 断败/≥15 连败++，META.pulseRank=5）"
+    }
+  },
+  "scoring": {
+    "win": "最终存活 rank=1（last-standing）",
+    "lose": "被淘汰/毒杀（rank 末段），淘汰后观战",
+    "s2": "击杀数 kills",
+    "s3": "伤害总量+延迟补偿战报"
+  },
+  "description": "20 人糖豆岛缩圈生存：落地捡枪、缩圈跑毒、决赛圈囤雷对峙。淘汰对手掉装备箱，200ms 延迟照样走位开枪——预测回填写进战报给你看。",
+  "net": {
+    "tech": "S6+S7",
+    "gameId": "party-brawl",
+    "mode": "mini-royale",
+    "seats": 20,
+    "api": {
+      "spec": 1,
+      "ops": {
+        "move": {
+          "ws": "input",
+          "keys": ["mx", "my"],
+          "desc": "摇杆向量 20Hz 持续上报（心跳兼保活）：mx,my∈[-100,100] 整数（<30 幅值=死区静止）；input.frame=客户端输入序号 seq（预测和解 ack 锚点，§5.1）。本地预测同式零等待"
+        },
+        "shoot": {
+          "ws": "input",
+          "keys": ["aim", "fire", "skl"],
+          "desc": "射击/技能三合一：aim=uint16 brads 弹向（变才带）、fire 0|1 开关（变才带）、skl 离散触发沿 {1:手雷 2:医疗 3:加速}（随 q 一次性捕获，宽限沿用不重放）。开火本地乐观+弹道重演（§5.2 二类）"
+        },
+        "pick": {
+          "ws": "input",
+          "keys": ["pick"],
+          "desc": "拾取箱（离散指令）：pick=吸附圈内目标箱 id；服务器权威裁决（同 tick 竞争 box id 升序先到先得，§2.7④）；本地乐观吸入动画 <100ms（§3.3），失败回流滚"
+        }
+      },
+      "ctlOps": ["$disconnect", "$reconnect", "$sync"],
+      "endState": {
+        "phase": "ended",
+        "result": "end 消息同形（协议 §4.2）；scores 每席 {rank, kills, dmg}",
+        "winner": "'A'=API 席 rank=1（最终存活/timeout 排名首位） ｜ 'B'=任一 bot 席 rank=1",
+        "teams": { "A": [0], "B": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19] },
+        "reason": "last-standing（存活≤1 出清） ｜ timeout（9600 tick 按 (存活,HP,kills) 定格） ｜ abandon"
+      },
+      "assertions": [
+        "A1 能开始：join→welcome.state（圈参数/装备/箱/名册）→ started→live；快照 10Hz 到流、20 席秒配",
+        "A2 能赢（统计制 §6.1）：royale-rush 策略三 seed 两胜——终局 API 席 rank=1（reason=last-standing 或 timeout 首位）",
+        "A3 能输：idle 策略（零 op 站桩）被毒圈/近战 bot 淘汰，rank=末段（≤16），单局严格",
+        "A4 操作注入→快照反映 <100ms：move 注入后 ≤2 tick 快照己席 (x,y) 朝 (mx,my) 位移（速度斜坡首拍可断言）",
+        "A5 断线重连 <10s：$disconnect→$reconnect → welcome 全量（HP/装备/弹药/圈参数/ack/在飞弹 state.projs）→ pending 重放续跑",
+        "A6 确定性双跑：同 seed 同策略两房终态 stateHash 与输入日志逐字节相等，且在线终态 hash==回放器重放 hash（bot env 组同形 kinds+foeLose 全零——A6 parity 纪律）",
+        "A7 淘汰断言：elim 事件账本 ≥1 且 rank 分配 = 淘汰序逆推 20→1 无重号；每条击杀者 kills 累计与账本一致；掉落箱数==淘汰数（T6-B 对账）",
+        "A8 缩圈剧本：r(t) 闭式解逐 10 tick 采样对账（±1px）；圈外席毒伤账本==相位 DPS 烘焙表、圈内零毒伤；相位切换 8 次与 ext.storm 事件一致",
+        "A9 200ms 双臂：latency200 两臂各三 seed——双臂均出清；API 席 rank 中位差 ≤3 位、kills 中位差 ≤1；armB carriedInputs>0（§5.6 表）"
+      ],
+      "script": {
+        "seed": 20261018,
+        "timeScale": 8,
+        "startDelayMs": 600,
+        "maxTicks": 9600,
+        "scenarios": {
+          "win": { "stat": "runs:3 seeds {S,S+1,S+2} 两胜+中位", "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "royale-rush" },
+          "lose": { "maxTicks": 2400, "botLevels": [null, "competitive","competitive","balanced","balanced","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
+          "storm": { "maxTicks": 6900, "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "any", "policy": "orbit-edge",
+                     "asserts": ["A8 半径闭式解对账（P0..S3 全相位）", "orbit-edge 恒圈外毒伤递减", "ext.storm 相位事件 8 次"] },
+          "deterministic": {
+            "runs": 2, "autopilot": true, "botLevels": [null, "competitive","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "any", "policy": "royale-rush",
+            "assert": "两 run 终态 stateHash 相等 && 输入日志逐字节相等 && stateHash == replayHash"
+          },
+          "latency200": {
+            "stat": "每臂 runs:3 seeds {S,S+1,S+2} 中位",
+            "arms": [ { "delayMs": 0 }, { "delayMs": 200 } ],
+            "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"],
+            "policy": "royale-rush",
+            "assert": "双臂均出清 && API 席 rank 中位差 ≤3 && kills 中位差 ≤1 && armB carriedInputs>0（§5.6 表）"
+          }
+        }
+      }
+    }
+  }
+}

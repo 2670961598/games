@@ -53,6 +53,13 @@ const sanitizeKeys = (k) => {
   // dash=冲刺开关 0|1（质量换速度）——持续态键（lastInput 宽限沿用）；
   // 与 boost（snake-king）同形不同名：io 鱼语义 dash+质量账本（设计 §2.3）
   if (k && k.dash !== undefined) out.dash = k.dash ? 1 : 0
+  // S6+S7 twin-stick 键（GAMES-172 party-brawl 先例，协议 §6 input 面扩展）：
+  // aim=弹向 uint16 brads（持续态、变才带）；skl=技能离散触发沿 {1:手雷 2:医疗 3:加速}；
+  // pick=拾取目标箱 id（离散指令，服务器权威裁决）——skl/pick 随 q 捕获为一次性动作槽
+  // （sim seatInput 消费后清零，宽限沿用不重放——GAMES-51 echo-sem 免疫），不带该键的游戏零感知
+  if (k && Number.isFinite(k.aim)) out.aim = Math.max(0, Math.min(65535, Math.trunc(k.aim)))
+  if (k && k.skl !== undefined && k.skl !== null && k.skl !== 0) out.skl = Math.max(0, Math.min(3, Math.trunc(k.skl)))
+  if (k && Number.isFinite(k.pick) && k.pick >= 0) out.pick = Math.trunc(k.pick)
   return out
 }
 
@@ -440,6 +447,18 @@ export class RoomManager {
         if (!Number.isInteger(pos)) continue
         const rec = this.pulse.get(s.conn) || { lose: 0, win: 0 }
         if (pos <= room.sim.META.pulsePos) { rec.win++; rec.lose = 0 } else { rec.lose++; rec.win = 0 }
+        this.pulse.set(s.conn, rec)
+      }
+    } else if (room.sim.META.pulseRank && result && result.scores) {
+      // GAMES-172 royale 放水链：终局按 rank 记真人 pulse（rank≤pulseRank=胜断败、≥15 连败++，
+      // 设计 §4.4——非对称档：赢在前 5 名、败在 15 名外，royale 大房的宽胜带）
+      for (const s of room.seats) {
+        if (s.kind !== 'human' || !s.conn) continue
+        const rank = result.scores[s.seat] && result.scores[s.seat].rank
+        if (!Number.isInteger(rank)) continue
+        const rec = this.pulse.get(s.conn) || { lose: 0, win: 0 }
+        if (rank <= room.sim.META.pulseRank) { rec.win++; rec.lose = 0 }
+        else if (rank >= 15) { rec.lose++; rec.win = 0 }
         this.pulse.set(s.conn, rec)
       }
     } else if (room.sim.META.pulseTeam && result && (result.winner === 'A' || result.winner === 'B')) {

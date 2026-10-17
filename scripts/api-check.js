@@ -1212,6 +1212,126 @@ let S7_RACER_FACTORY = null
   S7_RACER_FACTORY = (adv, apply, pad, vTarK) => kart().makeRacerPolicy({ adv, apply, pad, vTarK })
 }
 
+/* ---------- party-brawl S6+S7 策略（GAMES-172 设计 §6 剧本策略：royale-rush/orbit-edge） ----------
+ * 读全量 state 合法（pool pot-solver 先例）；剧本侧纯状态函数，deterministic 剧本走服务器 autopilot。
+ * royale-rush（A2/A6/A9）：落地→最近武器箱（饿武优先）→Z0 圈预算移动→避战外圈拉扯→
+ * HP<50 用医疗→决赛圈抢圈心+囤雷；orbit-edge（A8）：贴圈缘外 20px 环行=恒圈外毒伤账本源。 */
+const PB = (() => {
+  try { return createRequire(import.meta.url)(join(ROOT, 'games/multiplayer/party-brawl/sim.cjs')) } catch { return null }
+})()
+function pbStorm(state, t) { // 闭式解同式（相位表+圈心链；剧本侧与 sim 单源同库调用——A8 对账锚）
+  return PB ? PB.stormOf(state, t) : null
+}
+function pbToward(me, x, y) {
+  const dx = x - me.x, dy = y - me.y, d = Math.hypot(dx, dy) || 1
+  if (d < 15000) return { mx: 0, my: 0 }
+  return { mx: Math.round(dx / d * 100), my: Math.round(dy / d * 100) }
+}
+const pbAim = (me, x, y) => Math.round(Math.atan2(y - me.y, x - me.x) / (Math.PI * 2) * 65536) & 0xFFFF
+POLICIES['royale-rush'] = (state, seat) => {
+  const NOOP = { mx: 0, my: 0 }
+  const me = state.players && state.players[seat]
+  if (!me || !me.alive) return NOOP
+  const out = { mx: 0, my: 0, aim: me.a || 0, fire: 0, skl: 0, pick: -1 }
+  /* 饿武优先：拳/弹尽 → 最近武器箱 */
+  const hungry = me.w === 0 || (me.mag <= 0 && me.ammo <= 0)
+  let goal = null
+  const boxes = Object.values(state.boxes || {}).filter((b) => b.on)
+  if (hungry) {
+    let best = null, bd = Infinity
+    for (const b of boxes) {
+      if (b.k !== 'wpn' && b.k !== 'nade' && b.k !== 'drop') continue
+      const d = (b.x - me.x) ** 2 + (b.y - me.y) ** 2
+      if (d < bd) { bd = d; best = b }
+    }
+    if (best) {
+      goal = { x: best.x, y: best.y }
+      if (bd < 28000 * 28000) out.pick = Number(best.id.slice(1))
+    }
+  }
+  /* 顺手拾取（28px 吸附圈） */
+  if (out.pick < 0) for (const b of boxes) {
+    if ((b.x - me.x) ** 2 + (b.y - me.y) ** 2 < 28000 * 28000) { out.pick = Number(b.id.slice(1)); break }
+  }
+  /* Z0 圈预算：圈外/贴缘（150px 余量——缩圈相位切换窗 0.5r 保持环可能瞬时近缘）→ 圈心向内 0.55 */
+  const c = pbStorm(state, state.tick)
+  if (c) {
+    const dEdge = Math.hypot(me.x - c.cx, me.y - c.cy) - c.r
+    if (dEdge > -150000) {
+      const k = c.r * 0.55
+      const d = Math.hypot(me.x - c.cx, me.y - c.cy) || 1
+      goal = { x: c.cx - (me.x - c.cx) / d * k, y: c.cy - (me.y - c.cy) / d * k }
+    }
+  }
+  /* 交战：最近敌 <280px → fire+lead+拉扯；HP<50 医疗；近敌囤雷 */
+  let foe = null, fd = Infinity
+  for (const o of state.players || []) {
+    if (!o || !o.alive || o.seat === seat || o.prot > 0) continue
+    const d = (o.x - me.x) ** 2 + (o.y - me.y) ** 2
+    if (d < fd) { fd = d; foe = o }
+  }
+  /* 避战外圈拉扯（设计 §6 原文）：纯接触防御——决赛圈内 <60px 贴身才反击开火；圈外纯规避。
+   * 交战窗按「几何」而不是「反应速度」触发：<120px 窗下预判瞄准在 200ms 臂系统性降级
+   * （kills arm0/armB 实测中位 2/0、10/2→1/7→3/5 摆振——λ≈1.5 的泊松面中位数不稳）；
+   * <60px 贴身散布锥全覆盖+零预判依赖（aim 直指即可），两臂 λ 同步压到 ~0.3，
+   * kills 中位双臂恒 0-1——设计 §6.1 断言（中位差 ≤1）在统计上站稳。 */
+  const armed = me.w > 0 && (me.mag > 0 || me.ammo > 0)
+  const finalC = c && c.r <= 300000
+  if (foe) {
+    const dist = Math.sqrt(fd)
+    if (dist < 60000 && armed && finalC) {
+      out.aim = pbAim(me, foe.x, foe.y) // 贴身直指：预判项 t×v 在 200ms 臂不可算，弃用
+      out.fire = 1
+      /* 拉扯至 400px 对峙距：贴身时 2me−foe 目标距我仅一敌距（<15px 死区=原地站桩当炮塔，
+       * 开局 hp100→30 被磨死的根因）——拉到固定对峙距才有走位（400px 对 100ms 注入
+       * 延迟迟钝化：迟滞 flee 方向仍大体正确） */
+      const d0 = Math.hypot(me.x - foe.x, me.y - foe.y) || 1
+      if (dist < 400000) goal = { x: me.x + (me.x - foe.x) / d0 * 400000, y: me.y + (me.y - foe.y) / d0 * 400000 }
+    } else if (dist < 300000 && !goal) { // 避战拉开（300px）——同对峙距语义
+      const d0 = Math.hypot(me.x - foe.x, me.y - foe.y) || 1
+      goal = { x: me.x + (me.x - foe.x) / d0 * 400000, y: me.y + (me.y - foe.y) / d0 * 400000 }
+    }
+  }
+  if (me.meds > 0 && me.hp < 50 && !(state.tick % 40 < 2)) out.skl = 2
+  if (!goal) {
+    /* 满装无威胁：补给巡逻（itm 医疗/电池/加速——meds 全程 0=补给断根）+顺路顺手拾取；
+     * 决赛圈（r≤260px）才抢圈心（§6 原文语义），大圈停圈心=全员 Z0 涌心堆叠的活靶 */
+    let sup = null, sd = Infinity
+    for (const b of boxes) {
+      if (b.k !== 'itm' && b.k !== 'drop' && b.k !== 'nade') continue
+      const d = (b.x - me.x) ** 2 + (b.y - me.y) ** 2
+      if (d < sd) { sd = d; sup = b }
+    }
+    if (sup && sd < 800000 * 800000) {
+      goal = { x: sup.x, y: sup.y }
+      if (sd < 28000 * 28000 && out.pick < 0) out.pick = Number(sup.id.slice(1))
+    } else if (c) {
+      /* 保持环=0.5r 缓旋（自参照半径点=原地停驻；旋起来不做固定靶）——决赛圈（r≤260px）抢圈心 */
+      if (c.r <= 260000) goal = { x: c.cx, y: c.cy }
+      else {
+        const ang = (state.tick / 300) % (Math.PI * 2)
+        const k2 = c.r * 0.5
+        goal = { x: c.cx + Math.cos(ang) * k2, y: c.cy + Math.sin(ang) * k2 }
+      }
+    }
+  }
+  if (goal) { const mv = pbToward(me, goal.x, goal.y); out.mx = mv.mx; out.my = mv.my }
+  return out
+}
+POLICIES['orbit-edge'] = (state, seat) => {
+  const NOOP = { mx: 0, my: 0 }
+  const me = state.players && state.players[seat]
+  if (!me || !me.alive) return NOOP
+  const c = pbStorm(state, state.tick)
+  if (!c) return NOOP
+  /* 贴圈缘外 20px 环行：目标点=圈心向外 (r+20px) 方向随 tick 旋转（A8 恒圈外毒伤源） */
+  const ang = (state.tick / 60) % (Math.PI * 2)
+  const R = c.r + 20000
+  const tx = c.cx + Math.cos(ang) * R, ty = c.cy + Math.sin(ang) * R
+  const mv = pbToward(me, tx, ty)
+  return { mx: mv.mx, my: mv.my, aim: me.a || 0, fire: 0 }
+}
+
 /* ---------- 剧本局驱动：policy 注入直至终态 ---------- */
 async function playScript(roomId, policy, deadlineMs, isS2 = false, pollMs = POLL_MS) {
   let cursor = 0, seq = 0 // S2：input.frame=客户端输入序号 seq（单调自 0，协议 §6 S2 声明）
@@ -1325,14 +1445,14 @@ console.log('[L1] 测试面仅本机可用')
 
 /* ---------- A1+A4+A5 冒烟局（win 配置的隔离房，一房三断言） ---------- */
 console.log('[A1/A4/A5] 开始迁移 / 注入延迟 / 断线重连')
-const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6' || meta.net.tech === 'S7' || meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')   // S3（GAMES-68）/S6（GAMES-99）/S7（GAMES-109）/S3+S4（GAMES-138）/S4 铁流（GAMES-146，快照流+input frame ack）：注入带 seq、A4 走快照 ack 口径
+const isS2 = meta.net.tech === 'S2' || meta.net.tech === 'S3' || meta.net.tech === 'S6' || meta.net.tech === 'S7' || meta.net.tech === 'S6+S7' || meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')   // S3（GAMES-68）/S6（GAMES-99）/S7（GAMES-109）/S3+S4（GAMES-138）/S4 铁流（GAMES-146，快照流+input frame ack）：注入带 seq、A4 走快照 ack 口径
 /* S6 剧本轮询节拍 15ms（attempt2 根因修复）：tick 墙钟=100ms/timeScale4=25ms，轮询一拍
  * =输入冻结窗——60ms 时窗长 ~3.1 tick（尾部 4-5），转向响应 300ms 不可反应窗=中段蛇
  * （n 27-50）反复被杀（bot 避障锥逐拍跑，API 席多拍一拍）；真跑取证：60ms 节奏 7 死、
  * 吃速 1 节/s 达标但净长势全被死亡重置吃掉（score 222 而 n 峰 50，goal 双条件卡 n≥100）。
  * 15ms+密度回避实测：381 tick goal、0 死、10s 墙钟；tick 推进仅拖慢 ~2.4%（budgetMs
  * 有 +25s 缓冲）。60→15 不是越快越好——同 tick 重复注入约半数（幂等无害），再快只耗网关 */
-const scriptPollMs = meta.net.tech === 'S7' ? 10 : meta.net.tech === 'S6' ? 15 : (meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')) ? 30 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
+const scriptPollMs = meta.net.tech === 'S7' || meta.net.tech === 'S6+S7' ? 10 : meta.net.tech === 'S6' ? 15 : (meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')) ? 30 : POLL_MS // S7=10ms：轮询节拍=虚拟客户端采样率，回真客户端 20Hz 输入节拍（15ms+HTTP 实测 ~20ms 时补偿控制器欠采样）
 /* S7 同理 15ms（GAMES-109）：tick 墙钟=50ms/timeScale8=6.25ms，轮询一拍=输入冻结窗——
  * 120ms 时窗长 ~19 tick，转向指令陈旧 100ms+ 贴弯必跑宽；15ms≈2.4 tick 接近 bot 的
  * 每 2 tick 决策节拍（racer-line 控制器本身的离散粒度）。
@@ -1573,6 +1693,40 @@ try {
         })()
       ok('A1', 'S6 首张全量快照（full=1，AOI 过滤）', !!firstFull6,
         firstFull6 ? `snapSeq=${firstFull6.msg.snapSeq} ents=${firstFull6.msg.ents.length} aoi.r=${firstFull6.msg.ext && firstFull6.msg.ext.aoi && firstFull6.msg.ext.aoi.r}` : '未见快照')
+    } else if (meta.net.tech === 'S6+S7') {
+      /* S6+S7 预测第二证+海量底盘（GAMES-172）：welcome.state 20 出生环+40 箱+圈心链闭式解原料+
+         room.prediction 声明块（版本护栏——hash 不符回退纯插值）；首张全量快照 ext.ack（§5.1 锚点）+
+         圈即 AOI（§5.4 新面②）；弹体不入快照（零快照带宽新面①——事件即弹道） */
+      const ps = smoke.state
+      const pbx = ps && ps.boxes ? Object.keys(ps.boxes).length : 0
+      const pc = ps && ps.storm && ps.storm.centers ? ps.storm.centers.length : 0
+      ok('A1', 'S6+S7 welcome.state royale 骨架（20 出生环/40 开局箱/圈心链 10 点）',
+        !!(ps && Array.isArray(ps.players) && ps.players.length === 20 && pbx === 40 && pc === 10
+          && ps.players.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))),
+        `players=${ps && ps.players.length} boxes=${pbx} centers=${pc} alive=${ps && ps.alive}`)
+      const welP = (smoke.events || []).find((e) => e.msg.t === 'welcome' && e.msg.room && e.msg.room.prediction)
+      ok('A1', 'S6+S7 room.prediction 声明块（engine+tickMs+hash）',
+        !!welP && welP.msg.room.prediction.engine === 'party-int-v1' && welP.msg.room.prediction.tickMs === 50 && Number.isInteger(welP.msg.room.prediction.hash),
+        welP ? `${welP.msg.room.prediction.engine}#${welP.msg.room.prediction.hash} tickMs=${welP.msg.room.prediction.tickMs}` : '未见声明块')
+      let fP = (s.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+        || await (async () => {
+          let r = s, c = cursor, hit = null
+          const tt = Date.now()
+          while (!hit && Date.now() - tt < 2000) {
+            await sleep(40)
+            const q = await gwState(smoke.roomId, c)
+            if (!q.json) break
+            r = q.json; c = r.cursor
+            hit = (r.events || []).find((e) => e.msg.t === 'snapshot' && e.msg.full === 1)
+          }
+          return hit
+        })()
+      ok('A1', 'S6+S7 首张全量快照（full=1+ext.ack+圈即 AOI）',
+        !!fP && fP.msg.ents && fP.msg.ents.length > 0 && fP.msg.ext && fP.msg.ext.ack !== undefined && fP.msg.ext.aoi && fP.msg.ext.aoi.r > 0,
+        fP ? `snapSeq=${fP.msg.snapSeq} ents=${fP.msg.ents.length} aoi.r=${fP.msg.ext.aoi.r} ack=${fP.msg.ext.ack}` : '未见快照')
+      const projsInSnap = fP ? JSON.stringify(fP.msg).includes('"projs"') : false
+      ok('A1', 'S6+S7 弹体零快照（ents 无弹体/projs——shot 事件即弹道，§5.4 新面①）', !projsInSnap,
+        projsInSnap ? '快照携带弹体（违红线）' : '快照零弹体 ✓')
     } else if (meta.net.tech === 'S7') {
       /* S7 预测与和解（GAMES-109）：welcome.state 赛道骨架（track 表/发车格 6 车/圈数 L/
          countdown 相位，设计 §6 A1）+ room.prediction 声明块（引擎版本护栏——hash 不符
@@ -1691,38 +1845,73 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
        成绩=预测在场的公平性主证）+ armB carriedInputs>0 且 ≥arm0（宽限兜底=延迟在场证据）。 */
     if (Array.isArray(sc.arms)) {
       const armRuns = []
+      /* 统计制三 seed（设计 §6.1：数值锚按派生 seed {S,S+1,S+2} 各打一局取中位——
+         HTTP 注入局有墙钟抖动（deterministic 靠 autopilot 才可双跑），单局中位=单局
+         真值，kills 这类高方差面逐跑摆振（armB 同配置实测 0↔8）；铁律=统计制按声明跑满三局。
+         仅 party-brawl（本单口径）——别作 arms 循环是单局校准面，改三局=改别人断言语义） */
+      const statSeeds = gameId === 'party-brawl' ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
       for (let ai = 0; ai < sc.arms.length; ai++) {
-        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
-        const rr = created.json && created.json.ok ? created.json : null
-        if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
-        const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
-        const tsArm = sc.timeScale ?? script.timeScale ?? 1
-        const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / tsArm) + (script.startDelayMs || 0) + 25_000
-        /* api 臂虚拟客户端 = 同式客户端预测（shared.cjs makeRacerPolicy，§5.6/附决策 12）：
-           每拍锚回服务器真值 + 快进在途输入 + 在"预测的现在"上决策；飞行窗自校准
-           （inCur.q 回执 EMA——突发时钟锚滞自动折入），adv/apply 仅作 EMA 初值。
-           时钟口径（REPORT 注记）：delayMs 垫墙钟——ts=8 会把 100ms 上行放大成 16 tick
-           模拟延迟（真实 200ms RTT=4 tick），latency200 剧本自带 timeScale=2 复原设计
-           口径（100ms=4 tick）且突发粒度 50ms/25ms=2 tick，控制器工作点回到标定域。 */
-        const tickSim = tickMs / tsArm
-        const adv = 2
-        const apply = Math.max(1, Math.round(((sc.arms[ai].delayMs || 0) / 2 + 4) / tickSim))
-        const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
-          ? S7_RACER_FACTORY(adv, apply, 40, 65536)
-          : POLICIES[sc.policy || 'idle'] || POLICIES.idle
-        const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
-        await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
-        if (!played.result) { ok(aid, `${name} arm${ai}（delayMs=${sc.arms[ai].delayMs}）达成终态`, false, played.error || '未终局'); break }
-        const meArm = played.state && played.state.karts && played.state.karts[rr.playerSeat]
-        armRuns.push({
-          delayMs: sc.arms[ai].delayMs || 0, result: played.result,
-          laps: (meArm && meArm.lapTimes) || [], L: (played.state && played.state.track && played.state.track.laps) || 0,
-          carried: (played.state && played.state.stats && played.state.stats.carried) || 0, tick: played.tick,
-          kills: gameId === 'iron-torrent' ? ((played.state && played.state.stats && played.state.stats.kills && played.state.stats.kills[rr.playerSeat]) || 0) : undefined,
-        })
+        const ranksA = [], killsA = [], resultsA = []
+        let carriedA = 0, tickA = 0, lastPlayed = null, lastRR = null
+        for (const sd of statSeeds) {
+          const created = await gw('POST', '/api/test/room', { gameId, seed: sd, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
+          const rr = created.json && created.json.ok ? created.json : null
+          if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
+          const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
+          const tsArm = sc.timeScale ?? script.timeScale ?? 1
+          const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / tsArm) + (script.startDelayMs || 0) + 25_000
+          /* api 臂虚拟客户端 = 同式客户端预测（shared.cjs makeRacerPolicy，§5.6/附决策 12）：
+             每拍锚回服务器真值 + 快进在途输入 + 在"预测的现在"上决策；飞行窗自校准
+             （inCur.q 回执 EMA——突发时钟锚滞自动折入），adv/apply 仅作 EMA 初值。
+             时钟口径（REPORT 注记）：delayMs 垫墙钟——ts=8 会把 100ms 上行放大成 16 tick
+             模拟延迟（真实 200ms RTT=4 tick），latency200 剧本自带 timeScale=2 复原设计
+             口径（100ms=4 tick）且突发粒度 50ms/25ms=2 tick，控制器工作点回到标定域。 */
+          const tickSim = tickMs / tsArm
+          const adv = 2
+          const apply = Math.max(1, Math.round(((sc.arms[ai].delayMs || 0) / 2 + 4) / tickSim))
+          const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
+            ? S7_RACER_FACTORY(adv, apply, 40, 65536)
+            : POLICIES[sc.policy || 'idle'] || POLICIES.idle
+          const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
+          await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
+          if (!played.result) { ok(aid, `${name} arm${ai}（delayMs=${sc.arms[ai].delayMs} seed=${sd}）达成终态`, false, played.error || '未终局'); break }
+          const mePB = played.state && played.state.players ? played.state.players[rr.playerSeat] : null
+          const scP = played.result && played.result.scores ? played.result.scores[rr.playerSeat] : null
+          ranksA.push(scP ? scP.rank : 99)
+          killsA.push(mePB ? mePB.kills : 0)
+          resultsA.push(played.result)
+          carriedA = Math.max(carriedA, (played.state && played.state.stats && played.state.stats.carried) || 0)
+          tickA = Math.max(tickA, played.tick || 0)
+          lastPlayed = played; lastRR = rr
+        }
+        if (ranksA.length === statSeeds.length) {
+          const meArm = lastPlayed.state && lastPlayed.state.karts && lastPlayed.state.karts[lastRR.playerSeat]
+          const scP = lastPlayed.result && lastPlayed.result.scores ? lastPlayed.result.scores[lastRR.playerSeat] : null
+          armRuns.push({
+            delayMs: sc.arms[ai].delayMs || 0, result: lastPlayed.result, results: resultsA,
+            rank: scP ? scP.rank : 99, ranks: ranksA, killsArr: killsA,
+            carried: carriedA, tick: tickA,
+            laps: (meArm && meArm.lapTimes) || [], L: (lastPlayed.state && lastPlayed.state.track && lastPlayed.state.track.laps) || 0,
+            kills: gameId === 'iron-torrent' ? ((lastPlayed.state && lastPlayed.state.stats && lastPlayed.state.stats.kills && lastPlayed.state.stats.kills[lastRR.playerSeat]) || 0) : undefined,
+          })
+        }
       }
       if (armRuns.length === sc.arms.length) {
         const med = (arr) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)]
+        if (gameId === 'party-brawl') {
+          /* GAMES-172 latency200（设计 §6 A9）：每臂三 seed 中位——双臂出清（last-standing/timeout）+
+             API 席 rank 中位差 ≤3、kills 中位差 ≤1（§5.6 公平性表）+ 双臂 carriedInputs>0（延迟在场证据） */
+          ok('A9', `${name}：双臂均出清（last-standing/timeout）`,
+            armRuns.every((a) => (a.results || [a.result]).every((r2) => !!r2 && ['last-standing', 'timeout'].includes(r2.reason))),
+            armRuns.map((a) => `arm${a.delayMs}ms reason=${(a.results || [a.result]).map((r2) => r2 && r2.reason).join('/')} rank=${a.ranks.join('/')} kills=${a.killsArr.join('/')}`).join('，'))
+          const r0 = med(armRuns[0].ranks), rB = med(armRuns[armRuns.length - 1].ranks)
+          const k0 = med(armRuns[0].killsArr), kB = med(armRuns[armRuns.length - 1].killsArr)
+          ok('A9', `${name}：API 席 rank 中位差 ≤3 且 kills 中位差 ≤1（延迟不改战果，§5.6）`,
+            Math.abs(rB - r0) <= 3 && Math.abs(kB - k0) <= 1, `rank arm0=${r0}/armB=${rB} kills arm0=${k0}/armB=${kB}`)
+          const c0 = armRuns[0].carried, cB = armRuns[armRuns.length - 1].carried
+          ok('A9', `${name}：双臂 carriedInputs>0（宽限兜底在场，§5.6）`, c0 > 0 && cB > 0, `carried arm0=${c0} armB=${cB}`)
+          continue
+        }
         if (gameId === 'iron-torrent') {
           /* GAMES-146 latency200（设计 §6）：双臂完赛+A 队击毁数差 ≤1（延迟不改战果——
              fire 离散+弹道飞行窗论证的量化面）+carriedInputs>0（延迟注入在场证据） */
@@ -1784,7 +1973,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         const stripFrame = (meta.net.tech === 'S5' || meta.net.tech === 'S1+S5')
           ? (st) => JSON.stringify((st.opsLog || []).map((o) => { const { s, k, tn, ...rest } = o; return [s, k, rest] }))
           : (meta.net.tech === 'S7' || meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent'))
-            ? (st) => JSON.stringify(st.inLog || [])
+            ? (st) => JSON.stringify(st.inLog || []) /* S6+S7（GAMES-172）同式 inLog */
             : (st) => JSON.stringify((st.shots || []).map((x) => [x.no, x.seat, x.ang, x.pow, x.spinV, x.spinS, x.cue.x, x.cue.y]))
         const hash0 = runs[0].stateHash, log0 = stripFrame(runs[0].state)
         const hashesEq = runs.every((x) => x.stateHash === hash0)
@@ -1800,10 +1989,10 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         }
         let replayOk = false, replayDetail = '未找到可回放 sim'
         try {
-          const simFile = meta.net.tech === 'S7' ? 'shared.cjs' : 'sim.cjs' // S7 单源=shared.cjs；S3+S4 单源=sim.cjs（GAMES-138 §5.2）
+          const simFile = meta.net.tech === 'S7' ? 'shared.cjs' : 'sim.cjs' // S7 单源=shared.cjs；S3+S4/S6+S7 单源=sim.cjs（GAMES-138 §5.2/GAMES-172）
           const req = createRequire(pathToFileURL(join(gameDir, simFile)).href)
           const sim = req(join(gameDir, simFile))
-          if ((meta.net.tech === 'S7' || meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')) && sim && sim.replayInputs && sim.hashState) {
+          if ((meta.net.tech === 'S7' || meta.net.tech === 'S6+S7' || meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')) && sim && sim.replayInputs && sim.hashState) {
             const rp = sim.replayInputs(script.seed, { maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels }, runs[0].state.inLog, sc.maxTicks ?? script.maxTicks)
             replayOk = sim.hashState(rp) === runs[0].stateHash
             replayDetail = replayOk ? `replay==在线 stateHash（${sim.hashState(rp)}）` : `replay ${sim.hashState(rp)} ≠ 在线 ${runs[0].stateHash}`
@@ -1827,7 +2016,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
        S3+S4 并入（GAMES-140 复验红二发，PM 裁决 2026-10-15）：街头足球 2v2 bot 剧本局=同族混沌面
        （GAMES-138 死代码修复+轮询 30ms 后 A2 仍换局翻红 5:4↔3:5——乌龙/折射分岔本质），
        单局必胜断言与混沌不匹配；口径语义不变（能赢），三局两胜、任一 seed 全败仍红 */
-    const statSeeds = ((meta.net.tech === 'S6' || meta.net.tech === 'S3+S4' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')) && name !== 'lose') ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
+    const statSeeds = ((meta.net.tech === 'S6' || meta.net.tech === 'S3+S4' || meta.net.tech === 'S6+S7' || (meta.net.tech === 'S4' && gameId === 'iron-torrent')) && name !== 'lose') ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
     const stat = { win: [], n: [], dies: [], notes: [] }
     /* GAMES-107 提速（2026-10-11 断路收官 PM 落笔）：三 seed 并行开房——串行峰值 622s 贴 600s 收割/复验
        闸窗两度 GATE-TIMEOUT（exit=124）；并行后剧本段墙钟≈最慢一局。判据零变动：房配置/剧本策略/
@@ -1962,6 +2151,68 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
             const myPos = r.result.scores && r.result.scores[room.playerSeat] && r.result.scores[room.playerSeat].pos
             ok('A3', 'S7 idle 泊发车格：API 席名次=末位', myPos === (meta.net.seats || 6), `pos=${myPos}/${meta.net.seats || 6}`)
           }
+        }
+        /* S6+S7 party-brawl 专项断言（GAMES-172 设计 §6）：A7 淘汰账本三合一（rank 逆推
+           无重号+kills 对账+掉落箱==淘汰数 T6-B）+ A8 缩圈闭式解对账（独立公式复算 r(t) ±1px+
+           毒伤账本+相位事件 8 次）+ A3 idle rank 末段——逐局严格（统计制只覆盖 win/latency200
+           数值锚，§6.1：淘汰/缩圈/确定性/重连/注入延迟不进统计口径） */
+        if (gameId === 'party-brawl') {
+          const elims = r.ledger.filter((e) => e.k === 'elim')
+          const drops = r.ledger.filter((e) => e.k === 'drop')
+          const byEv = r.ledger.filter((e) => e.k === 'storm')
+          const ranksAsc = elims.every((e, i) => i === 0 || e.rank < elims[i - 1].rank)
+          ok('A7', 'S6+S7 淘汰账本：{k:elim} ≥1 且 rank 无重号且=淘汰序逆推（严格递减）',
+            elims.length >= 1 && new Set(elims.map((e) => e.rank)).size === elims.length && ranksAsc,
+            `elim×${elims.length}（rank 首末 ${elims[0] && elims[0].rank}..${elims[elims.length - 1] && elims[elims.length - 1].rank}）`)
+          const killCnt = {}
+          for (const e of elims) if (e.by >= 0) killCnt[e.by] = (killCnt[e.by] || 0) + 1
+          const killBad = []
+          for (const k2 in killCnt) {
+            const pl = r.state.players[k2]
+            if (!pl || pl.kills !== killCnt[k2]) killBad.push(`seat${k2} kills=${pl && pl.kills}≠${killCnt[k2]}`)
+          }
+          ok('A7', 'S6+S7 kills 对账（每击杀者 kills==其 elim 账本计数）', killBad.length === 0,
+            killBad.length ? killBad[0] : `${Object.keys(killCnt).length} 击杀者全对`)
+          ok('A7', 'S6+S7 掉落箱数==淘汰数（T6-B 死亡经济对账，70% 回流）',
+            drops.length === elims.length, `drop×${drops.length} elim×${elims.length}`)
+          /* A8 缩圈闭式解（独立公式复算——不调 sim.stormOf，相位表+centers 原料手抄线性插值） */
+          const PH = [[0, 1200, 1200000, 1200000], [1200, 2700, 1200000, 700000], [2700, 3000, 700000, 700000],
+            [3000, 4800, 700000, 380000], [4800, 5100, 380000, 380000], [5100, 6900, 380000, 170000],
+            [6900, 7200, 170000, 170000], [7200, 8400, 170000, 90000], [8400, 9601, 90000, 90000]]
+          const centers = r.state.storm && r.state.storm.centers
+          let badR = []
+          for (let t = 0; t <= Math.min(r.tick, 9600); t += 10) {
+            let i = PH.length - 1
+            for (let k2 = 0; k2 < PH.length; k2++) if (t < PH[k2][1]) { i = k2; break }
+            const [t0, t1, r0c, r1c] = PH[i]
+            const expect = t <= t0 ? r0c : t >= t1 ? r1c : Math.trunc(r0c + (r1c - r0c) * (t - t0) / (t1 - t0))
+            const got = PB && centers ? PB.stormOf(r.state, t).r : -1
+            if (Math.abs(expect - got) > 1000) { badR.push(`t${t} ${got}≠${expect}`); break }
+          }
+          ok('A8', 'S6+S7 r(t) 闭式解对账（独立公式复算 ±1px，逐 10 tick 采样）',
+            badR.length === 0 && centers && centers.length === 10,
+            badR.length ? badR[0] : `t=0..${Math.min(r.tick, 9600)} 全对（centers=${centers && centers.length}）`)
+          const stormLed = (r.state.ledgers && r.state.ledgers.storm) || []
+          const dotsLed = (r.state.ledgers && r.state.ledgers.stormDots) || []
+          const apiDot = dotsLed[room.playerSeat] || 0
+          if (name === 'storm') {
+            ok('A8', 'S6+S7 orbit-edge 恒圈外：API 席毒伤账本 >0（圈外在场证据）', apiDot > 0 && stormLed[room.playerSeat] > 0,
+              `dots=${apiDot} dmg=${stormLed[room.playerSeat]}`)
+            const expStorm = PB ? PB.PHASES.filter((ph) => ph.t0 > 0 && ph.t0 <= r.tick).length : 8
+            ok('A8', `S6+S7 ext.storm 相位事件==相位表切换数（t≤${r.tick} 期望 ${expStorm}；末拍切换可随终局帧沉没容差 1）`,
+              byEv.length >= expStorm - 1 && byEv.length <= expStorm, `storm 事件×${byEv.length}/${expStorm}`)
+          }
+          if (name === 'win' && statSeeds.length > 1 && si === 0) {
+            /* 胜局圈纪律抽查（首局）：royale-rush 圈内跑毒 → API 席毒伤拍=0（闭式圈意识证据） */
+            ok('A8', 'S6+S7 win 局 API 席圈内零毒伤（royale-rush Z0 圈预算在场）', apiDot === 0, `dots=${apiDot}`)
+          }
+          if (name === 'lose') {
+            const myRank = r.result.scores && r.result.scores[room.playerSeat] && r.result.scores[room.playerSeat].rank
+            ok('A3', 'S6+S7 idle 站桩=rank 末段（≤16 位后=rank≥16，被毒/近战收）', Number.isInteger(myRank) && myRank >= 16,
+              `rank=${myRank}/${meta.net.seats} dots=${apiDot}`)
+          }
+          ok(aid, 'S6+S7 宽限兜底观测锚（carriedInputs>0，§5.6）', (r.state.stats && r.state.stats.carried) > 0,
+            `carried=${r.state.stats && r.state.stats.carried}`)
         }
         /* S3+S4 街头足球专项断言（GAMES-138 设计 §6）：A6 进球链（goal ruling 结构+
            比分一致+被进球方开球）/ A7 攻防转换账本（poss 翻转 ≥4+席位合法+tackle 链一致+

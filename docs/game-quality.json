@@ -1201,6 +1201,24 @@
       "perf": "pass",
       "play": "pass",
       "visual": "pass"
+    },
+    "multiplayer:party-brawl": {
+      "status": "in-progress",
+      "date": "2026-10-17",
+      "net": {
+        "tech": "S6+S7"
+      },
+      "bot": {
+        "levels": 3,
+        "swarm": true,
+        "takeOver": "casual"
+      },
+      "chain": {
+        "design": "GAMES-171",
+        "dev": "GAMES-172",
+        "count": 2
+      },
+      "notes": "E6-W2-T7 单链 2/10+（D+DEV 已落）。S7 预测和解第二证（多实体预测边界四类谱：己席预测/投掷物 shot 全参事件重演·弹体零快照/拾取权威分账/毒圈闭式同源）+S6 底盘（20 实体房+圈即 AOI r=min(500,r_storm+240)）。net.tech='S6+S7' 双记法第三款（street S3+S4/tactics S1+S5 先例，roadmap §3 行已改注）。"
     }
   }
 }
