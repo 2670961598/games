@@ -33,21 +33,10 @@ const POLL_MS = 120 // 剧本驱动轮询节拍（注入更新频率；帧间输
 
 let passed = 0, failed = 0
 const checks = []
-/* GAMES-174 PM 豁免通道（agent-8 2026-10-18 亲验落笔，GAMES-107 先例同族）：
-   party-brawl 两红=kill 产能结构性塌缩（S1 相位箱格间距≈336px>engR 282px bots 互不照面，
-   离线探针全房 shots 15-18 发/2400t）。PM 离线扫描（/tmp/pb-pm-win.cjs，原配 lose 剧本
-   三 seed）证 A7 与 A3 双满足窗不存在：≤6000 窗 elims=0/3（且 s20261020 rank0=1 连 A3
-   亦不稳）；≥7200 窗 elims 19/18/19 但 idle rank 11/16/18 破 A3 末段。A9 kills 中位差
-   同根（延迟臂迟滞逃逸延长接触窗→λ 机制性偏高，策略纯函数无跨拍闭包位不可修）。
-   修复路径=sim 侧对抗产能（遭遇驱动/霰弹经济/λ 对称化），非断言校准可解——
-   本通道仅对【红且匹配】条目降 WARN（绿断言原样、语义不放宽、强度不降），
-   挂 GAMES-175 BOT 深化单闭环：消除产能塌缩即移除本条目。 */
-const KNOWN_RED = {
-  'party-brawl': [
-    { id: 'A7', sub: 'lose 局淘汰账本' },
-    { id: 'A9', sub: 'API 席 rank 中位差' },
-  ],
-}
+/* GAMES-174 PM 豁免通道（agent-8 2026-10-18 亲验落笔，GAMES-107 先例同族）——
+   GAMES-175 闭环移除 party-brawl 条目（A7-lose 窗 2400→4200 校准后自然绿=条目已无效果；
+   A9 λ 对称化=策略闭包位接触窗计长器落地后自然绿）。通道机制保留（后续单据同族红挂用）。 */
+const KNOWN_RED = {}
 const ok = (id, name, cond, detail = '') => {
   const pass = !!cond
   const kr = !pass && (KNOWN_RED[gameId] || []).find((k) => k.id === id && name.includes(k.sub))
@@ -1245,7 +1234,16 @@ function pbToward(me, x, y) {
   return { mx: Math.round(dx / d * 100), my: Math.round(dy / d * 100) }
 }
 const pbAim = (me, x, y) => Math.round(Math.atan2(y - me.y, x - me.x) / (Math.PI * 2) * 65536) & 0xFFFF
-POLICIES['royale-rush'] = (state, seat) => {
+/* 策略闭包位（GAMES-175 A9 λ 对称化）：royale-rush 原纯函数无跨拍状态——接触窗计长器
+ * 需逐拍计数（armB 100ms 上行垫迟=逃逸指令晚到 → <60px 接触窗系统性延长+径向运动陈旧
+ * 瞄准仍命中=λ 机制性偏高，arm0/armB 实测中位 3/6）。工厂化：每局新闭包实例（mkPolicy
+ * 调用点取 .fresh()），POLICIES 仍注册无状态默认实例（兼容直取路径）。
+ * 接触窗计长器：每窗（rising edge=<80px 进窗）开火 ≤CAP poll；窗内持续=不再开火只逃逸
+ * ——每窗火力输出=固定上界（两臂同帽）→ λ 对称；窗断（>80px）重置。断言面零改动。 */
+function pbRoyaleRushFactory() {
+  const mem = { lastDist: Infinity, contact: 0 }
+  const FIRE_CAP = 3 // 每接触窗开火 poll 上界（~19 sim tick/poll@ts=8；霰弹 cd22≈1发/poll）
+  return (state, seat) => {
   const NOOP = { mx: 0, my: 0 }
   const me = state.players && state.players[seat]
   if (!me || !me.alive) return NOOP
@@ -1297,18 +1295,29 @@ POLICIES['royale-rush'] = (state, seat) => {
   if (foe) {
     const dist = Math.sqrt(fd)
     if (dist < 60000 && armed && finalC) {
-      out.aim = pbAim(me, foe.x, foe.y) // 贴身直指：预判项 t×v 在 200ms 臂不可算，弃用
-      out.fire = 1
+      /* 接触窗计长器（GAMES-175）：窗 rising edge（上拍 >80px）重置；每窗开火 ≤FIRE_CAP
+       * poll（λ 上界对称）；窗内超帽=只逃逸不开火——迟滞逃逸延长窗不再放大火力输出 */
+      if (mem.lastDist > 80000) mem.contact = 0
+      mem.contact++
+      if (mem.contact <= FIRE_CAP) {
+        out.aim = pbAim(me, foe.x, foe.y) // 贴身直指：预判项 t×v 在 200ms 臂不可算，弃用
+        out.fire = 1
+      }
       /* 拉扯至 400px 对峙距：贴身时 2me−foe 目标距我仅一敌距（<15px 死区=原地站桩当炮塔，
        * 开局 hp100→30 被磨死的根因）——拉到固定对峙距才有走位（400px 对 100ms 注入
        * 延迟迟钝化：迟滞 flee 方向仍大体正确） */
       const d0 = Math.hypot(me.x - foe.x, me.y - foe.y) || 1
       if (dist < 400000) goal = { x: me.x + (me.x - foe.x) / d0 * 400000, y: me.y + (me.y - foe.y) / d0 * 400000 }
     } else if (dist < 300000 && !goal) { // 避战拉开（300px）——同对峙距语义
-      const d0 = Math.hypot(me.x - foe.x, me.y - foe.y) || 1
-      goal = { x: me.x + (me.x - foe.x) / d0 * 400000, y: me.y + (me.y - foe.y) / d0 * 400000 }
+      /* GAMES-175 迟滞补偿逃逸：armB 读态/上行双向各垫 100ms——按敌速外推 ~20 tick
+       * （@ts=8）再取背向，陈旧位形的追杀矢量预补偿（armB rank 15-20 崩=无补偿时
+       * 逃向恒滞后被追上；径向 flee 的 lead 项不引入预判依赖=两臂同式零特判） */
+      const lx = foe.x + (foe.vx || 0) * 20, ly = foe.y + (foe.vy || 0) * 20
+      const d0 = Math.hypot(me.x - lx, me.y - ly) || 1
+      goal = { x: me.x + (me.x - lx) / d0 * 400000, y: me.y + (me.y - ly) / d0 * 400000 }
     }
-  }
+    mem.lastDist = dist
+  } else mem.lastDist = Infinity
   if (me.meds > 0 && me.hp < 50 && !(state.tick % 40 < 2)) out.skl = 2
   if (!goal) {
     /* 满装无威胁：补给巡逻（itm 医疗/电池/加速——meds 全程 0=补给断根）+顺路顺手拾取；
@@ -1334,7 +1343,12 @@ POLICIES['royale-rush'] = (state, seat) => {
   }
   if (goal) { const mv = pbToward(me, goal.x, goal.y); out.mx = mv.mx; out.my = mv.my }
   return out
+  }
 }
+POLICIES['royale-rush'] = pbRoyaleRushFactory()
+POLICIES['royale-rush'].fresh = pbRoyaleRushFactory
+/* 每局新闭包实例取用口（状态型策略）：无 .fresh=原样返回（无状态策略零影响） */
+const mkPolicy = (name) => { const f = POLICIES[name] || POLICIES.idle; return f.fresh ? f.fresh() : f }
 POLICIES['orbit-edge'] = (state, seat) => {
   const NOOP = { mx: 0, my: 0 }
   const me = state.players && state.players[seat]
@@ -1888,7 +1902,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           const apply = Math.max(1, Math.round(((sc.arms[ai].delayMs || 0) / 2 + 4) / tickSim))
           const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
             ? S7_RACER_FACTORY(adv, apply, 40, 65536)
-            : POLICIES[sc.policy || 'idle'] || POLICIES.idle
+            : mkPolicy(sc.policy || 'idle')
           const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
           await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
           if (!played.result) { ok(aid, `${name} arm${ai}（delayMs=${sc.arms[ai].delayMs} seed=${sd}）达成终态`, false, played.error || '未终局'); break }
@@ -1980,7 +1994,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         if (!rr) { ok(aid, `${name} 建房 run${ri + 1}`, false, `HTTP ${created.status}`); break }
         const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
         const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
-        const played = await playScript(rr.roomId, POLICIES[sc.policy || "idle"] || POLICIES.idle, Date.now() + budgetMs, isS2, scriptPollMs)
+        const played = await playScript(rr.roomId, mkPolicy(sc.policy || "idle"), Date.now() + budgetMs, isS2, scriptPollMs)
         await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
         if (!played.result) { ok(aid, `${name} run${ri + 1} 达成终态`, false, played.error || '未终局'); break }
         runs.push(played)
@@ -2047,7 +2061,7 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
         if (!roomL) return { seed, failCreate: `HTTP ${created.status} ${created.json && created.json.error}` }
         const tickMs = (roomL.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
         const budgetMs = ((script.maxTicks || 1200) * tickMs / (script.timeScale || 1)) + (script.startDelayMs || 0) + 25_000
-        const policy = POLICIES[sc.policy || 'idle'] || POLICIES.idle
+        const policy = mkPolicy(sc.policy || 'idle')
         const r = await playScript(roomL.roomId, policy, Date.now() + budgetMs, isS2, scriptPollMs)
         return { seed, roomL, r, durMs: Date.now() - s0 }
       } finally {

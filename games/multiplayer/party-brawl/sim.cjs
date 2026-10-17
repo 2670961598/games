@@ -182,18 +182,27 @@ const dotOf = (i) => DOT[i]
 function create(seed, opts = {}) {
   seed = seed >>> 0
   const rng = mulberry32(seed)
-  /* 出生环 r∈[500,1050]px 两两 ≥180px（20 点 seed 派生） */
+  /* 出生环 r∈[500,1050]px 两两 ≥180px（20 点 seed 派生）。
+   * GAMES-175 P0 修复：原 (cosQ16(ang) * rad) >> 16 先乘后移——乘积 ~6.9e10 越int32
+   * 回绕（>> 隐式 ToInt32；对照 buildCenters 同式是先除后乘），400 采样几乎全废 →
+   * 19/20 席落对角线兜底梯子（127px 间距、跨 seed 恒同=世界布局 seed 盲），全场出生即
+   * 互在 engR 内（S1 大屠杀/席位-箱距单调/GAMES-174「idle 出生中心 r≈14px」诸象之源）。
+   * 兜底同步改角均布（环弧 2πr/20≈243px≥180px 保距——原 90px 步长梯子违间距约束）。 */
   const spawns = []
   for (let tries = 0; spawns.length < SEATS && tries < 400; tries++) {
     const ang = Math.trunc(rng() * 65536)
     const rad = 500000 + Math.trunc(rng() * 550000)
-    const x = (W >> 1) + ((cosQ16(ang) * rad) >> 16)
-    const y = (H >> 1) + ((sinQ16(ang) * rad) >> 16)
+    const x = (W >> 1) + Math.trunc(cosQ16(ang) / 65536 * rad)
+    const y = (H >> 1) + Math.trunc(sinQ16(ang) / 65536 * rad)
     let ok = true
     for (const s of spawns) { const dx = s.x - x, dy = s.y - y; if (dx * dx + dy * dy < 180000 * 180000) { ok = false; break } }
     if (ok) spawns.push({ x, y })
   }
-  while (spawns.length < SEATS) spawns.push({ x: 300000 + spawns.length * 90000, y: 300000 + spawns.length * 90000 })
+  while (spawns.length < SEATS) {
+    const k = spawns.length
+    const ang = Math.trunc(k * 65536 / SEATS)
+    spawns.push({ x: (W >> 1) + Math.trunc(cosQ16(ang) / 65536 * 775000), y: (H >> 1) + Math.trunc(sinQ16(ang) / 65536 * 775000) })
+  }
   const players = []
   for (let i = 0; i < SEATS; i++) {
     players.push({
@@ -645,12 +654,20 @@ function step(st, inputs, room) {
  * rng=mulberry32(fnv1a32(roomId)^seat<<16^tick>>4)（§4）；决策拍 <2ms（闭式解纪律）。
  * ===================================================================== */
 const BOT_EVERY = { casual: 30, balanced: 12, competitive: 8 }
+/* burst/huntCd（GAMES-175 F-2）：开火承诺拍数与 HUNT 冷却——原实现 burst=决策窗长
+ * （comp 8 < bal 12：决策越勤 burst 越短、SMG 2 发 vs 4 发，档位倒挂），拆出独立轴。
+ * 档位语义（§4.2 Q4 表）：comp 火力压制（24/56≈43% 占空）；bal 机会点射（12/68≈15%）；
+ * cas 反击扫射（6/114≈5%，仅被打才还手）。 */
 const PERSONA = {
-  casual:      { safe: 0.95, drift: 18, aimErr: 492, healAt: 50, healForget: 0.4, hunt: 0, wPref: 0 },
-  balanced:    { safe: 0.8, drift: 0, aimErr: 205, healAt: 50, healForget: 0, hunt: 1, wPref: 1 },
-  competitive: { safe: 0.7, drift: 0, aimErr: 82, healAt: 70, healForget: 0, hunt: 2, wPref: 2 },
+  casual:      { safe: 0.95, drift: 18, aimErr: 492, healAt: 50, healForget: 0.4, hunt: 0, wPref: 0, burst: 6, huntCd: 114 },
+  balanced:    { safe: 0.8, drift: 0, aimErr: 205, healAt: 50, healForget: 0, hunt: 1, wPref: 1, burst: 12, huntCd: 68 },
+  competitive: { safe: 0.7, drift: 0, aimErr: 82, healAt: 70, healForget: 0, hunt: 2, wPref: 2, burst: 24, huntCd: 56, engageHp: 45 },
 }
 const MERCY_DFT = { minFoeLose: 2, hardFoeLose: 4 }
+/* W_PREF（§4.2 武器偏好轴激活，GAMES-175）：wPref 值→偏好武器表——bal 手枪→冲锋升级路径
+ * [2]；comp 冲锋/霰弹近脸 [3,2]（霰弹 8 弹近距 40-64dmg=近脸档火力压制）；cas 0=捡到什么
+ * 用什么。饿武选箱按「距离−偏好折扣」评分（偏好武器 500px 等价折扣），同武合并备弹仍最近。 */
+const W_PREF = { 0: null, 1: [2], 2: [3, 2] }
 function brainImpl(st, seat, level, rng, env) {
   const p = st.players[seat]
   if (!p || !p.alive) return { mx: 0, my: 0, aim: p ? p.aim : 0, fire: 0 }
@@ -678,19 +695,23 @@ function brainImpl(st, seat, level, rng, env) {
       const dd = isqrtM(dx * dx + dy * dy) || 1
       goal = { x: c.cx - ((dx * k) / dd | 0), y: c.cy - ((dy * k) / dd | 0) }
     }
-    /* Q3 资源：拳/弹尽 → 最近武器箱（饿武优先）；医疗纪律（档位键控） */
+    /* Q3 资源：拳/弹尽 → 最近武器箱（饿武优先；W_PREF 偏好折扣——§4.2 武器偏好轴）；
+     * 医疗纪律（档位键控） */
     const hungry = p.w === 0 || (p.mag <= 0 && p.ammo <= 0)
     if (hungry && !goal) {
       let best = null, bd = Infinity
+      const pref = W_PREF[per.wPref] || null
       for (const id in st.boxes) {
         const b = st.boxes[id]
         if (!b.on || (b.k !== 'wpn' && b.k !== 'nade')) continue
         const d2 = (b.x - p.x) * (b.x - p.x) + (b.y - p.y) * (b.y - p.y)
-        if (d2 < bd) { bd = d2; best = b }
+        const score = (pref && pref.indexOf(b.w) >= 0 && b.w !== p.w) ? d2 - 250000000000 : d2
+        if (score < bd) { bd = score; best = b }
       }
       if (best) {
         goal = { x: best.x, y: best.y }
-        if (bd < PICK_R * PICK_R) out.pick = Number(best.id.slice(1))
+        const d2b = (best.x - p.x) * (best.x - p.x) + (best.y - p.y) * (best.y - p.y)
+        if (d2b < PICK_R * PICK_R) out.pick = Number(best.id.slice(1))
       }
     }
     if (p.hp < per.healAt && p.meds > 0 && p.heal <= 0 && !(rng && rng() < per.healForget)) out.skl = 2
@@ -705,6 +726,27 @@ function brainImpl(st, seat, level, rng, env) {
     }
     const armed = (p.w > 0 && (p.mag > 0 || p.ammo > 0)) || p.w === 0 // 空枪=饿武找箱不交战；拳=近程 HUNT（决赛圈收口）
     const engR = p.w === 0 ? WPNS[0].melee : (RANGE_PX * 47 / 100) | 0
+    /* Q2 威胁评估/EVADE（§4.1 决策树补全，GAMES-175）：敌在射程内且其弹道线（快照 aim
+     * 明文字段——零作弊感知）距我 <30px，或 3s 内击过我 → 垂直弹道法向侧移（侧向取背离
+     * 敌位一侧）；Z0 HIGH（goal 已置=强制入圈）压过 Q2（树序 §4.1）。弱档被瞄准即走位
+     * =Loot 期遭遇不再站桩互屠（TTT 拉伸→死亡回流毒圈相位，轴①毒杀回归）。 */
+    if (!goal) {
+      for (const o of st.players) {
+        if (o.seat === seat || !o.alive || o.w === 0 || o.w === 5) continue // 拳/手雷无弹道线
+        const odx = o.x - p.x, ody = o.y - p.y
+        if (odx * odx + ody * ody > RANGE_PX * RANGE_PX) continue
+        const ex = o.x + Math.trunc(cosQ16(o.aim) / 65536 * RANGE_PX)
+        const ey = o.y + Math.trunc(sinQ16(o.aim) / 65536 * RANGE_PX)
+        const aimed = segDist2(p.x, p.y, o.x, o.y, ex, ey) < 30000 * 30000
+        if (aimed || (p.hurtBy === o.seat && st.tick - p.hurtAt < 60)) {
+          const ux = Math.trunc(cosQ16(o.aim) / 65536 * 200000), uy = Math.trunc(sinQ16(o.aim) / 65536 * 200000)
+          let nx = -uy, ny = ux // 法向两向取背离敌位一侧（>0 点积）
+          if (nx * -odx + ny * -ody < 0) { nx = -nx; ny = -ny }
+          goal = { x: p.x + nx, y: p.y + ny }
+          break
+        }
+      }
+    }
     /* F-3 贴身持续拉扯：仅拉开、不添接近——巡逻/圈预算目标趋同 → 首遇即穿透 <31px
      * 命中带（弹枪口出生后仍首拍必中一拍即灭），穿透后每拍持续拉开才有交战距离带；
      * 接近仍由 HUNT 拍内承担（此处添接近会以 !goal 压制巡逻 → 全局 shots 产能塌缩）；
@@ -712,17 +754,39 @@ function brainImpl(st, seat, level, rng, env) {
     if (foe && p.w > 0 && (p.mag > 0 || p.ammo > 0)) {
       const d = isqrtM(fd)
       const want2 = per.hunt === 2 ? 120000 : 160000
-      if (d < want2 - 60000) goal = { x: p.x * 2 - foe.x, y: p.y * 2 - foe.y }
+      /* F-2 根因修复（GAMES-175）：拉扯目标=want2 固定对峙距（背向敌向外量）——原 2p−foe
+       * 镜像点距自身仅一敌距，叠加态（d<30px）目标落进 <30px 移动死区=原地站桩；叠加
+       * 双 bots 既打不出（≤31px 停火门）也走不动（死区），永久堆叠（实测 1500 tick fd 3→7px
+       * 僵持、mag 30 全程零消耗）。api-check royale-rush 同款坑 GAMES-172 已修（400px 对峙
+       * 距），sim bot 侧同构收口。重叠态守卫（<0.6px 向量不可归一）：aim 方向退路（确定性零 rng）。 */
+      if (d < want2 - 60000) {
+        let bx = p.x - foe.x, by = p.y - foe.y, dd = d
+        if (dd < 60) { bx = cosQ16(p.aim); by = sinQ16(p.aim); dd = 65536 }
+        goal = { x: p.x + ((bx * want2 / dd) | 0), y: p.y + ((by * want2 / dd) | 0) }
+      }
     }
     /* HUNT 时限（4s 未杀脱离——遭遇战不鏖战，royale 节奏面）；决赛圈（r≤120px）豁免=贴脸必收 */
     if (mem.huntT === undefined) mem.huntT = 0
-    if (mem.huntT > 0) mem.huntT--
     const finalRing = c.r <= 120000
     if (armed && foe && fd < engR * engR) {
-      const canHunt = per.hunt > 0 || (p.hurtBy === foe.seat && st.tick - p.hurtAt < 60)
+      /* Q4 机会窗（§4.1 Q4 条件×§4.2 档位表合读）：HUNT 开火门=「优势窗」三档分层——
+       * bal 强窗（对方打药/换弹=§4.2「饿武/对方打药才开」）；comp 宽窗（+HP 优势=§4.1
+       * 「敌 HP 优势」）主动拦截（lead+近脸压制）；cas 无窗仅反击。原实现 hunt>0 即无条件
+       * 开火（两轮实测反转：20 席场无条件接架=接一切坏架，comp 残血冒进死于机会主义 bal）。
+       * 反击通道三档共享（被打才还手，3s 记仇）。信息面=快照明文字段，零作弊感知。 */
+      const counter = p.hurtBy === foe.seat && st.tick - p.hurtAt < 60
+      const oppStrong = foe.heal > 0 || foe.rel > 0
+      const oppAny = oppStrong || foe.hp <= p.hp
+      /* 自保门（GAMES-175）：低血不开新架（连环清洗实测——满血同档吃残血同伴=comp 队列
+       * 自相消耗 rank 垫底；hp<engageHp 只留反击通道+撤疗）；反击与强窗（对方打药=白给）不受门 */
+      const selfLow = per.engageHp && p.hp < per.engageHp && !oppStrong
+      const canHunt = ((per.hunt === 2 ? oppAny : per.hunt === 1 ? oppStrong : false) && !selfLow) || counter
+      /* 不追圈外逃敌（§4.1 Q4：毒会收）——圈外敌不 HUNT（含反击窗），放毒收头 */
+      const foeOut = (foe.x - c.cx) * (foe.x - c.cx) + (foe.y - c.cy) * (foe.y - c.cy) > c.r * c.r
       const spared = foeLose >= mercy.hardFoeLose && kinds && kinds[foe.seat] === 'human' // ≥4 免猎窗 90s（§4.4）
-      if (canHunt && !spared && (mem.huntT <= 0 || finalRing)) {
-        if (!finalRing) mem.huntT = 80
+      if (canHunt && !foeOut && !spared && (mem.huntT <= 0 || finalRing)) {
+        if (!finalRing) mem.huntT = per.burst + per.huntCd
+        mem.fireT = finalRing ? (BOT_EVERY[level] || 12) : per.burst
         let ax = foe.x, ay = foe.y
         if (per.hunt >= 1) { // lead 预判（闭式解 t_flight 提前量；F-2：balanced 无 lead=中距结构性脱靶——
           // 弹速 17-21k/拍 × 飞行 5-10 拍 × 横移 7.5k/拍 = 40-75px 侧偏 vs 命中半径 12px，
@@ -785,13 +849,36 @@ function brainImpl(st, seat, level, rng, env) {
     mem.wp = goal
   }
   mem.dt--
+  /* F-2 根因修复（GAMES-175）：huntT 递减域=逐 sim tick（brainImpl 网关每 tick 调用）——
+   * 原挂在决策拍分支内自减，80 拍冷却 ×决策间隔 8/12/30 = 640/960/2400 tick（32-120s）
+   * 火力沉默窗，「4s 脱离」膨胀 8-30 倍 → 全房 shots 22-85/局、competitive 0 kills 全
+   * seeds（首拍开火一决策窗后即长沉默，遭遇战永不收头）。决策拍内其余 mem（dt/wp）不迁。
+   * fireT=burst 开火承诺拍（同域逐 tick）：决策窗内持续开火不再受决策节律截断。 */
+  if (mem.huntT > 0) mem.huntT--
+  if (mem.fireT > 0) mem.fireT--
   const outSkl = mem.skl || 0, outPick = mem.pick !== undefined ? mem.pick : -1
   mem.skl = 0; mem.pick = -1 // 离散脉冲一次性（防决策间隔内逐拍重触发——cd 外的重复消费）
+  /* 顺手拾取逐拍化（GAMES-175）：拾取判定原只在决策拍——casual 30 tick 决策步长
+   * 225px≫56px 拾取窗（2×PICK_R），概率性跳窗=绕箱公转不拾取（实测 t200-1000 近箱
+   * 27-93px 始终 w=0）。拾取门=消费拍实时量距（F-3 停火门同纪律）；语义同决策拍顺手
+   * 拾取（道具/掉落恒拾，武器箱饿武才拾）+连败让位门（不抢真人近旁箱 §4.4）。 */
+  let pickOut = outPick
+  if (pickOut < 0 && foeLose < mercy.minFoeLose) {
+    const hungry2 = p.w === 0 || (p.mag <= 0 && p.ammo <= 0)
+    let bd2 = PICK_R * PICK_R
+    for (const id in st.boxes) {
+      const b = st.boxes[id]
+      if (!b.on) continue
+      const dx = b.x - p.x, dy = b.y - p.y
+      const d2 = dx * dx + dy * dy
+      if (d2 < bd2 && (b.k === 'itm' || b.k === 'drop' || b.k === 'nade' || (b.k === 'wpn' && hungry2))) { bd2 = d2; pickOut = Number(id.slice(1)) }
+    }
+  }
   /* F-3 开火距离门（逐拍实时）：贴身 ≤31px（=枪口偏移 16px+敌命中半径 15px 的几何必中界）
    * 停火——弹几何打不中重叠敌（枪口已越过敌身），继续射=空耗弹匣一整 reload 窗；
    * 31-40px 段弹段扫掠可中（合理杀伤）不入门；决策拍间隔内敌距可收敛穿透，门必须在
    * 消费拍实时量距；拳无弹体不受门 */
-  let fireOut = mem.fire
+  let fireOut = mem.fireT > 0 ? 1 : mem.fire
   if (fireOut && p.w > 0) {
     let dmin2 = Infinity
     for (const o of st.players) {
@@ -802,7 +889,7 @@ function brainImpl(st, seat, level, rng, env) {
     }
     if (isqrtM(dmin2) <= 31000) fireOut = 0
   }
-  return { mx: mem.mx, my: mem.my, aim: mem.aim || p.aim, fire: fireOut, skl: outSkl, pick: outPick }
+  return { mx: mem.mx, my: mem.my, aim: mem.aim || p.aim, fire: fireOut, skl: outSkl, pick: pickOut }
 }
 
 /* =====================================================================
