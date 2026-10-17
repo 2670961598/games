@@ -107,7 +107,7 @@ function emitOne(room, ctxRec, r, opt = {}) {
     ext: {
       aoi: { x: cx, y: cy, r: aoiR },
       ack: seat >= 0 && room.seats[seat] ? (room.seats[seat].lastSeq ?? -1) : -1,
-      me: own ? { seat, hp: own.hp, sh: own.sh, w: own.w, mag: own.mag, am: own.ammo, na: own.nades, me: own.meds, spd: own.spd, al: own.alive, rank: own.rank } : undefined,
+      me: own ? { seat, x: own.x, y: own.y, hp: own.hp, sh: own.sh, w: own.w, mag: own.mag, am: own.ammo, na: own.nades, me: own.meds, spd: own.spd, al: own.alive, rank: own.rank } : undefined, // x/y=GAMES-176：和解权威锚原料（reconcile 死码激活配套）
       lb: st.tick % 10 === 0 ? st.lb.slice(0, 5) : undefined,   // 1Hz top5（§5.4）
       mm: st.tick % 10 === 0 ? st.mm : undefined,               // 1Hz 全房密度点（§7 小地图）
     },

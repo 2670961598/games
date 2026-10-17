@@ -265,7 +265,8 @@
   ]
   const fxLedger = []
   function fxT(id) { fxLedger.push({ id, trig: performance.now(), lat: null }); if (fxLedger.length > 240) fxLedger.shift(); return fxLedger[fxLedger.length - 1] }
-  function fxD(rec) { if (rec && rec.lat == null) rec.lat = Math.max(0, Math.round(performance.now() - rec.trig)) }
+  const fxLatMin = {} // 持久最小首绘时延表（20 席热房事件洪水会冲掉 240 条环形台账——feel-check 断言锚）
+  function fxD(rec) { if (rec && rec.lat == null) { rec.lat = Math.max(0, Math.round(performance.now() - rec.trig)); if (fxLatMin[rec.id] == null || rec.lat < fxLatMin[rec.id]) fxLatMin[rec.id] = rec.lat } }
 
   /* ---------- 音效位（makeSound 平台范式：总闸门默认静音只记账；开启后 WebAudio
    * 简音色占位——多人客户端本地化口径，GAMES-131/141/150 同式） ---------- */
@@ -1054,6 +1055,7 @@
     fxScene,
     fxList: () => FXLIST.map((f) => ({ id: f[0], name: f[1], cls: f[2] })),
     fxLedger: () => fxLedger.map((l) => ({ id: l.id, trig: Math.round(l.trig), lat: l.lat })),
+    fxLatMin: () => ({ ...fxLatMin }), // 持久最小首绘表（热房洪水不冲——feel-check FE-2 断言锚）
     sfxGroups: () => ({ on: SND.on, slots: SND.slots.slice(), fired: Object.keys(SND.fired), calls: SND.calls.slice() }),
     sndOn: (v) => { SND.on = !!v },
   }
