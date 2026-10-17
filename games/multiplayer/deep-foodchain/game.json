@@ -17,7 +17,12 @@
     "levels": ["casual", "balanced", "competitive"],
     "swarm": true,
     "mercy": { "minFoeLose": 2, "hardFoeLose": 4, "majorM": 800 },
-    "desc": "三档=生态位（设计 §4/附决策 11）：casual 漂游仔（饲料位·不做密度场主动觅食=体型滞留 T0 低段·尸粒供给主力）/ balanced 觅食者（密度场+机会吞·嘴边 Δr 合格即吞不追击）/ competitive 猎手（体型键控四问树全开：Q1 威胁锥逃逸/Q2 拦截闭式解+dash 收口/Q3 密度场/Q4 晶簇带埋伏）。放水链（GAMES-102 范式）：真人连败（deaths≥minFoeLose 且 0 吞噬）→ 免猎 90s+让食 120px，重败（deaths≥hardFoeLose）→ 让食 200px；真人 M≥majorM 成长保护窗不猎（io 生态位让位）"
+    "persona": {
+      "casual": { "blunder": 0.12 },
+      "balanced": { "rhoWin": 260000, "rhoEwma": 0.55 },
+      "competitive": { "suppBand": 1, "growExt": 1 }
+    },
+    "desc": "三档=生态位（设计 §4/附决策 11；GAMES-166 深化）：casual 漂游仔（饲料位·不做密度场主动觅食=体型滞留 T0 低段·尸粒供给主力·失误率 blunder 可调）/ balanced 觅食者（密度场局部采样窗 260px+方向 ρ 移动均值+机会吞·嘴边 Δr 合格即吞不追击）/ competitive 猎手（体型键控四问树全开：Q1 威胁锥逃逸+Q1b 体型压制规避带/Q2 拦截闭式解+目标成长曲线外推+dash 收口/Q3 密度场/Q4 晶簇带埋伏）。放水链 io 启用（GAMES-102/140 范式）：真人连败（deaths≥minFoeLose 且 0 吞噬）→ 决策树降问（Q2 对其停用·四问→三问）+失误注入（±70°+dash 熄灭）+让食 120px，重败（deaths≥hardFoeLose）→ 失误率升 0.5+让食 200px；真人 M<majorM 成长保护窗不猎（io 生态位让位）；env 缺省全链不可达（离线确定性/回放不受配置面影响）"
   },
   "scoring": {
     "win": "轮末 score=floor(M/4)+kills×40 ≥320，榜首加冕海王",
