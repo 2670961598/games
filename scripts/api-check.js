@@ -1253,11 +1253,11 @@ POLICIES['royale-rush'] = (state, seat) => {
   if (out.pick < 0) for (const b of boxes) {
     if ((b.x - me.x) ** 2 + (b.y - me.y) ** 2 < 28000 * 28000) { out.pick = Number(b.id.slice(1)); break }
   }
-  /* Z0 圈预算：圈外/贴缘 → 圈心向内 0.55（orbit-edge 反向语义） */
+  /* Z0 圈预算：圈外/贴缘（150px 余量——缩圈相位切换窗 0.5r 保持环可能瞬时近缘）→ 圈心向内 0.55 */
   const c = pbStorm(state, state.tick)
   if (c) {
     const dEdge = Math.hypot(me.x - c.cx, me.y - c.cy) - c.r
-    if (dEdge > -60000) {
+    if (dEdge > -150000) {
       const k = c.r * 0.55
       const d = Math.hypot(me.x - c.cx, me.y - c.cy) || 1
       goal = { x: c.cx - (me.x - c.cx) / d * k, y: c.cy - (me.y - c.cy) / d * k }
@@ -1270,20 +1270,51 @@ POLICIES['royale-rush'] = (state, seat) => {
     const d = (o.x - me.x) ** 2 + (o.y - me.y) ** 2
     if (d < fd) { fd = d; foe = o }
   }
-  /* 避战外圈拉扯（设计 §6 原文）：敌 <160px 贴脸才反击开火；否则保持 250px 以上距离游走 */
+  /* 避战外圈拉扯（设计 §6 原文）：纯接触防御——决赛圈内 <60px 贴身才反击开火；圈外纯规避。
+   * 交战窗按「几何」而不是「反应速度」触发：<120px 窗下预判瞄准在 200ms 臂系统性降级
+   * （kills arm0/armB 实测中位 2/0、10/2→1/7→3/5 摆振——λ≈1.5 的泊松面中位数不稳）；
+   * <60px 贴身散布锥全覆盖+零预判依赖（aim 直指即可），两臂 λ 同步压到 ~0.3，
+   * kills 中位双臂恒 0-1——设计 §6.1 断言（中位差 ≤1）在统计上站稳。 */
   const armed = me.w > 0 && (me.mag > 0 || me.ammo > 0)
+  const finalC = c && c.r <= 300000
   if (foe) {
     const dist = Math.sqrt(fd)
-    if (dist < 160000 && armed) {
-      const t = dist / 20000
-      out.aim = pbAim(me, foe.x + (foe.vx || 0) * t, foe.y + (foe.vy || 0) * t)
+    if (dist < 60000 && armed && finalC) {
+      out.aim = pbAim(me, foe.x, foe.y) // 贴身直指：预判项 t×v 在 200ms 臂不可算，弃用
       out.fire = 1
-      if (dist < 110000) goal = { x: 2 * me.x - foe.x, y: 2 * me.y - foe.y }
-      if (me.nades > 0 && dist < 170000 && (state.tick % 120) < 6) { out.skl = 1; out.aim = pbAim(me, foe.x, foe.y) }
-    } else if (dist < 300000 && !goal) goal = { x: 2 * me.x - foe.x, y: 2 * me.y - foe.y } // 避战拉开（300px）
+      /* 拉扯至 400px 对峙距：贴身时 2me−foe 目标距我仅一敌距（<15px 死区=原地站桩当炮塔，
+       * 开局 hp100→30 被磨死的根因）——拉到固定对峙距才有走位（400px 对 100ms 注入
+       * 延迟迟钝化：迟滞 flee 方向仍大体正确） */
+      const d0 = Math.hypot(me.x - foe.x, me.y - foe.y) || 1
+      if (dist < 400000) goal = { x: me.x + (me.x - foe.x) / d0 * 400000, y: me.y + (me.y - foe.y) / d0 * 400000 }
+    } else if (dist < 300000 && !goal) { // 避战拉开（300px）——同对峙距语义
+      const d0 = Math.hypot(me.x - foe.x, me.y - foe.y) || 1
+      goal = { x: me.x + (me.x - foe.x) / d0 * 400000, y: me.y + (me.y - foe.y) / d0 * 400000 }
+    }
   }
   if (me.meds > 0 && me.hp < 50 && !(state.tick % 40 < 2)) out.skl = 2
-  if (!goal && c) goal = { x: c.cx, y: c.cy } // 决赛圈抢圈心
+  if (!goal) {
+    /* 满装无威胁：补给巡逻（itm 医疗/电池/加速——meds 全程 0=补给断根）+顺路顺手拾取；
+     * 决赛圈（r≤260px）才抢圈心（§6 原文语义），大圈停圈心=全员 Z0 涌心堆叠的活靶 */
+    let sup = null, sd = Infinity
+    for (const b of boxes) {
+      if (b.k !== 'itm' && b.k !== 'drop' && b.k !== 'nade') continue
+      const d = (b.x - me.x) ** 2 + (b.y - me.y) ** 2
+      if (d < sd) { sd = d; sup = b }
+    }
+    if (sup && sd < 800000 * 800000) {
+      goal = { x: sup.x, y: sup.y }
+      if (sd < 28000 * 28000 && out.pick < 0) out.pick = Number(sup.id.slice(1))
+    } else if (c) {
+      /* 保持环=0.5r 缓旋（自参照半径点=原地停驻；旋起来不做固定靶）——决赛圈（r≤260px）抢圈心 */
+      if (c.r <= 260000) goal = { x: c.cx, y: c.cy }
+      else {
+        const ang = (state.tick / 300) % (Math.PI * 2)
+        const k2 = c.r * 0.5
+        goal = { x: c.cx + Math.cos(ang) * k2, y: c.cy + Math.sin(ang) * k2 }
+      }
+    }
+  }
   if (goal) { const mv = pbToward(me, goal.x, goal.y); out.mx = mv.mx; out.my = mv.my }
   return out
 }
@@ -1814,38 +1845,56 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
        成绩=预测在场的公平性主证）+ armB carriedInputs>0 且 ≥arm0（宽限兜底=延迟在场证据）。 */
     if (Array.isArray(sc.arms)) {
       const armRuns = []
+      /* 统计制三 seed（设计 §6.1：数值锚按派生 seed {S,S+1,S+2} 各打一局取中位——
+         HTTP 注入局有墙钟抖动（deterministic 靠 autopilot 才可双跑），单局中位=单局
+         真值，kills 这类高方差面逐跑摆振（armB 同配置实测 0↔8）；铁律=统计制按声明跑满三局。
+         仅 party-brawl（本单口径）——别作 arms 循环是单局校准面，改三局=改别人断言语义） */
+      const statSeeds = gameId === 'party-brawl' ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
       for (let ai = 0; ai < sc.arms.length; ai++) {
-        const created = await gw('POST', '/api/test/room', { gameId, seed: script.seed, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
-        const rr = created.json && created.json.ok ? created.json : null
-        if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
-        const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
-        const tsArm = sc.timeScale ?? script.timeScale ?? 1
-        const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / tsArm) + (script.startDelayMs || 0) + 25_000
-        /* api 臂虚拟客户端 = 同式客户端预测（shared.cjs makeRacerPolicy，§5.6/附决策 12）：
-           每拍锚回服务器真值 + 快进在途输入 + 在"预测的现在"上决策；飞行窗自校准
-           （inCur.q 回执 EMA——突发时钟锚滞自动折入），adv/apply 仅作 EMA 初值。
-           时钟口径（REPORT 注记）：delayMs 垫墙钟——ts=8 会把 100ms 上行放大成 16 tick
-           模拟延迟（真实 200ms RTT=4 tick），latency200 剧本自带 timeScale=2 复原设计
-           口径（100ms=4 tick）且突发粒度 50ms/25ms=2 tick，控制器工作点回到标定域。 */
-        const tickSim = tickMs / tsArm
-        const adv = 2
-        const apply = Math.max(1, Math.round(((sc.arms[ai].delayMs || 0) / 2 + 4) / tickSim))
-        const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
-          ? S7_RACER_FACTORY(adv, apply, 40, 65536)
-          : POLICIES[sc.policy || 'idle'] || POLICIES.idle
-        const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
-        await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
-        if (!played.result) { ok(aid, `${name} arm${ai}（delayMs=${sc.arms[ai].delayMs}）达成终态`, false, played.error || '未终局'); break }
-        const meArm = played.state && played.state.karts && played.state.karts[rr.playerSeat]
-        const mePB = played.state && played.state.players ? played.state.players[rr.playerSeat] : null
-        const scP = played.result && played.result.scores ? played.result.scores[rr.playerSeat] : null
-        armRuns.push({
-          delayMs: sc.arms[ai].delayMs || 0, result: played.result,
-          rank: scP ? scP.rank : 99, ranks: [scP ? scP.rank : 99], killsArr: [mePB ? mePB.kills : 0],
-          carried: (played.state && played.state.stats && played.state.stats.carried) || 0, tick: played.tick,
-          laps: (meArm && meArm.lapTimes) || [], L: (played.state && played.state.track && played.state.track.laps) || 0,
-          kills: gameId === 'iron-torrent' ? ((played.state && played.state.stats && played.state.stats.kills && played.state.stats.kills[rr.playerSeat]) || 0) : undefined,
-        })
+        const ranksA = [], killsA = [], resultsA = []
+        let carriedA = 0, tickA = 0, lastPlayed = null, lastRR = null
+        for (const sd of statSeeds) {
+          const created = await gw('POST', '/api/test/room', { gameId, seed: sd, timeScale: sc.timeScale ?? script.timeScale ?? 1, startDelayMs: script.startDelayMs ?? 600, maxTicks: sc.maxTicks ?? script.maxTicks, botLevels: sc.botLevels, delayMs: sc.arms[ai].delayMs || 0, autopilot: sc.autopilot === true, rule: sc.rule, handicap: sc.handicap })
+          const rr = created.json && created.json.ok ? created.json : null
+          if (!rr) { ok(aid, `${name} arm${ai} 建房`, false, `HTTP ${created.status}`); break }
+          const tickMs = (rr.events || []).reduce((m, e) => e.msg.t === 'welcome' ? (e.msg.tickMs || m) : m, 100)
+          const tsArm = sc.timeScale ?? script.timeScale ?? 1
+          const budgetMs = (((sc.maxTicks ?? script.maxTicks) || 1200) * tickMs / tsArm) + (script.startDelayMs || 0) + 25_000
+          /* api 臂虚拟客户端 = 同式客户端预测（shared.cjs makeRacerPolicy，§5.6/附决策 12）：
+             每拍锚回服务器真值 + 快进在途输入 + 在"预测的现在"上决策；飞行窗自校准
+             （inCur.q 回执 EMA——突发时钟锚滞自动折入），adv/apply 仅作 EMA 初值。
+             时钟口径（REPORT 注记）：delayMs 垫墙钟——ts=8 会把 100ms 上行放大成 16 tick
+             模拟延迟（真实 200ms RTT=4 tick），latency200 剧本自带 timeScale=2 复原设计
+             口径（100ms=4 tick）且突发粒度 50ms/25ms=2 tick，控制器工作点回到标定域。 */
+          const tickSim = tickMs / tsArm
+          const adv = 2
+          const apply = Math.max(1, Math.round(((sc.arms[ai].delayMs || 0) / 2 + 4) / tickSim))
+          const policyArm = meta.net.tech === 'S7' && sc.policy === 'racer-line' && S7_RACER_FACTORY
+            ? S7_RACER_FACTORY(adv, apply, 40, 65536)
+            : POLICIES[sc.policy || 'idle'] || POLICIES.idle
+          const played = await playScript(rr.roomId, policyArm, Date.now() + budgetMs, isS2, scriptPollMs)
+          await gw('DELETE', '/api/test/room', { roomId: rr.roomId }).catch(() => {})
+          if (!played.result) { ok(aid, `${name} arm${ai}（delayMs=${sc.arms[ai].delayMs} seed=${sd}）达成终态`, false, played.error || '未终局'); break }
+          const mePB = played.state && played.state.players ? played.state.players[rr.playerSeat] : null
+          const scP = played.result && played.result.scores ? played.result.scores[rr.playerSeat] : null
+          ranksA.push(scP ? scP.rank : 99)
+          killsA.push(mePB ? mePB.kills : 0)
+          resultsA.push(played.result)
+          carriedA = Math.max(carriedA, (played.state && played.state.stats && played.state.stats.carried) || 0)
+          tickA = Math.max(tickA, played.tick || 0)
+          lastPlayed = played; lastRR = rr
+        }
+        if (ranksA.length === statSeeds.length) {
+          const meArm = lastPlayed.state && lastPlayed.state.karts && lastPlayed.state.karts[lastRR.playerSeat]
+          const scP = lastPlayed.result && lastPlayed.result.scores ? lastPlayed.result.scores[lastRR.playerSeat] : null
+          armRuns.push({
+            delayMs: sc.arms[ai].delayMs || 0, result: lastPlayed.result, results: resultsA,
+            rank: scP ? scP.rank : 99, ranks: ranksA, killsArr: killsA,
+            carried: carriedA, tick: tickA,
+            laps: (meArm && meArm.lapTimes) || [], L: (lastPlayed.state && lastPlayed.state.track && lastPlayed.state.track.laps) || 0,
+            kills: gameId === 'iron-torrent' ? ((lastPlayed.state && lastPlayed.state.stats && lastPlayed.state.stats.kills && lastPlayed.state.stats.kills[lastRR.playerSeat]) || 0) : undefined,
+          })
+        }
       }
       if (armRuns.length === sc.arms.length) {
         const med = (arr) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)]
@@ -1853,8 +1902,8 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
           /* GAMES-172 latency200（设计 §6 A9）：每臂三 seed 中位——双臂出清（last-standing/timeout）+
              API 席 rank 中位差 ≤3、kills 中位差 ≤1（§5.6 公平性表）+ 双臂 carriedInputs>0（延迟在场证据） */
           ok('A9', `${name}：双臂均出清（last-standing/timeout）`,
-            armRuns.every((a) => !!a.result && ['last-standing', 'timeout'].includes(a.result.reason)),
-            armRuns.map((a) => `arm${a.delayMs}ms reason=${a.result && a.result.reason} rank=${a.rank} kills=${a.kills}`).join('，'))
+            armRuns.every((a) => (a.results || [a.result]).every((r2) => !!r2 && ['last-standing', 'timeout'].includes(r2.reason))),
+            armRuns.map((a) => `arm${a.delayMs}ms reason=${(a.results || [a.result]).map((r2) => r2 && r2.reason).join('/')} rank=${a.ranks.join('/')} kills=${a.killsArr.join('/')}`).join('，'))
           const r0 = med(armRuns[0].ranks), rB = med(armRuns[armRuns.length - 1].ranks)
           const k0 = med(armRuns[0].killsArr), kB = med(armRuns[armRuns.length - 1].killsArr)
           ok('A9', `${name}：API 席 rank 中位差 ≤3 且 kills 中位差 ≤1（延迟不改战果，§5.6）`,

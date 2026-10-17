@@ -133,6 +133,17 @@ function emitOne(room, ctxRec, r, opt = {}) {
 }
 function emit(room, r) {
   const st = room.state
+  if (r && r.over) { // 终局拍冲刷：奇数拍缓冲的终拍 elim/drop 事件随终局下发——
+    // 不冲刷则「最后淘汰」对观测者永久丢失（A7 kills 对账 vs 终局 state 的 kills 差 1 根因）
+    const pend0 = roomPend.get(room) || []
+    if (r.events && r.events.length) pend0.push(...r.events)
+    if (pend0.length) {
+      const pr0 = { events: pend0.splice(0), dirty: r.dirty }
+      for (const s of room.seats) if (s.conn) emitOne(room, { ctx: s.conn, seat: s.seat }, pr0)
+      for (const c of room.spectators) emitOne(room, { ctx: c, seat: -1 }, pr0)
+    }
+    return
+  }
   if (st.tick % 2 !== 0) { // 10Hz：偶数 tick 组包；奇数 tick 事件入缓冲（§5.4）
     if (r && r.events && r.events.length) {
       let pend = roomPend.get(room)
