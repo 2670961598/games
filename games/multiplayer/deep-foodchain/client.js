@@ -57,10 +57,11 @@
     return ok
   }
 
-  /* ---------- 音效位（≥12 槽，common.js makeSound 程序合成范式；总闸门默认静音只记账） ---------- */
+  /* ---------- 音效位（≥14 槽，common.js makeSound 程序合成范式；总闸门默认静音只记账；
+   * fired=持久触达集——calls 滚动窗被游戏音洪水冲掉的 GAMES-141 教训） ---------- */
   const sfx = {
-    slots: ['eat1', 'eat2', 'eat4', 'devour', 'die', 'dashOn', 'dashOff', 'tier', 'crown', 'spawn', 'bloom', 'streak', 'danger', 'round'],
-    calls: [], on: false, ac: null,
+    slots: ['eat1', 'eat2', 'eat4', 'devour', 'die', 'dashOn', 'dashOff', 'bubble', 'tier', 'crown', 'spawn', 'bloom', 'streak', 'danger', 'round', 'curve'],
+    calls: [], fired: {}, on: false, ac: null,
     tone(f0, f1, dur, type, vol) {
       if (!this.ac) { try { this.ac = new (window.AudioContext || window.webkitAudioContext)() } catch { this.ac = null } }
       const a = this.ac; if (!a) return
@@ -71,14 +72,20 @@
     },
     play(slot, t) {
       this.calls.push({ g: slot, t: t || '', at: performance.now() })
+      this.fired[slot] = 1
       if (!this.on) return
       if (slot === 'eat1') this.tone(660, 880, 0.06, 'triangle', 0.05)
       else if (slot === 'eat2') this.tone(740, 1050, 0.08, 'triangle', 0.06)
       else if (slot === 'eat4') { this.tone(880, 1320, 0.09, 'triangle', 0.07); setTimeout(() => this.tone(1320, 1760, 0.07, 'sine', 0.05), 70) }
-      else if (slot === 'devour') { this.tone(300, 90, 0.22, 'sawtooth', 0.07); setTimeout(() => this.tone(900, 1400, 0.12, 'square', 0.04), 60) }
+      else if (slot === 'devour') { // 咂嘴体型分级音高：越大嘴越低沉（t 参数=体型档）
+        const tp = parseInt(t) || 0
+        this.tone(320 - tp * 55, 95 - tp * 10, 0.22, 'sawtooth', 0.07)
+        setTimeout(() => this.tone(900 - tp * 60, 1400 - tp * 90, 0.12, 'square', 0.04), 60)
+      }
       else if (slot === 'die') this.tone(220, 55, 0.4, 'sawtooth', 0.08)
       else if (slot === 'dashOn') this.tone(440, 880, 0.12, 'square', 0.045)
       else if (slot === 'dashOff') this.tone(880, 440, 0.1, 'square', 0.035)
+      else if (slot === 'bubble') this.tone(520, 760, 0.05, 'sine', 0.03) // dash 水泡串（尾迹粒点化）
       else if (slot === 'tier') { this.tone(523, 523, 0.1, 'sine', 0.07); setTimeout(() => this.tone(784, 784, 0.14, 'sine', 0.07), 95) }
       else if (slot === 'crown') { this.tone(784, 784, 0.12, 'sine', 0.08); setTimeout(() => this.tone(1046, 1568, 0.22, 'sine', 0.08), 110) }
       else if (slot === 'spawn') this.tone(330, 660, 0.14, 'sine', 0.05)
@@ -86,7 +93,62 @@
       else if (slot === 'streak') this.tone(1046, 1568, 0.16, 'square', 0.05)
       else if (slot === 'danger') this.tone(160, 120, 0.18, 'sawtooth', 0.05)
       else if (slot === 'round') { this.tone(392, 392, 0.12, 'sine', 0.06); setTimeout(() => this.tone(523, 523, 0.16, 'sine', 0.06), 120) }
+      else if (slot === 'curve') this.tone(523, 392, 0.3, 'sine', 0.05) // 成长曲线展开（下行收束）
     },
+  }
+
+  /* =====================================================================
+   * 动效台账（GAMES-167 手感层）：FXLIST 登记表 + fxTrig→fxDraw 双时戳。
+   * fb=反馈类（事件驱动，≤80ms 红线）/state=状态类（常驻呈现，只报数）；
+   * fx 层只读消费状态+裁决事件（sim/brain 零改动）。
+   * ===================================================================== */
+  const FXLIST = [
+    ['F01', 'devourGulp', 'fb'],      // 吞噬张嘴+吸入拉丝动画（signature，§3.3 240ms）
+    ['F02', 'tierBurst', 'fb'],       // 体型升档爆发光圈+squash 弹性缩放（§3.3）
+    ['F03', 'tierHold', 'state'],     // 定档滞回提示（升档进度条+降档 −5% 带红脉冲，§2.4）
+    ['F04', 'dashTrail', 'fb'],       // dash 加速尾迹+质量流失气泡串（§3.3）
+    ['F05', 'preyPanic', 'fb'],       // 被捕惊红闪（天敌逼近/被吞红边脉冲）
+    ['F06', 'deathScatter', 'fb'],    // 死亡掉落散布（粒数=drops 坠流扇面）
+    ['F07', 'foodFloat', 'state'],    // 食物闪烁浮游感（bob 起伏+晶簇闪烁）
+    ['F08', 'aoiBreath', 'state'],    // AOI 视野圈呼吸（档即视野 §2.4，±2%）
+    ['F09', 'lbDelta', 'state'],      // 排行榜变动差值标（▲/▼ 900ms 淡出）
+    ['F10', 'preyMark', 'state'],     // 猎物高亮描边（可吞提示=绿细环）
+    ['F11', 'predAlert', 'state'],    // 天敌红名警示（不可吞规避=红环+红名）
+    ['F12', 'comboBounce', 'fb'],     // 连吃 combo 计数弹跳（+N×n 三段弹跳）
+    ['F13', 'whaleEntrance', 'fb'],   // 鲸级登场震屏波纹（T3 沧鲸降世双环）
+    ['F14', 'growthCurve', 'state'],  // 终局成长曲线回放图（mHist 折线）
+    ['F15', 'specBars', 'state'],     // 观战体型对比条（top5 rOf 相对条）
+    ['F16', 'sinkEntrance', 'fb'],    // 开场下沉入场（世界沉落 420ms）
+  ]
+  const FXLED = []
+  function fxTrig(id) { FXLED.push({ id, trig: Math.round(now), draw: null, lat: null }); if (FXLED.length > 600) FXLED.splice(0, 200) }
+  function fxDraw(id) { // 首绘落章：最近一条未绘条目盖 draw 戳（fb=draw-trig 可复跑）
+    for (let i = FXLED.length - 1; i >= 0; i--) {
+      const e = FXLED[i]
+      if (e.id !== id) continue
+      if (e.draw == null) { e.draw = Math.round(now); e.lat = e.draw - e.trig }
+      return
+    }
+  }
+
+  /* ---------- perf 钩子（rafGap 首帧不播种——GAMES-141 恒 0fps 死码教训） ---------- */
+  const PERF = { gaps: [], costs: [], lastRaf: 0, seeded: false }
+  function perfTick(t, cost) {
+    if (PERF.seeded) { PERF.gaps.push(t - PERF.lastRaf); PERF.costs.push(cost) }
+    else PERF.seeded = true
+    PERF.lastRaf = t
+    if (PERF.gaps.length > 360) { PERF.gaps.splice(0, 120); PERF.costs.splice(0, 120) }
+  }
+  function perfStat() {
+    const cs = PERF.costs.slice().sort((a, b) => a - b)
+    const avg = (a) => (a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(2) : 0)
+    return {
+      rafGapMs: avg(PERF.gaps),
+      fps: PERF.gaps.length ? Math.round(1000 / Math.max(0.01, avg(PERF.gaps))) : 0,
+      costP95Ms: cs.length ? +cs[Math.floor(cs.length * 0.95)].toFixed(2) : 0,
+      costJankPct: cs.length ? +(cs.filter((c) => c > 25).length / cs.length * 100).toFixed(2) : 0,
+      n: PERF.gaps.length,
+    }
   }
 
   /* ---------- 全局状态 ---------- */
@@ -100,6 +162,10 @@
     toasts: [], parts: [], shakes: 0, shakeT: 0, eatStreak: 0, eatT: 0,
     rings: [], flash: 0, flashC: '#FFD700', slowUntil: 0, zoomPulse: 0, enterT0: 0, deathT0: 0,
     settle: null, streakN: 0, streakT: 0, bloom: -1, sawSnap: false,
+    /* 手感层（GAMES-167）：动效态只读消费快照/事件，不入模拟 */
+    gulp: null, scatters: [], combo: null, tierBurst: null, whale: null,
+    panicUntil: 0, threatNear: false, lbDeltas: {}, lbPrev: null, mHist: [],
+    specDemo: 0, curveUntil: 0, lastBubble: 0,
   }
   const cam = { x: K.W / 2, y: K.H / 2, zoom: 1, zTarget: 1, vx: 0, vy: 0 }
   let now = performance.now()
@@ -181,7 +247,7 @@
     if (m.t === 'seat') { S.roster = m.seats; return }
     if (m.t === 'started') { if (m.state) applyWelcomeState(m.state); return }
     if (m.t === 'snapshot') { applySnapshot(m); return }
-    if (m.t === 'end') { S.crown = { over: true, result: m.result }; return }
+    if (m.t === 'end') { S.crown = { over: true, result: m.result }; S.curveUntil = now + 6000; fxTrig('F14'); sfx.play('curve', ''); return }
     if (m.t === 'closed') { S.connLost = true }
   }
   function applyWelcomeState(st) {
@@ -191,6 +257,8 @@
     const me = S.seat >= 0 ? st.ents['s' + S.seat] : null
     if (me) { cam.x = me.x; cam.y = me.y; cam.zoom = cam.zTarget = K.zoomOf(me.t || 0) }
     S.enterT0 = now
+    S.mHist = []
+    fxTrig('F16') // 开场下沉入场（§3.3）
     sfx.play('spawn', '')
     emitDbg('welcome', { seat: S.seat, round: st.round.n })
   }
@@ -214,12 +282,20 @@
   }
   function applySnapshot(m) {
     if (S.sawSnap && m.ext.rd.n !== S.round.n) { // 轮末结算（轮次翻页，首快照不算）
-      S.settle = { n: S.round.n, t0: now }; sfx.play('round', String(S.round.n))
+      S.settle = { n: S.round.n, t0: now }
+      S.curveUntil = now + 1800; fxTrig('F14')
+      sfx.play('round', String(S.round.n)); sfx.play('curve', '')
     }
     S.round = { n: m.ext.rd.n, t: m.ext.rd.t, k: m.ext.rd.k, rem: m.ext.rd.rem }
     const tAuth = m.frame * 100
     if (m.ext.lb) {
       const next = m.ext.lb.map((r) => Array.isArray(r) ? { seat: r[0], score: r[1], M: r[2] } : r)
+      for (const r of next) { // 排行榜变动差值标（F09）：score 逐席对账
+        const prev = S.lbPrev && S.lbPrev[r.seat]
+        if (prev != null && r.score !== prev) S.lbDeltas[r.seat] = { d: r.score - prev, t0: now }
+      }
+      S.lbPrev = {}
+      for (const r of next) S.lbPrev[r.seat] = r.score
       S.lb = next
     }
     if (m.ext.mm) S.mm = m.ext.mm
@@ -260,7 +336,7 @@
     for (const ev of m.events || []) onEvent(ev)
     S.sawSnap = true
   }
-  function onMyDeath() { S.shakes = 8; S.shakeT = 400; S.deathT0 = now; sfx.play('die', '') }
+  function onMyDeath() { S.shakes = 8; S.shakeT = 400; S.deathT0 = now; S.panicUntil = Math.max(S.panicUntil, now + 900); fxTrig('F05'); sfx.play('die', '') }
   function onEvent(ev) {
     const isMe = ev.seat === S.seat
     if (ev.k === 'eat' && isMe) {
@@ -274,20 +350,28 @@
         S.rings.push({ x: me.x, y: me.y, t0: now, dur: 260, col })
         me.pop = 1
       }
+      S.combo = { v: ev.v || 1, n: S.eatStreak, t0: now }; fxTrig('F12') // 连吃 combo 计数弹跳
       if (S.eatStreak >= 5) { S.toasts.push({ txt: '连食×' + S.eatStreak, c: '#7FE8D8', t0: now, dur: 900 }); sfx.play('streak', '') }
     } else if (ev.k === 'devour') {
       const vr = S.ents.get('s' + ev.seat)
+      const me = S.ents.get('s' + S.seat)
       if (ev.by === S.seat) {
         const victim = S.roster.find((r) => r.seat === ev.seat)
         S.toasts.push({ txt: '吞噬 ' + ((victim && victim.name) || '猎物') + ' +' + ev.gain, c: '#FFD700', t0: now, dur: 1200, big: true })
         S.shakes = 4; S.shakeT = 240
         S.slowUntil = now + 220; S.zoomPulse = 1
-        if (vr) { S.rings.push({ x: vr.x, y: vr.y, t0: now, dur: 340, col: '#FFD700', big: 1 }); spawnParts(vr.x, vr.y, '#FFD700', 14) }
+        if (vr) {
+          S.gulp = { id: 's' + ev.seat, x: vr.x, y: vr.y, t0: now, dur: 240 }; fxTrig('F01') // 张嘴+吸入拉丝（signature）
+          S.rings.push({ x: vr.x, y: vr.y, t0: now, dur: 340, col: '#FFD700', big: 1 }); spawnParts(vr.x, vr.y, '#FFD700', 14)
+        }
         S.streakN = now - S.streakT < 8000 ? S.streakN + 1 : 1; S.streakT = now
         if (S.streakN >= 2) S.toasts.push({ txt: '连吞×' + S.streakN, c: '#FF6B5C', t0: now, dur: 1100, big: true })
-        sfx.play('devour', '')
+        sfx.play('devour', String(me ? (me.t || 0) : 0)) // 咂嘴体型分级音高
       }
-      if (vr) spawnParts(vr.x, vr.y, RES_COL.drop, Math.min(24, ev.drops || 8)) // 被吞者碎裂粒雨（§3.3）
+      if (vr) { // 被吞者死亡掉落散布（F06：粒数=drops 扇面坠流）+碎裂粒雨（§3.3）
+        S.scatters.push({ x: vr.x, y: vr.y, t0: now, n: Math.min(30, ev.drops || 8) }); fxTrig('F06')
+        spawnParts(vr.x, vr.y, RES_COL.drop, Math.min(24, ev.drops || 8))
+      }
       if (isMe) {
         const killer = ev.by >= 0 ? S.roster.find((r) => r.seat === ev.by) : null
         S.killerName = ev.by >= 0 ? ((killer && killer.name) || '大鱼') : '深海'
@@ -297,10 +381,18 @@
       if (isMe) {
         S.flash = Math.max(S.flash, 0.9); S.flashC = '#FFD700'
         S.toasts.push({ txt: '升档 · ' + TIER_NAME[ev.t] + '！', c: '#7FE8D8', t0: now, dur: 1400, big: ev.t >= 2 })
+        S.tierBurst = { t0: now, t: ev.t }; if (S.ents.get('s' + S.seat)) S.ents.get('s' + S.seat).pop = 1
+        fxTrig('F02') // 升档爆发光圈+squash
         sfx.play('tier', String(ev.t))
       }
       if (ev.t === 2) S.toasts.push({ txt: '猎鲨出没', c: '#5C7A99', t0: now, dur: 1500 })
-      if (ev.t === 3) S.toasts.push({ txt: '沧鲸降世', c: '#FFD700', t0: now, dur: 1800, big: true })
+      if (ev.t === 3) { // 沧鲸降世：登场震屏波纹（F13）
+        const w = S.ents.get('s' + ev.seat)
+        S.whale = { x: w ? w.x : cam.x, y: w ? w.y : cam.y, t0: now }
+        S.shakes = Math.max(S.shakes, 6); S.shakeT = Math.max(S.shakeT, 500)
+        fxTrig('F13')
+        S.toasts.push({ txt: '沧鲸降世', c: '#FFD700', t0: now, dur: 1800, big: true })
+      }
     } else if (ev.k === 'milestone') {
       if (isMe) {
         S.flash = Math.max(S.flash, 0.9); S.flashC = '#FFD700'
@@ -428,6 +520,7 @@
   function crowdFadeOf(d) { return d < 600000 ? 1 : d < 900000 ? 0.78 : 0.6 }
   function render(dt) {
     const meRec = S.ents.get('s' + S.seat)
+    let sinkY = 0
     /* 镜头锁自身平滑（§3.2：临界阻尼 + 档位 zoom 阶梯 lerp 0.04；死亡拉远 0.15） */
     const anchor = S.mode === 'debug' ? S.ents.get('s0') : (meRec || null)
     if (anchor) {
@@ -442,7 +535,10 @@
     if (S.zoomPulse > 0.01) S.zoomPulse *= 0.86; else S.zoomPulse = 0
     if (S.enterT0 && now - S.enterT0 < 420) {
       const e = (now - S.enterT0) / 420
-      cam.zoom *= 0.8 + 0.2 * (1 - Math.pow(1 - e, 3))
+      const eo = 1 - Math.pow(1 - e, 3)
+      cam.zoom *= 0.8 + 0.2 * eo
+      sinkY = -70 * (1 - eo) // 开场下沉入场（F16：世界自上而下沉落 420ms）
+      fxDraw('F16')
     }
     /* 震动（渲染期偏移，§3.2） */
     let shx = 0, shy = 0
@@ -451,13 +547,25 @@
       const amp = S.shakes * (S.shakeT / 400)
       shx = (Math.random() * 2 - 1) * amp; shy = (Math.random() * 2 - 1) * amp
     }
+    /* 天敌逼近侦测（F05 惊红闪+danger 低频警示——fx 层只读消费实体态；
+     * 判据与敌我环同源：orR×4 ≥ myR×5 即可吞我者） */
+    let threat = false
+    if (meRec && !S.dead) {
+      const myR = K.rOf(meRec.M)
+      for (const rec of S.ents.values()) {
+        if (rec.k !== 'fish' || rec === meRec || rec.gone || rec.d) continue
+        if (K.rOf(rec.M) * 4 >= myR * 5 && Math.hypot(rec.x - meRec.x, rec.y - meRec.y) < 650000) { threat = true; break }
+      }
+    }
+    if (threat && !S.threatNear) { S.panicUntil = Math.max(S.panicUntil, now + 600); fxTrig('F05'); sfx.play('danger', '') }
+    S.threatNear = threat
     /* 背景：军绿纵向渐变 + 三光带分层（§2.1/§7 同源） */
     const grd = g.createLinearGradient(0, 0, 0, H)
     grd.addColorStop(0, BG_TOP); grd.addColorStop(1, BG_MID)
     g.fillStyle = grd
     g.fillRect(0, 0, W, H)
     g.save()
-    g.translate(shx, shy)
+    g.translate(shx, shy + sinkY)
     const band = (yW, hW, col) => { // 世界带映射到屏幕（镜头相关）
       const p0 = w2s(0, yW), p1 = w2s(0, yW + hW)
       const y0 = Math.max(-4, p0.y), y1 = Math.min(H + 4, p1.y)
@@ -477,6 +585,16 @@
     g.strokeStyle = WALL_COL.replace('.32', '.' + (22 + Math.round(14 * Math.sin(now / 600))) + ')')
     g.lineWidth = 3
     g.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y)
+    /* AOI 视野圈呼吸（F08：档即视野 §2.4——±2% 呼吸+透明度脉动，机制面外显） */
+    if (meRec && !S.dead) {
+      const ms0 = w2s(meRec.x, meRec.y)
+      const breathe = 1 + 0.02 * Math.sin(now / 700)
+      g.globalAlpha = 0.12 + 0.05 * Math.sin(now / 700)
+      g.strokeStyle = '#7FE8D8'; g.lineWidth = 1.5
+      g.beginPath(); g.arc(ms0.x, ms0.y, K.aoiR(meRec.t || 0) / 1000 * breathe * cam.zoom, 0, Math.PI * 2); g.stroke()
+      g.globalAlpha = 1
+      fxDraw('F08')
+    }
 
     const lod = cam.zoom >= 0.9 ? 2 : cam.zoom >= 0.8 ? 1 : 0 // LOD：2=全细节/1=去尾迹/0=远端淡化
     /* 光点 sprite 两批合批（静态位/瞬态），视口 AABB 裁剪（§5.4） */
@@ -484,11 +602,14 @@
     for (const rec of S.ents.values()) {
       if (rec.k === 'fish' || rec.gone) continue
       if (!rec.on && rec.k !== 'drop') continue
-      const s = w2s(rec.x, rec.y)
+      /* 食物浮游感（F07）：bob 起伏（位相按坐标散列）+晶簇闪烁（pulse 共存） */
+      const bob = Math.sin(now / 520 + ((rec.x / 97000 + rec.y / 88000) % 6.28)) * 1400
+      const s = w2s(rec.x, rec.y + bob)
       const r = (rec.k === 'cry' ? 8 * pulse : rec.v >= 2 ? 7 : 6) * cam.zoom
       if (s.x < -16 || s.y < -16 || s.x > W + 16 || s.y > H + 16) continue
       const spr = rec.k === 'drop' ? SPRITES[rec.v >= 2 ? 'drop' : 'dash'] : SPRITES[rec.k]
       g.drawImage(spr, s.x - r, s.y - r, r * 2, r * 2)
+      fxDraw('F07')
     }
     /* 鱼：四档形色双编码（§7 形状通道）+ 皮肤纹样 + 敌我环（§7 一屏可读） */
     for (const rec of S.ents.values()) {
@@ -507,13 +628,20 @@
       /* 敌我关系环（§7：可吞=绿细描边环、威胁=红边缘光晕——K=1.25 判据渲染镜像） */
       if (meRec && rec !== meRec && lod >= 1) {
         const myR = K.rOf(meRec.M), orR = K.rOf(rec.M)
-        if (myR * 4 >= orR * 5 && rec.p === 0) { // 可吞目标
+        if (myR * 4 >= orR * 5 && rec.p === 0) { // 可吞目标（F10 猎物高亮描边）
           g.strokeStyle = 'rgba(61,220,132,.55)'; g.lineWidth = 1.5 * cam.zoom
           g.beginPath(); g.arc(s.x, s.y, rPx + 4 * cam.zoom, 0, Math.PI * 2); g.stroke()
-        } else if (orR * 4 >= myR * 5) { // 威胁（可吞我者）
+          fxDraw('F10')
+        } else if (orR * 4 >= myR * 5) { // 威胁（可吞我者，F11 天敌红名警示）
           g.strokeStyle = 'rgba(255,60,40,' + (0.30 + 0.15 * Math.sin(now / 160)).toFixed(3) + ')'
           g.lineWidth = 3 * cam.zoom
           g.beginPath(); g.arc(s.x, s.y, rPx + 5 * cam.zoom, 0, Math.PI * 2); g.stroke()
+          g.font = HF('P2', 'pred-name', 9)
+          g.fillStyle = 'rgba(255,80,60,.9)'
+          g.textAlign = 'center'
+          g.fillText('天敌', s.x, s.y - rPx - 8)
+          g.textAlign = 'left'
+          fxDraw('F11')
         }
       }
       if (rec === meRec && lod >= 1) { // 自身腹鳍标（§7 个体层）
@@ -522,10 +650,101 @@
         g.beginPath(); g.arc(s.x - Math.cos(pa) * rPx * 0.2, s.y - Math.sin(pa) * rPx * 0.2, 2.2 * cam.zoom, 0, Math.PI * 2); g.fill()
       }
       g.globalAlpha = 1
-      if (rec.b && lod >= 1 && Math.random() < 0.5) { // dash 尾迹气泡串（§3.3）
+      if (rec.b && lod >= 1 && Math.random() < 0.5) { // dash 尾迹气泡串（F04：加速尾迹+质量流失气泡，§3.3）
         const pa = rec.a * Math.PI / 180
         spawnParts(rec.x - Math.cos(pa) * rPx * 1200, rec.y - Math.sin(pa) * rPx * 1200, '#FFE9B8', 1)
+        fxDraw('F04')
+        if (rec === meRec && now - S.lastBubble > 280) { S.lastBubble = now; sfx.play('bubble', '') } // 水泡串音（节流）
       }
+    }
+    /* 吞噬张嘴+吸入拉丝（F01，signature 240ms：受害者残影向嘴点收缩拉丝+我口扩张环） */
+    if (S.gulp) {
+      const gt = (now - S.gulp.t0) / S.gulp.dur
+      if (gt >= 1) S.gulp = null
+      else if (meRec) {
+        const mAng = meRec.a * Math.PI / 180, mr = K.rOf(meRec.M) * 1000
+        const mouthX = meRec.x + Math.cos(mAng) * mr * 0.8, mouthY = meRec.y + Math.sin(mAng) * mr * 0.8
+        const ang = Math.atan2(mouthY - S.gulp.y, mouthX - S.gulp.x)
+        for (let i = 0; i < 3; i++) { // 三段残影椭圆：越近嘴越扁长（拉丝）
+          const ft = Math.max(0, Math.min(1, gt - i * 0.14))
+          const x = S.gulp.x + (mouthX - S.gulp.x) * ft, y = S.gulp.y + (mouthY - S.gulp.y) * ft
+          const s = w2s(x, y)
+          g.globalAlpha = (1 - ft) * 0.75
+          g.fillStyle = '#FFB65C'
+          g.beginPath(); g.ellipse(s.x, s.y, (11 - i * 3) * (1 + ft) * cam.zoom, (7 - i * 2) * (1 - ft * 0.6) * cam.zoom, ang, 0, Math.PI * 2); g.fill()
+        }
+        const ms = w2s(mouthX, mouthY) // 张嘴：嘴点扩张金环
+        g.globalAlpha = 0.9 - gt * 0.5
+        g.strokeStyle = '#FFD700'; g.lineWidth = 2
+        g.beginPath(); g.arc(ms.x, ms.y, (4 + 8 * gt) * cam.zoom, 0, Math.PI * 2); g.stroke()
+        g.globalAlpha = 1
+        fxDraw('F01')
+      }
+    }
+    /* 死亡掉落散布（F06：n=drops 扇面+重力坠流 420ms——「化作 N 光点」物证） */
+    if (S.scatters.length) {
+      S.scatters = S.scatters.filter((sc) => now - sc.t0 < 420)
+      for (const sc of S.scatters) {
+        const st = (now - sc.t0) / 420
+        for (let i = 0; i < sc.n; i++) {
+          const a2 = (i * 137.5) * Math.PI / 180
+          const dist = (16 + (i % 5) * 13) * st * 1000
+          const s = w2s(sc.x + Math.cos(a2) * dist, sc.y + Math.sin(a2) * dist + 32 * st * st * 1000)
+          g.globalAlpha = 1 - st
+          g.fillStyle = RES_COL.drop
+          g.fillRect(s.x - 2, s.y - 2, 4, 4)
+        }
+        g.globalAlpha = 1
+        fxDraw('F06')
+      }
+    }
+    /* 升档爆发光圈（F02：双环爆发 480ms） */
+    if (S.tierBurst) {
+      const tt = (now - S.tierBurst.t0) / 480
+      if (tt >= 1) S.tierBurst = null
+      else if (meRec) {
+        const s = w2s(meRec.x, meRec.y)
+        const baseR = K.rOf(meRec.M) * cam.zoom
+        for (let i = 0; i < 2; i++) {
+          const rt = Math.max(0, tt - i * 0.22)
+          g.globalAlpha = (1 - rt) * 0.8
+          g.strokeStyle = i ? '#7FE8D8' : '#FFD700'; g.lineWidth = (4 - 3 * rt) * cam.zoom
+          g.beginPath(); g.arc(s.x, s.y, baseR + rt * 60 * cam.zoom + i * 10, 0, Math.PI * 2); g.stroke()
+        }
+        g.globalAlpha = 1
+        fxDraw('F02')
+      }
+    }
+    /* 鲸级登场震屏波纹（F13：沧鲸降世双环涟漪 900ms，震屏在事件位） */
+    if (S.whale) {
+      const wt = (now - S.whale.t0) / 900
+      if (wt >= 1) S.whale = null
+      else {
+        const s = w2s(S.whale.x, S.whale.y)
+        for (let i = 0; i < 2; i++) {
+          const rt = wt - i * 0.25
+          if (rt <= 0) continue
+          g.globalAlpha = (1 - rt) * 0.5
+          g.strokeStyle = '#3D5A80'; g.lineWidth = 3
+          g.beginPath(); g.arc(s.x, s.y, (20 + rt * 150) * cam.zoom + i * 14, 0, Math.PI * 2); g.stroke()
+        }
+        g.globalAlpha = 1
+        fxDraw('F13')
+      }
+    }
+    /* 连吃 combo 计数弹跳（F12：+N×n 三段弹跳上飘 800ms） */
+    if (S.combo && meRec && now - S.combo.t0 < 800) {
+      const ct = (now - S.combo.t0) / 800
+      const s = w2s(meRec.x, meRec.y - K.rOf(meRec.M) * 1300 - 2000)
+      const bounce = Math.abs(Math.sin(ct * Math.PI * 3)) * (1 - ct) * 6
+      g.globalAlpha = 1 - ct * ct
+      g.fillStyle = '#7FE8D8'
+      g.font = HF('P0', 'combo', 14, 700)
+      g.textAlign = 'center'
+      g.fillText('+' + S.combo.v + (S.combo.n >= 2 ? ' ×' + S.combo.n : ''), s.x, s.y - ct * 22 - bounce)
+      g.textAlign = 'left'
+      g.globalAlpha = 1
+      fxDraw('F12')
     }
     /* 粒子 */
     for (const p of PPOOL) {
@@ -563,6 +782,14 @@
       g.fillRect(0, 0, W, H)
     }
     g.restore()
+    /* 被捕惊红闪（F05：天敌逼近/被吞——四边红脉冲 vignette，纯呈现层） */
+    if (S.panicUntil > now) {
+      const p = 0.35 + 0.25 * Math.sin(now / 90)
+      g.fillStyle = 'rgba(255,60,40,' + (p * 0.3).toFixed(3) + ')'
+      g.fillRect(0, 0, W, 10); g.fillRect(0, H - 10, W, 10)
+      g.fillRect(0, 0, 10, H); g.fillRect(W - 10, 0, 10, H)
+      fxDraw('F05')
+    }
     drawHUD(meRec)
   }
   /* 鱼体绘制：四档轮廓形（形状通道，§7）——T0 圆卵/T1 梭形/T2 三角鳍/T3 宽巨 */
@@ -703,6 +930,22 @@
   function drawHUD(meRec) {
     g.fillStyle = 'rgba(5,12,9,.72)'
     g.fillRect(0, 0, W, TOP_H)
+    /* 定档滞回提示（F03：距下一档进度条——>85% 金色呼吸；M 贴近降档滞回带
+     * （lo×1.05 内，§2.4 −5% 防抖带）左端红脉冲警示） */
+    if (meRec) {
+      const tT = meRec.t || 0, tier = K.TIERS[tT]
+      const hi = tT < 3 ? K.TIERS[tT + 1].lo : K.M_CAP
+      const prog = Math.max(0, Math.min(1, (meRec.M - tier.lo) / (hi - tier.lo)))
+      const yq = TOP_H - 5
+      g.fillStyle = 'rgba(127,232,216,.14)'; g.fillRect(12, yq, W - 24, 3)
+      g.fillStyle = prog > 0.85 ? '#FFD166' : 'rgba(127,232,216,.6)'
+      g.fillRect(12, yq, (W - 24) * prog, 3)
+      if (meRec.M < tier.lo * 1.05) {
+        g.fillStyle = 'rgba(255,60,40,' + (0.4 + 0.3 * Math.sin(now / 120)).toFixed(3) + ')'
+        g.fillRect(12, yq, 10, 3)
+      }
+      fxDraw('F03')
+    }
     const M = meRec ? meRec.M : 0, k2 = meRec ? meRec.k2 : 0
     g.fillStyle = INK
     g.font = HF('P0', 'mass', 15, 600)
@@ -768,6 +1011,17 @@
       g.font = HF('P0', 'lb-score', 13, 600)
       g.fillStyle = r.seat === S.seat ? '#FFD98E' : INK
       g.fillText(String(r.score), 104, y)
+      /* 变动差值标（F09：▲/▼ 900ms 淡出——快照 score 逐席对账驱动） */
+      const dlt = S.lbDeltas && S.lbDeltas[r.seat]
+      if (dlt && now - dlt.t0 < 900) {
+        const up = dlt.d > 0
+        g.globalAlpha = Math.max(0, 1 - (now - dlt.t0) / 900)
+        g.fillStyle = up ? '#7FE8D8' : '#FF6B5C'
+        g.font = HF('P1', 'lb-delta', 11, 600)
+        g.fillText((up ? '▲' + dlt.d : '▼' + (-dlt.d)), 160, y)
+        g.globalAlpha = 1
+        fxDraw('F09')
+      }
     }
     /* 右下 dash 钮 Ø64（M≥30 点亮，§1.5） */
     const lit = (meRec && meRec.M >= 30 && S.dashOn) || (meRec && meRec.b)
@@ -796,6 +1050,48 @@
     g.fillStyle = 'rgba(139,147,167,.55)'
     g.font = HF('P2', 'foot', 9)
     g.fillText('deep-foodchain · v1.0.0 · S6', 12, H - 8)
+    /* 观战体型对比条（F15：top5 按视觉体型 rOf 相对条，档色着色——观战/demo 态） */
+    if (S.mode === 'spectate' || S.specDemo) {
+      const rows5 = (S.lb || []).slice(0, 5)
+      if (rows5.length) {
+        let maxR = 1
+        for (const r of rows5) maxR = Math.max(maxR, K.rOf(r.M || 20))
+        const y0 = H - 132
+        g.fillStyle = 'rgba(5,12,9,.66)'; g.fillRect(0, y0, W, rows5.length * 12 + 10)
+        for (let i = 0; i < rows5.length; i++) {
+          const r = rows5[i], rr = K.rOf(r.M || 20)
+          const yy = y0 + 8 + i * 12
+          const seatRec = S.roster.find((x) => x.seat === r.seat)
+          g.font = HF('P2', 'spec-name', 9)
+          g.fillStyle = r.seat === S.seat ? '#FFD98E' : DIM
+          g.fillText((((seatRec && seatRec.name) || '鱼' + r.seat) + '').slice(0, 4), 12, yy + 8)
+          g.fillStyle = 'rgba(127,232,216,.12)'; g.fillRect(56, yy + 1, W - 70, 7)
+          g.fillStyle = TIER_COL[K.tierOf(r.M || 20, 0)]
+          g.fillRect(56, yy + 1, (W - 70) * (rr / maxR), 7)
+        }
+        fxDraw('F15')
+      }
+    }
+    /* 终局成长曲线回放图（F14：mHist 折线——轮末结算/终局 1.8s·6s 窗） */
+    if ((S.curveUntil > now || (S.crown && S.crown.over)) && S.mHist.length >= 2) {
+      const x0 = W / 2 - 80, y0 = H / 2 + 6, cw = 160, ch = 40
+      let maxM = 1
+      for (const m of S.mHist) maxM = Math.max(maxM, m)
+      g.fillStyle = 'rgba(4,10,8,.6)'; g.fillRect(x0 - 6, y0 - 4, cw + 12, ch + 14)
+      g.strokeStyle = 'rgba(127,232,216,.25)'; g.lineWidth = 1
+      g.strokeRect(x0 - 6, y0 - 4, cw + 12, ch + 14)
+      g.beginPath()
+      for (let i = 0; i < S.mHist.length; i++) {
+        const px = x0 + (i / (S.mHist.length - 1)) * cw
+        const py = y0 + ch - (S.mHist[i] / maxM) * ch
+        if (i) g.lineTo(px, py); else g.moveTo(px, py)
+      }
+      g.strokeStyle = '#7FE8D8'; g.lineWidth = 1.5; g.stroke()
+      g.font = HF('P2', 'curve-cap', 9)
+      g.fillStyle = DIM
+      g.fillText('成长回放 · ' + S.mHist[S.mHist.length - 1] + 'g', x0, y0 + ch + 20)
+      fxDraw('F14')
+    }
     /* toast（升档/吞噬/鱼汛潮/连吞，§3.3） */
     S.toasts = S.toasts.filter((t) => now - t.t0 < t.dur)
     let ty = TOP_H + 96
@@ -956,38 +1252,91 @@
   let fpsAcc = 0, fpsN = 0, fpsShown = 0
   function frame(t) {
     now = t
-    if (S.pauseViz) { lastT = t; requestAnimationFrame(frame); return } // 识图/墨水带采样冻结帧
+    if (S.pauseViz) { lastT = t; PERF.seeded = false; requestAnimationFrame(frame); return } // 识图/墨水带采样冻结帧（perf 重播种防跨暂停巨隙）
+    const c0 = performance.now()
     const dt = Math.min(100, t - lastT)
     lastT = t
     simAcc += dt
-    while (simAcc >= 100) { simAcc -= 100; S.round.t++; S.round.rem = Math.max(0, S.round.rem - 1); if (S.respawnIn > 0) S.respawnIn-- }
+    while (simAcc >= 100) {
+      simAcc -= 100; S.round.t++; S.round.rem = Math.max(0, S.round.rem - 1); if (S.respawnIn > 0) S.respawnIn--
+      if (S.round.t % 10 === 0) { // 成长曲线采样（1 点/s，整轮 360 点封顶）
+        const meH = S.ents.get('s' + S.seat)
+        if (meH && S.mHist.length < 360) S.mHist.push(meH.M)
+      }
+    }
+    if (!S.mHist.length) { const meH = S.ents.get('s' + S.seat); if (meH) S.mHist.push(meH.M) }
     stepLocal(now < S.slowUntil ? dt * 0.35 : dt) // 吞噬轻度慢镜 220ms（纯呈现层）
     render(dt)
     fpsAcc += dt; fpsN++
     if (fpsAcc >= 500) { fpsShown = Math.round(1000 / (fpsAcc / fpsN)); fpsAcc = 0; fpsN = 0 }
+    perfTick(t, performance.now() - c0)
     requestAnimationFrame(frame)
   }
 
   /* ---------- 调试钩子（识图 v2/取证，snake/mmo 先例） ---------- */
   function fxScene(name) {
-    if (name === 'calm') return true
-    if (name === 'enter') { S.enterT0 = now; return true }
-    if (name === 'round') { S.settle = { n: S.round.n, t0: now }; return true }
+    if (name === 'calm') { // 冻结帧采样前清场（动效层零残留——识图锚点稳定口径）
+      S.toasts = []; S.settle = null; S.bloom = -1; S.gulp = null; S.panicUntil = 0
+      S.whale = null; S.scatters = []; S.combo = null; S.specDemo = 0; S.curveUntil = 0
+      S.lbDeltas = {}; S.tierBurst = null; S.flash = 0; S.shakeT = 0; S.slowUntil = 0
+      S.zoomPulse = 0; S.enterT0 = 0; S.crown = null
+      S.dead = false; S.respawnIn = 0; S.killerName = '' // 探针死亡态复位（debug 无快照驱动）
+      const meC = S.ents.get('s' + S.seat)
+      if (meC) { meC.b = 0; meC.p = 0 }
+      return true
+    }
+    if (name === 'enter') { S.enterT0 = now; fxTrig('F16'); sfx.play('spawn', ''); return true }
+    if (name === 'round') { S.settle = { n: S.round.n, t0: now }; S.curveUntil = now + 1800; fxTrig('F14'); sfx.play('round', String(S.round.n)); sfx.play('curve', ''); return true }
     if (name === 'bloom') { S.bloom = 2; onEvent({ k: 'bloom', band: 2 }); return true }
-    if (name === 'dash') { const me = S.ents.get('s' + S.seat); if (!me) return false; me.b = 1; setTimeout(() => { me.b = 0 }, 900); return true }
+    if (name === 'dash') {
+      const me = S.ents.get('s' + S.seat); if (!me) return false
+      me.b = 1; fxTrig('F04'); sfx.play('dashOn', ''); sfx.play('bubble', '')
+      setTimeout(() => { me.b = 0; sfx.play('dashOff', '') }, 600)
+      return true
+    }
     if (name === 'shield') { const me = S.ents.get('s' + S.seat); if (!me) return false; me.p = 20; setTimeout(() => { me.p = 0 }, 1500); return true }
     if (name === 'tier') { onEvent({ k: 'tier', seat: S.seat, t: 2 }); return true }
+    if (name === 'panic') { S.panicUntil = Math.max(S.panicUntil, now + 900); fxTrig('F05'); sfx.play('danger', ''); return true }
+    if (name === 'whale') { const me = S.ents.get('s' + S.seat); const w = me || { x: cam.x, y: cam.y }; S.whale = { x: w.x, y: w.y, t0: now }; S.shakes = Math.max(S.shakes, 6); S.shakeT = Math.max(S.shakeT, 500); fxTrig('F13'); return true }
+    if (name === 'stateAll') { // 状态项打包驱动：近旁布猎物/天敌/资源演示位（seat=-1 不入幽灵巡游），draw-site 落真实绘制分支
+      fxTrig('F03'); fxTrig('F07'); fxTrig('F08'); fxTrig('F09'); fxTrig('F10'); fxTrig('F11'); fxTrig('F15')
+      S.specDemo = 1
+      const me = S.ents.get('s' + S.seat)
+      if (me) {
+        const near = (id, M, dx, dy) => {
+          const rec = { id, k: 'fish', seat: -1, name: id, M, t: K.tierOf(M, 0), skin: 0, x: me.x + dx, y: me.y + dy, a: 90, sc: 0, k2: 0, b: 0, d: 0, p: 0, smp: [{ t: 0, x: me.x + dx, y: me.y + dy, a: 90 }], fade: 1, pop: 0 }
+          S.ents.set(id, rec)
+        }
+        near('zPrey', 2, 70000, 30000)      // 猎物演示位（r=6 ≤ myR×0.8 → 绿描边）
+        near('zPred', 600, -80000, -40000)  // 天敌演示位（T2 r=20 ≥ myR×1.25 → 红警示）
+        for (let i = 0; i < 3; i++) S.ents.set('zf' + i, { id: 'zf' + i, k: 'alg', x: me.x + 30000 + i * 16000, y: me.y - 50000 + i * 9000, v: 1, on: 1 })
+      }
+      S.lbDeltas = {}
+      S.lbDeltas[(S.lb[0] && S.lb[0].seat) || 0] = { d: 40, t0: now }
+      return true
+    }
     return false
   }
   window.__GAMES_DEBUG__ = {
     events: [],
     start(level) { startDebugArena(); report('start', { level }); return true },
     pause(v) { S.pauseViz = !!v; return true }, // visual-check 识图契约：冻结帧采样墨水带
-    hudFonts: () => ({ reg: HF_REG, __applied: appliedSelfCheck(g), note: '__applied=true 表示 ctx.font 赋值回读生效（700 13px 合法简写路径在场，Q-013）' }),
+    hudFonts: () => {
+      const cls = {}
+      for (const grp in HF_REG) {
+        let min = Infinity
+        for (const k in HF_REG[grp]) min = Math.min(min, HF_REG[grp][k].px)
+        cls[grp] = { min }
+      }
+      return { reg: HF_REG, __applied: appliedSelfCheck(g), __cls: cls, note: '__applied=true 表示 ctx.font 赋值回读生效（700 13px 合法简写路径在场，Q-013）' }
+    },
     fps: () => fpsShown,
+    perf: () => perfStat(),
+    fxList: () => FXLIST.map((f) => ({ id: f[0], name: f[1], cls: f[2] })),
+    fxLedger: () => FXLED.slice(-400),
     state: () => ({ mode: S.mode, seat: S.seat, ents: S.ents.size, dead: S.dead, round: S.round, lb: S.lb.slice(0, 5), mm: S.mm.length, dash: S.dashOn, target: S.target }),
     sfxCalls: () => sfx.calls.slice(-40),
-    sfxGroups: () => ({ slots: sfx.slots.slice(), calls: sfx.calls.slice(-64), on: sfx.on }),
+    sfxGroups: () => ({ slots: sfx.slots.slice(), calls: sfx.calls.slice(-64), fired: sfx.fired, on: sfx.on }),
     sound(v) { sfx.on = !!v; return sfx.on },
     dbgEvents: () => dbgEvents.slice(-40),
     fxProbe(ev) { // 反馈类取证：合成事件走同一条 onEvent 管线
