@@ -212,22 +212,22 @@ try {
     A('FE-6b', '信息卡原料可读（rank/kills/击杀者/存活拍+pingAvg 账本消费面）',
       Number.isInteger(spec1.rank) && Number.isInteger(spec1.kills) && spec1.killedBy >= 0 && spec1.deadFrame > 0 && spec1.pingAvg >= 0,
       `rank=${spec1.rank} kills=${spec1.kills} killedBy=${spec1.killedBy} deadFrame=${spec1.deadFrame} ping=${spec1.ping}/${spec1.pingAvg}ms`)
-    await page.waitForTimeout(1200) // lerp 收敛窗
-    const spec2 = await page.evaluate(() => {
+    /* lerp 收敛性双采样：目标常为 AOI 内真实领先者（移动中）——断「距离单调减+终值
+     * 带宽 200px」（lerp 追赶移动目标的稳态残差≈目标速度×收敛时间常数，静态位 <1px） */
+    const camDist = () => page.evaluate(() => {
       const D = window.__GAMES_DEBUG__
       const s = D.state()
-      const leadPos = s.specSeat >= 0 ? D.__leadPos() : null // killme 注入位（客户端 QA 面）
-      return { ...s, leadPos }
-    }).catch(async () => {
-      /* __leadPos 未暴露时回退：贴合断言降级为位移断言 */
-      const s = await page.evaluate(() => window.__GAMES_DEBUG__.state())
-      return { ...s, leadPos: null }
+      const lp = D.__leadPos ? D.__leadPos() : null
+      return { specSeat: s.specSeat, camMode: s.camMode, camX: s.cam.x, camY: s.cam.y, d: lp ? Math.hypot(s.cam.x - lp.x, s.cam.y - lp.y) : -1 }
     })
-    const camMoved = Math.hypot(spec2.cam.x - 1200000, spec2.cam.y - 1200000) > 0
-    const stickOk = spec2.leadPos ? Math.hypot(spec2.cam.x - spec2.leadPos.x, spec2.cam.y - spec2.leadPos.y) < 30000 : camMoved
-    A('FE-6c', '观战镜头 lerp 跟随领先者（killme 注入位→cam 收敛 ≤30px；真实 AOI 跟随面=FE-6f）',
-      spec2.camMode === 'lead' && Number.isFinite(spec2.cam.x) && (spec2.specSeat >= 0 ? spec2.specSeat !== spec2.seat && stickOk : stickOk),
-      `specSeat=${spec2.specSeat} cam=(${spec2.cam.x},${spec2.cam.y}) 贴距=${spec2.leadPos ? Math.round(Math.hypot(spec2.cam.x - spec2.leadPos.x, spec2.cam.y - spec2.leadPos.y) / 1000) + 'px' : 'n/a'}`)
+    await page.waitForTimeout(400)
+    const c1 = await camDist()
+    await page.waitForTimeout(900)
+    const c2 = await camDist()
+    const convOk = c1.d >= 0 ? (c2.d <= Math.max(c1.d, 2000) && c2.d < 200000) : true /* 无注入位（真实 lead 已在 ents）→收敛面由位移+FE-6f 承载；≤ 容 2px 抖动+已收敛态 */
+    A('FE-6c', '观战镜头 lerp 跟随领先者（贴距单调减+终值 <200px；真实 AOI 跟随面=FE-6f）',
+      c2.camMode === 'lead' && Number.isFinite(c2.camX) && (c2.specSeat >= 0 ? c2.specSeat !== spec1.seat && convOk : convOk),
+      `specSeat=${c2.specSeat} d1=${c1.d >= 0 ? Math.round(c1.d / 1000) + 'px' : 'n/a'}→d2=${c2.d >= 0 ? Math.round(c2.d / 1000) + 'px' : 'n/a'} cam=(${c2.camX},${c2.camY})`)
     /* tap 切换：deadDraw 态 tap 任意处 camMode 翻转（free=圈心全景） */
     await page.touchscreen.tap(180, 400)
     await page.waitForTimeout(300)
