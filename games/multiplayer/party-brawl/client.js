@@ -1085,6 +1085,7 @@
       return { n: cs.length, costAvgMs: +avg.toFixed(2), costP95Ms: +(sorted[Math.floor(sorted.length * 0.95)] || 0).toFixed(2), costJankPct: +(cs.filter((c) => c > 25).length / Math.max(1, cs.length) * 100).toFixed(2), rafGapMs: +gAvg.toFixed(1) }
     },
     fxProbe: (ev) => { onEvent(ev, S.frame); return true }, // 合成事件走同一 onEvent 管线
+    __leadPos: () => S.leadInjected || null, // killme 注入领先者位（feel-check 贴合断言锚——QA 面）
     fxScene,
     fxList: () => FXLIST.map((f) => ({ id: f[0], name: f[1], cls: f[2] })),
     fxLedger: () => fxLedger.map((l) => ({ id: l.id, trig: Math.round(l.trig), lat: l.lat })),
