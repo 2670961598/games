@@ -31,9 +31,20 @@ function mercyCfg() {
   } catch { _mercyCfg = DF.MERCY_DFT }
   return _mercyCfg
 }
+/* persona 覆盖配置（GAMES-166 失误率可调参化：game.json bot.persona 按档局部覆盖
+ * PERSONA 缺省表——离线/回放无 env 走 sim 内缺省，确定性不受配置面影响） */
+let _personaCfg = null
+function personaCfg() {
+  if (_personaCfg) return _personaCfg
+  try {
+    const cfg = JSON.parse(readFileSync(new URL('../../../games/multiplayer/deep-foodchain/game.json', import.meta.url), 'utf8'))
+    _personaCfg = (cfg.bot && cfg.bot.persona) || null
+  } catch { _personaCfg = null }
+  return _personaCfg
+}
 
 export const deepFoodchainSim = Object.assign({}, DF, {
-  /* brain 出口包装：env.mercy 注入（无 env（AFK 托管/离线直调）→ brainImpl 缺省兜底） */
+  /* brain 出口包装：env.mercy/env.persona 注入（无 env（AFK 托管/离线直调）→ brainImpl 缺省兜底） */
   brain: (st, seat, level, rng, env) =>
-    DF.brain(st, seat, level, rng, env ? Object.assign({}, env, { mercy: mercyCfg() }) : env),
+    DF.brain(st, seat, level, rng, env ? Object.assign({}, env, { mercy: mercyCfg(), persona: personaCfg() }) : env),
 })

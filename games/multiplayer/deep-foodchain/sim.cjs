@@ -25,6 +25,10 @@
  * 投影终局（winner A=API 席 score≥320 且 M≥500 成对绑定——§6 A2 双锚，snake goal 双条件先例）。
  * Bot 三档=生态位（§4）：casual 饲料鱼/ balanced 觅食者/ competitive 猎手
  * （拦截闭式解+dash 收口+晶簇带埋伏）——体型键控四问树（tier 改阈值不改结构）。
+ * GAMES-166 Bot 深化：三档真分化（casual 失误率 blunder 可调参/balanced 密度场局部
+ * 采样窗+方向 ρ 移动均值/competitive 捕食预判=目标成长曲线外推+体型压制规避带 Q1b）
+ * +放水链 io 启用（决策树降问 四问→三问/失误注入/生态位让位让食）——全部只在
+ * brainImpl 决策层，判定/物理/账本路径零改动（A8 复验口径）。
  * 确定性：无 Date/random 入判定路径（seed 纪律同 mmo/snake）。
  * ===================================================================== */
 'use strict'
@@ -423,24 +427,42 @@ function inBloomBand(st, x, y) {
  *   competitive=全开猎手（拦截/埋伏/dash 收口，预算 M 的 8% 质量池）。
  * ===================================================================== */
 const BOT_EVERY = { casual: 30, balanced: 12, competitive: 8 }
+/* PERSONA（GAMES-166 三档真分化深化；表=调参事实源，game.json bot.persona 可覆盖经
+ * 适配器 env.persona 注入——离线/回放无 env 走本表缺省，全链确定性不受配置面影响）：
+ *   blunder  casual 失误率（决策拍注入 ±90° 航向错误概率——饲料位的可调失误面）；
+ *   rhoWin/rhoEwma  balanced 密度场局部采样窗（2 档距）与方向 ρ 移动均值平滑系数；
+ *   suppBand  competitive 体型压制规避带开关（对可吞我者保持 standoff，带宽容 avoid）；
+ *   growExt  捕食预判：目标成长曲线外推（拦截点投影 M 越 K 线 → 弃猎）。 */
 const PERSONA = {
-  casual:      { drift: 18, eatR: 120_000, hunt: 0, avoid: 0.6, wallM: 80_000 },
-  balanced:    { drift: 0, eatR: 440_000, hunt: 1, avoid: 0.85, wallM: 120_000 },
-  competitive: { drift: 0, eatR: 560_000, hunt: 2, avoid: 0.95, wallM: 160_000 },
+  casual:      { drift: 18, eatR: 120_000, hunt: 0, avoid: 0.6, wallM: 80_000, blunder: 0.12 },
+  balanced:    { drift: 0, eatR: 440_000, hunt: 1, avoid: 0.85, wallM: 120_000, rhoWin: 260_000, rhoEwma: 0.55 },
+  competitive: { drift: 0, eatR: 560_000, hunt: 2, avoid: 0.95, wallM: 160_000, suppBand: 1, growExt: 1 },
 }
 const THETA = [Infinity, 8, 40, 150]                        // θ(T) 档位键控（§4.1）
 const TIER_BOUND = [80, 300, 1000]                          // 下一档界（hungry 判据用）
-/* 陪玩放水（§4.3，GAMES-102 三层范式搬运）：常驻房无终局 → 连败代理用房内可观测面
- * state.deaths/kills。L1 连败（deaths≥minFoeLose 且 kills==0）→ 免猎 90s + 让食 120px；
- * L2 重败（deaths≥hardFoeLose）→ 让食半径 200px；真人 M≥majorM（成长保护窗）不主动猎。
- * 阈值入 game.json bot.mercy 可调；适配器出口包装注入 env.mercy（离线确定性不读文件）。 */
+/* 陪玩放水（§4.3，GAMES-102 三层范式搬运；GAMES-166 io 化启用）：常驻房无终局 →
+ * 连败代理用房内可观测面 state.deaths/kills。L1 连败（deaths≥minFoeLose 且 kills==0）
+ * → 免猎+让食 120px；L2 重败（deaths≥hardFoeLose）→ 让食半径 200px；真人 M<majorM
+ * （成长保护窗·直至长成）不主动猎。io 连败让力三件（GAMES-166）：
+ *   ① 决策树降问：连败席进入 360px 压制圈 → Q2 猎物评估整问停用（树四问→三问）；
+ *   ② 失误注入：该席近旁决策拍 w.p. p 注入 ±70° 航向错误+dash 熄灭（追得上=让力体感）；
+ *   ③ 生态位让位：Q3 让食（连败席食圈不抢，L1 120px/L2 200px）。
+ * 阈值入 game.json bot.mercy 可调；适配器出口包装注入 env.mercy（离线确定性不读文件）；
+ * env 缺省（无 kinds）全链不可达——放水只作用于 bot 对真人的决策面（GAMES-140/149/158）。 */
 const MERCY_DFT = { minFoeLose: 2, hardFoeLose: 4, majorM: 800 }
+const MERCY_NEAR = 360_000                                        // 降问/失误注入作用圈（px）
+const MERCY_BLUNDER = [0, 0.3, 0.5]                               // 失误注入概率（L0 关/L1/L2）
 function brainImpl(st, seat, level, rng, env) {
   const me = st.ents['s' + seat]
   if (!me || me.dead) return { a: 0, dash: 0 }
   const mem = me.mem
-  const per = PERSONA[level] || PERSONA.balanced
+  /* persona 覆盖链（GAMES-166 失误率可调参化）：env.persona（适配器读 game.json
+   * bot.persona）> PERSONA 缺省表——离线/回放无 env 走缺省（口径同 env.mercy） */
+  const per = env && env.persona && env.persona[level]
+    ? Object.assign({}, PERSONA[level] || PERSONA.balanced, env.persona[level])
+    : (PERSONA[level] || PERSONA.balanced)
   const mercy = (env && env.mercy) || MERCY_DFT
+  if (!mem.ch) mem.ch = { q1: 0, q1s: 0, q2: 0, q3: 0, q4: 0, md: 0, bl: 0 } // 决策通道使用率台账（开局树指标面；纯簿记不入判定路径）
   const deg = (x, y) => ((Math.atan2(y - me.y, x - me.x) / Math.PI * 180) % 360 + 360) % 360
   const near = (x, y) => dist2(me.x, me.y, x, y)
   const toCenter = () => deg(P.W / 2, P.H / 2)
@@ -452,7 +474,10 @@ function brainImpl(st, seat, level, rng, env) {
     const e = st.ents[id]
     if (e.k !== 'fish' || e.seat === seat || e.dead) continue
     foes.push(e)
-    if (isHuman(e.seat) && e.kills === 0) {
+    /* 放水靶收窄（GAMES-166）：AFK 托管席（原始输入签名 60s 未变，§4.3）不放水——
+     * 挂机席的连败不是「 struggling 真人」；否则常驻房一个挂机席=永久放水源，
+     * 降问作用圈扫过全场把猎压制死（QA1 B 面重采 devour×1 实证） */
+    if (isHuman(e.seat) && e.kills === 0 && !(st.afk[e.seat] && st.afk[e.seat].t >= AFK_TICKS)) {
       if (e.deaths >= mercy.hardFoeLose) mercyOf.set(e.seat, 2)
       else if (e.deaths >= mercy.minFoeLose) mercyOf.set(e.seat, 1)
     }
@@ -466,14 +491,25 @@ function brainImpl(st, seat, level, rng, env) {
     if ((e.k === 'alg' || e.k === 'kri' || e.k === 'cry') && e.on) dots.push(e)
     else if (e.k === 'drop') dots.push(e)
   }
+  /* 连败让力作用圈：最近连败真人距离+档位（决策树降问/失误注入的作用半径 MERCY_NEAR） */
+  let mNear = Infinity, mLvl = 0
+  for (const [ms, lv] of mercyOf) {
+    const f = st.ents['s' + ms]
+    if (!f || f.dead) continue
+    const d2 = near(f.x, f.y)
+    if (d2 < mNear) { mNear = d2; mLvl = lv }
+  }
+  const mercyNear = mNear <= MERCY_NEAR * MERCY_NEAR ? mLvl : 0
 
   if (mem.dt <= 0) {
     mem.dt = BOT_EVERY[level] || 12
     mem.dash = 0
     const v = P.vOf(me.M)
-    /* Q1 威胁评估：可吞我（r_f≥1.25×myR）+ 距离 <220px+myR + 航向锥 ±35° 含我（§4.1） */
+    /* Q1 威胁评估：可吞我（r_f≥1.25×myR）+ 距离 <220px+myR + 航向锥 ±35° 含我（§4.1）
+     * 决策树降问（GAMES-166 放水）：连败席不入威胁集——Q1 对该席停用（免逃逸=让追得上） */
     let threat = null, td = Infinity
     for (const f of foes) {
+      if (mercyOf.has(f.seat)) continue
       const rF = P.rOfM(f.M)
       if (!P.canSwallow(rF, myR)) continue
       const d2 = near(f.x, f.y)
@@ -484,7 +520,21 @@ function brainImpl(st, seat, level, rng, env) {
       const cone = 35 + (dd > 1 ? Math.atan2(myR * 2, dd) * 180 / Math.PI : 0) // 锥角含体径容差
       if (da <= cone || dd < 90_000) { td = d2; threat = f }
     }
+    /* Q1b 体型压制规避带（GAMES-166 competitive 深化）：per.suppBand 档对可吞我者保持
+     * standoff（带宽容 avoid×160px+myR）——不在压制圈内开猎；casual avoid=0.6 饲料位
+     * 盲区不带（弱避险=自然死亡源，§4.2 预期生存差的结构保障） */
+    let supp = null, sd = Infinity
+    if (per.suppBand && per.avoid >= 0.8) {
+      const band = 160_000 * per.avoid + myR
+      for (const f of foes) {
+        if (mercyOf.has(f.seat)) continue
+        if (!P.canSwallow(P.rOfM(f.M), myR)) continue
+        const d2 = near(f.x, f.y)
+        if (d2 < band * band && d2 < sd) { sd = d2; supp = f }
+      }
+    }
     if (threat) {
+      mem.ch.q1++
       /* FLEE：逃向=威胁航向法向侧（左/右取远离缓流墙者）+ 最近非威胁方向插值（§4.1） */
       const ta = threat.a * RAD
       const nx = -Math.sin(ta), ny = Math.cos(ta)
@@ -505,10 +555,16 @@ function brainImpl(st, seat, level, rng, env) {
         if (tv > v && gap / (tv - v) <= 12 && me.M > P.DASH_MIN) mem.dash = 1
       }
     } else if (mem.flee > 0) mem.flee--
-    else {
+    else if (supp) {
+      /* Q1b 命中：撤离压制带（朝远离压制者向）——带内不开猎（GAMES-166 捕食预判深化） */
+      mem.ch.q1s++
+      mem.ta = deg(2 * me.x - supp.x, 2 * me.y - supp.y)
+      mem.wp = null
+    } else {
       /* Q2 猎物评估：Δr 合格 + 拦截闭式解 t≤3s + gain≥θ(T)（体型键控，§4.1）
        * 拦截解=相遇点迭代（猎物直线外推 t 后我方 v·t 可达——v_mine ≤ v_prey 的纯追
-       * 无解（附决策 6 直线追永不成立），横切/迎头路径才可猎；dash 档收口另计） */
+       * 无解（附决策 6 直线追永不成立），横切/迎头路径才可猎；dash 档收口另计）
+       * 决策树降问（GAMES-166 放水）：连败席入作用圈 → Q2 整问停用（树四问→三问） */
       const theta = THETA[me.tier]
       const hungry = level === 'competitive' || me.M < (TIER_BOUND[Math.min(2, me.tier)] || 4000) * 0.6
       let prey = null, pd = Infinity, pT = 0
@@ -523,7 +579,9 @@ function brainImpl(st, seat, level, rng, env) {
         }
         return t <= 30 ? t : null                            // 拦截闭式解 t≤3s（§4.1）
       }
-      if (per.hunt > 0 && theta !== Infinity && hungry) {
+      const q2open = per.hunt > 0 && theta !== Infinity && hungry
+      if (mercyNear && q2open) mem.ch.md++                   // 降问台账（本拍 Q2 被放水停用）
+      if (q2open) {
         for (const f of foes) {
           if (!huntable(f) || f.prot > 0 || near(f.x, f.y) > per.eatR * per.eatR) continue
           const rF = P.rOfM(f.M)
@@ -536,10 +594,19 @@ function brainImpl(st, seat, level, rng, env) {
             t = intercept(f, v * 1.6)                        // dash 档拦截（质量换速度收口，附决策 6）
           }
           if (t == null) continue
+          /* 目标成长曲线外推（GAMES-166 competitive 捕食预判深化）：mem.tg 跟踪上拍选中
+           * 猎物的 M 增速 g，拦截点投影 M_p=M+g·(t+8) 越 K 线（投影后吞不动）→ 弃猎——
+           * 不追注定失效的拦截点（追击质量成本止损） */
+          if (per.growExt && mem.tg === f.id && st.tick > mem.tgT) {
+            const g = (f.M - mem.tgM) / (st.tick - mem.tgT)
+            if (g > 0 && !P.canSwallow(myR, P.rOfM(f.M + g * (t + 8)))) continue
+          }
           if (d < pd) { pd = d; prey = f; pT = t }
         }
       }
       if (prey) {
+        mem.ch.q2++
+        mem.tg = prey.id; mem.tgM = prey.M; mem.tgT = st.tick // 成长曲线跟踪锚（下拍外推用）
         /* HUNT：远段奔拦截点（闭式解 lead pT）；近段（<150px）短前导直捣猎物心——
          * dash 转向半径 ~70px 下拦截点重瞄会绕圈过冲，收口段改为纯追踪（§4.1 收口） */
         const pv = P.vOf(prey.M)
@@ -555,12 +622,18 @@ function brainImpl(st, seat, level, rng, env) {
          * （§1.4 重生注入 ~3.0 质量/s 的供给前提=被吞流在场，设计经济第三列） */
         let bestA = null, bs = -1
         if (level !== 'casual') {
+        /* GAMES-166 balanced 深化：局部密度采样窗（rhoWin=2 档距 260px 内）+ 方向 ρ 移动
+         * 均值（EWMA rhoEwma——瞬时场抖动平滑防逐拍翻转）+ sticky（平滑后并列偏沿袭向）；
+         * competitive 无 rhoWin=全档 eatR 直采（广域猎手位不变） */
+        const win = per.rhoWin || per.eatR
+        const rhoNow = new Array(8).fill(0)
+        const crowdedK = new Array(8).fill(false)
         for (let k = 0; k < 8; k++) {
           const ang = k * 45 * RAD
           let rho = 0
           for (const d of dots) {
             const dd = Math.sqrt(near(d.x, d.y))
-            if (dd > per.eatR) continue
+            if (dd > win) continue                           // 采样窗（balanced=局部 2 档距）
             const proj = (d.x - me.x) * Math.cos(ang) + (d.y - me.y) * Math.sin(ang)
             if (proj <= 0) continue                          // 只统计该方向半平面内的食
             const cw = proj > 260_000 ? 1 : 0.6              // 近档权重（锥内密度近似）
@@ -568,20 +641,31 @@ function brainImpl(st, seat, level, rng, env) {
             if (d.k === 'drop') s *= 1.6                     // 尸粒簇优先（§4.1 同 snake）
             rho += s
           }
-          let crowded = false                                // 让食（放水 L1/L2）：真人食圈不抢（§4.3）
-          for (const f of foes) {
+          rhoNow[k] = rho
+          for (const f of foes) {                            // 让食（放水 L1/L2）：真人食圈不抢（§4.3）
             if (!mercyOf.has(f.seat)) continue
             const px2 = me.x + Math.cos(ang) * 140_000, py2 = me.y + Math.sin(ang) * 140_000
-            if (dist2(px2, py2, f.x, f.y) < mercyFoodR(f) * mercyFoodR(f)) { crowded = true; break }
+            if (dist2(px2, py2, f.x, f.y) < mercyFoodR(f) * mercyFoodR(f)) { crowdedK[k] = true; break }
           }
-          if (crowded) continue
-          if (rho > bs) { bs = rho; bestA = k * 45 }
+        }
+        if (per.rhoEwma) {                                   // EWMA 平滑（balanced 深化）
+          if (!mem.rho8) mem.rho8 = rhoNow.slice()
+          else for (let k = 0; k < 8; k++) mem.rho8[k] = mem.rho8[k] * per.rhoEwma + rhoNow[k] * (1 - per.rhoEwma)
+        }
+        for (let k = 0; k < 8; k++) {
+          if (crowdedK[k]) continue
+          let s = per.rhoEwma ? mem.rho8[k] : rhoNow[k]
+          if (per.rhoEwma && mem.fd === k) s *= 1.05         // sticky：平滑后近并列偏沿袭向
+          if (s > bs) { bs = s; bestA = k * 45 }
         }
         }
         if (bestA != null && bs > 0) {
+          mem.ch.q3++
+          mem.fd = bestA / 45                                // 沿袭向簿记（sticky 用）
           mem.ta = ((bestA + (rng() * 2 - 1) * per.drift) % 360 + 360) % 360   // drift=巡游观感（§4.2）
           mem.wp = null
         } else {
+          mem.ch.q4++
           /* Q4 巡游：casual 分区随机 / balanced 全图 / competitive T≥2 晶簇带边缘埋伏（§4.1） */
           if (!mem.wp || near(mem.wp.x, mem.wp.y) < 200_000) {
             let wx, wy
@@ -600,6 +684,16 @@ function brainImpl(st, seat, level, rng, env) {
         /* balanced 偶尔 dash：鱼汛潮窗内冲刺赶潮（§4.2） */
         if (level === 'balanced' && st.bloom.band >= 0 && me.M > 120) mem.dash = 1
       }
+    }
+    /* 失误注入（GAMES-166）：① casual blunder=可调失误率（±60..120° 错航向——饲料位
+     * 观感漂移的结构化来源，PERSONA/game.json bot.persona 可调）；② 放水让力失误
+     * （连败席近旁 ±70°+dash 熄灭——「追得上」的体感来源）。均决策拍内 rng 确定性 */
+    const bl = mercyNear ? MERCY_BLUNDER[mercyNear] : (per.blunder || 0)
+    if (bl > 0 && rng() < bl) {
+      const mag = mercyNear ? 70 : 60 + rng() * 60
+      mem.ta = ((mem.ta + (rng() < 0.5 ? -1 : 1) * mag) % 360 + 360) % 360
+      if (mercyNear) mem.dash = 0                            // 让力：不逃逸冲刺
+      mem.ch.bl++
     }
   }
   mem.dt--
@@ -744,5 +838,5 @@ module.exports = {
     const L = st.ledger
     return sumM + sumDots + L.expired - L.endow - L.ate - L.gained - L.dropped + L.dashed
   },
-  MERCY_DFT, PERSONA, THETA,
+  MERCY_DFT, PERSONA, THETA, BOT_EVERY, MERCY_NEAR, MERCY_BLUNDER,
 }
