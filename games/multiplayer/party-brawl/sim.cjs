@@ -724,7 +724,10 @@ function brainImpl(st, seat, level, rng, env) {
       if (canHunt && !spared && (mem.huntT <= 0 || finalRing)) {
         if (!finalRing) mem.huntT = 80
         let ax = foe.x, ay = foe.y
-        if (per.hunt === 2) { // competitive lead 预判（闭式解 t_flight 提前量）
+        if (per.hunt >= 1) { // lead 预判（闭式解 t_flight 提前量；F-2：balanced 无 lead=中距结构性脱靶——
+          // 弹速 17-21k/拍 × 飞行 5-10 拍 × 横移 7.5k/拍 = 40-75px 侧偏 vs 命中半径 12px，
+          // 0.6 部分 lead 残差仍越界（dcc7edc 实证零收益回撤）；全量 lead 归零残差。casual
+          // hunt=0 不入此枝=档位轴（仅反击+无预判）保留，comp 优势收窄到 cadence/aimErr/主动 HUNT）
           const t = (isqrtM(fd) / WPNS[p.w].v) | 0
           ax += ((foe.vx * t) | 0); ay += ((foe.vy * t) | 0)
         }
