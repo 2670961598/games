@@ -165,7 +165,7 @@ console.log('[M1/M2] 放水链（连败让力/免猎窗）')
     const a = st.players[1], b = st.players[5]
     a.x = 1100000; a.y = 1200000; a.w = 2; a.mag = 30; a.ammo = 30; a.hp = 80
     a.mem = { dt: 0, mx: 0, my: 0, aim: 0, fire: 0, wp: null }
-    b.x = 1250000; b.y = 1200000; b.w = 2; b.mag = 30; b.ammo = 0; b.hp = 60
+    b.x = 1250000; b.y = 1200000; b.w = 2; b.mag = 30; b.ammo = 0; b.hp = 60; b.heal = 10 /* 打药中=bal 强窗 */
     for (const p of st.players) p.prot = 0
     return st
   }
