@@ -67,7 +67,9 @@ function emitOne(room, ctxRec, r, opt = {}) {
   else { cx = c.cx; cy = c.cy; rr = 460000 }
   if (rr + 15000 > b.aoiR) b.aoiR = rr // 15px 滞回带（只扩不缩防抖动，mmo GAMES-53 口径）
   b.cx = cx; b.cy = cy
-  const aoiR = b.aoiR + 15000
+  /* O-1：spectator 镜头点恒=圈心（无走位抖动），滞回无意义——固定发 §5.7 设计值 460px
+   * 不入滞回（旧实现首次 500k 地板滞回锁定 → 恒发 515px，观战带宽面上浮 ~12%） */
+  const aoiR = seat < 0 ? 460000 : b.aoiR + 15000
 
   const cand = []
   for (const p of st.players) {
@@ -106,21 +108,28 @@ function emitOne(room, ctxRec, r, opt = {}) {
       mm: st.tick % 10 === 0 ? st.mm : undefined,               // 1Hz 全房密度点（§7 小地图）
     },
   }
-  /* ext.storm：相位切换后首张带（全局 ~8 次/局，§5.4；客户端闭式解原料=相位表常量+本参数链） */
+  /* ext.storm：相位切换后首张带（全局 ~8 次/局，§5.4；客户端闭式解原料=相位表常量+本参数链）。
+   * 哨兵/计次簿记延迟到长度判定后置位——>1.2KB 退化重发递归重入时哨兵未更新，
+   * 重发帧仍附带相位载荷（F-1：先置位再重发=该相位参数对客户端永久丢失，无自愈路径） */
+  let stormMark = false
   if (b.stormSent !== st.storm.ph) {
-    b.stormSent = st.storm.ph
+    stormMark = true
     const ph = P.PHASES[st.storm.ph]
     const c0 = st.storm.centers[st.storm.ph], c1 = st.storm.centers[st.storm.ph + 1]
     msg.ext.storm = { p: st.storm.ph, t0: ph.t0, t1: ph.t1, r0: ph.r0, r1: ph.r1, x0: c0.x, y0: c0.y, x1: c1.x, y1: c1.y, dps: ph.dps }
   }
-  /* ext.hash：每 10 张己席权威态哨兵（§5.1 ④——分歧计数客户端侧，sync 全量自愈） */
+  /* ext.hash：每 10 张己席权威态哨兵（§5.1 ④——分歧计数客户端侧，sync 全量自愈）；
+   * sinceHash 清零同 storm 延迟——早清则退化重发帧丢失一次哨兵（10 张后自愈的偶丢源） */
+  let hashMark = false
   if (own && own.alive) {
     b.sinceHash++
-    if (b.sinceHash >= 10) { b.sinceHash = 0; msg.ext.hash = P.hashSeat(own, st.tick) }
+    if (b.sinceHash >= 10) { hashMark = true; msg.ext.hash = P.hashSeat(own, st.tick) }
   }
   const text = JSON.stringify(msg)
   /* 增量 >1.2KB → 退全量（§5.4 退化阈值） */
   if (!full && text.length > 1200) return emitOne(room, ctxRec, r, { force: true })
+  if (stormMark) b.stormSent = st.storm.ph
+  if (hashMark) b.sinceHash = 0
   b.seq++
   if (full) {
     b.sent.clear()

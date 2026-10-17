@@ -406,7 +406,7 @@ QA2/FEEL 复核口径：200ms 臂实测落入预算带，超带即红（预测�
       "seed": 20261018, "timeScale": 8, "startDelayMs": 600, "maxTicks": 9600,
       "scenarios": {
         "win":   { "stat": "runs:3 seeds {S,S+1,S+2} 两胜+中位", "botLevels": [null, "balanced","balanced","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "royale-rush" },
-        "lose":  { "maxTicks": 2400, "botLevels": [null, "competitive","competitive","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
+        "lose":  { "maxTicks": 4200, "botLevels": [null, "competitive","competitive","balanced","balanced","balanced", "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
         "storm": { "maxTicks": 6900, "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "any", "policy": "orbit-edge",
                    "asserts": ["A8 半径闭式解对账（P0..S3 全相位）", "orbit-edge 恒圈外毒伤递减", "ext.storm 相位事件 8 次"] },
         "deterministic": {
@@ -432,13 +432,14 @@ QA2/FEEL 复核口径：200ms 臂实测落入预算带，超带即红（预测�
   - `idle`（A3）：零 op 站桩——P0 静圈 60s 内近战 bot 拳杀或 S1 毒杀（两者任一，rank 末段）。
   - `orbit-edge`（A8）：贴圈缘外 20px 环行——恒圈外毒伤（账本递减断言源），至 maxTicks 或毒杀。
 - **工具面**：`delayMs` 复用（零新增）；`carriedInputs`/`replayHash`/毒伤账本（`state.ledgers.storm`）计入快照账本字段（A9/A6/A8 断言源）。
-- 剧本局时序：timeScale=8 下 win 局典型 300s sim→~37s 墙钟、lose 15s、storm 43s、deterministic 2×37s、latency200 6×37s——全套 ≈8 分钟总墙钟（deep 四剧本同级）。
+- 剧本局时序：timeScale=8 下 win 局典型 300s sim→~37s 墙钟、lose ~27s、storm 43s、deterministic 2×37s、latency200 6×37s——全套 ≈8.5 分钟总墙钟（deep 四剧本同级）。
+  - lose 窗 2400→4200（GAMES-174 attempt2 校准）：F-3 修复退场 Δ0 伪击杀后，首杀带落在 H1 hold 尾 ~2980t（6/6 房 ±5t，bot 交火几何驱动），2400 恰截首杀前；4200 留 1200t 边际。idle 席（seed 派生出生在世界中心 r≈14px）毒圈永不可达——「毒杀确定性路径」实为 timeout HP 排序（idle 挨打 hp 低=末段 rank）+ bot 收敛中心击杀双源。
 
 ### 6.1 断言口径注记：混沌类剧本的统计制（GAMES-107 口径第二例继承）★
 
 > **本作从首日按统计制写死**（蛇王链四单攻坚换来的口径，deep §6.1 首日继承后本作第二例）：S6+S7 混合剧本局（win/latency200 的**数值断言**）按派生 seed `{S, S+1, S+2}` 各打一局（S=20261018）；**胜负断言=三局两胜**（wins≥2 过；0/3、1/3 红）；**数值锚=三局中位数**（win rank 中位=1；latency200 rank 中位差 ≤3、kills 中位差 ≤1）；单局真值全部入报告 JSON（`stat` 台账）与控制台披露。
 >
-> **逐局硬断言不进统计口径**（任一局违例即红）：A7 淘汰账本 / A8 缩圈对账 / A6 确定性双跑与回放 / A5 重连 / A4 注入延迟。lose 能输维持单局严格（毒杀确定性路径）。gate 冻结命令=`node scripts/api-check.js party-brawl`（无 env 开关，一律严格，GAMES-84 先例）。
+> **逐局硬断言不进统计口径**（任一局违例即红）：A7 淘汰账本 / A8 缩圈对账 / A6 确定性双跑与回放 / A5 重连 / A4 注入延迟。lose 能输维持单局严格（GAMES-174 校准后：elim≥1 源=bot 收敛中心真实交火（H1 尾首杀带），非毒杀——idle 出生点 seed 派生在世界中心毒圈不可达，A3 rank 末段源=timeout HP 排序）。gate 冻结命令=`node scripts/api-check.js party-brawl`（无 env 开关，一律严格，GAMES-84 先例）。
 >
 > 数值锚实测重锚须附数据、写入设计书修订单并单独披露，不得与统计制叠加隐性双重放松（GAMES-107 纪律原文继承）。
 

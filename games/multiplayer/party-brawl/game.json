@@ -81,7 +81,7 @@
         "maxTicks": 9600,
         "scenarios": {
           "win": { "stat": "runs:3 seeds {S,S+1,S+2} 两胜+中位", "botLevels": [null, "balanced","balanced","balanced","balanced","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "A", "policy": "royale-rush" },
-          "lose": { "maxTicks": 2400, "botLevels": [null, "competitive","competitive","balanced","balanced","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
+          "lose": { "maxTicks": 4200, "botLevels": [null, "competitive","competitive","balanced","balanced","balanced","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "B", "policy": "idle" },
           "storm": { "maxTicks": 6900, "botLevels": [null, "casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual","casual"], "expectWinner": "any", "policy": "orbit-edge",
                      "asserts": ["A8 半径闭式解对账（P0..S3 全相位）", "orbit-edge 恒圈外毒伤递减", "ext.storm 相位事件 8 次"] },
           "deterministic": {
