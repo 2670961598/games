@@ -1175,7 +1175,7 @@
       }
     },
     "multiplayer:deep-foodchain": {
-      "status": "dev-landed",
+      "status": "accepted",
       "date": "2026-10-17",
       "net": {
         "tech": "S6"
@@ -1188,9 +1188,19 @@
       "chain": {
         "design": "GAMES-163",
         "dev": "GAMES-164",
-        "count": 2
+        "qa1": "GAMES-165",
+        "bot": "GAMES-166",
+        "feel": "GAMES-167",
+        "qa2": "GAMES-168",
+        "vis": "GAMES-169",
+        "stress": "GAMES-170",
+        "count": 8,
+        "note": "8/8 预算版：FIX1/FIX2 零退回跳过未占单号"
       },
-      "notes": "S6 海量实体第二证·吞噬成长链单链 2/10（DEV=深海食物链核心实现：实体吞噬即经济——吞噬裁决 ruling 化一裁三账（{k:devour} 单事件原子携带击杀/质量转移 gain=floor(mv×11/20)/化粒 drops=clamp(ceil(dropT/2),3,30) 残差并末粒，判定与入账同 tick 原子完成客户端与剧本零推断）；质量守恒账本六计数 {ate,gained,dashed,endow,dropped,expired} 任意 tick 恒等式 ΣM+Σ粒+expired−endow−ate−gained−dropped+dashed==0（A8 终态复算 13 局残差全 0）；K=1.25 连续体型比判定（档位是标签不是判定）；体型四档\"档即视野\"AOI {380,440,500,560}+15px 滞回（X-03 原则：机制/带宽/Bot 三面一张表）；点实体无 path（全量 ~65B/鱼 轻 8×，full20 实测增量均 474-513B/全量占比 ≤0.6%）；dash 质量换速度（×1.6 v、每 0.5s −1 质量化光点）活体矿脉；Bot 体型键控四问树（Q1 威胁锥/Q2 拦截迭代闭式解+dash 收口/Q3 密度场/Q4 晶簇带埋伏，tier 改 θ 阈值不改结构）+casual 饲料位（不做密度场主动觅食=体型滞留 T0 低段·尸粒供给主力——生态 bootstrap 的供给前提）；鱼汛潮=回填加速非新实体（90s 相位 20s 窗磷虾 25s→8s）；深海军绿底三光带+四档形色双编码+HF __applied 生效自证首日（Q-013 前置清偿）；deep- 前缀 feed 排首+dash 持续键 sanitizeKeys 扩展。api-check 53/54→调优后全绿待复跑；冒烟/perf 见 REPORT）"
+      "notes": "E6-W2-T6 第六款收官（单链 8/8 预算版、FIX1/FIX2 零退回跳过：设计书→DEV→QA1→BOT→FEEL→QA2→VIS→STRESS——平台第 14 条完整单链=W2 波第六款收官+E6 14/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间深海食物链 24 席测试房 8min ts2 满编混档（null+comp×3+bal×6+cas×14）+实体量重载 cap{fish24/site180/drop240/M4000} churn（maxTicks2400 投影终局=测试房专属终局路径，生产常驻渔场恒不终局）/满编 24 席双真人+bot 让位+第 3 人观战 spot（观战体型对比条 ext.lb=[seat,score,M]×5 ·1Hz+观战固定 AOI460）/十四游戏同网关混编全家福 deep 第 14 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/deep-foodchain-stress.md）。单链要目：DEV S6 海量实体第二证·吞噬成长链（吞噬裁决 ruling 化一裁三账 {k:devour} 单事件原子携带击杀/质量转移/化粒；质量守恒账本六计数恒等式 A8 残差 0；K=1.25 连续体型比判定+档位是标签不是判定）；QA1 秒配 20 鱼+资源位 180+实体三顶声明块/K1.25 临界定档双向+档位滞回（降档带 −5%）/AOI 体型分级 {380,440,500,560}+15px 滞回带/重连三档（5s 全测+10s 复席+30s 逾窗 bot 接管夺回）；BOT 放水三层（降问+失误注入+让位）+avoid 转实职+persona 覆写；FEEL 同 tick 探针批与 calm 清场竞态三坑；QA2 放水台账重生清零/轮末 deaths 重置/活鱼<20 泊松口径+三房指纹交集=deterministic 在线范式；VIS freeze 复绘竞态/rotate(π) 尾鳍翻面/AOI 底缘角带 Δ 采样 34 面。实录=知识库草稿《深海食物链开发实录》",
+      "perf": "pass",
+      "play": "pass",
+      "visual": "pass"
     }
   }
 }
