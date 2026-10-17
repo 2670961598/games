@@ -41,7 +41,7 @@
 | 9.3s 窗内边缘 | resume=ok ✓ | tier 0→0、M 26→26、口径恒成立 | dead=0 | 残差 0 |
 | 31s 逾窗 | **resume 正确拒绝**（409 resume-rejected——见 R1c） | 席位鱼 tier/M 延续（M 26→28 托管期成长）、score 6→7 | dead=0（bot 接管） | 残差 0 |
 
-**R1c 逾窗语义纠偏（QA2 发现，协议面非缺陷）**：逾窗（>10s+1 拍宽限）`$reconnect` 返回 **409 resume-rejected**（托管转换后 token 已清——"复席语义不容降级为顶号"，rooms.js GAMES-63 口径），逾窗回归走 **bot 让位路径**。QA1 同档「重连夺回 ✓」系取**旧 welcome 的空洞绿**（断言未查 resume 回执，`wl=最后一条 welcome` 含建房欢迎——QA2 显式断言 r.json.ok 后暴露）。补针实证：逾窗后席位鱼恒活且托管觅食（M 22→24 dead=0）；让位回归机制由满编臂实证（§六：24 连接把 bots 全部让位、真人恒得席）。同房 12s 断线后 WS 再 join 的端到端夺回未在本预算内完成（quick 握手瞬态+测试房 WS 隔离两坑），披露为残余面——机制三证（拒绝回执/托管在场/让位满编）已闭合。
+**R1c 逾窗语义纠偏（QA2 发现，协议面非缺陷）**：逾窗（>10s+1 拍宽限）`$reconnect` 返回 **409 resume-rejected**（托管转换后 token 已清——"复席语义不容降级为顶号"，rooms.js GAMES-63 口径），逾窗回归走 **bot 让位路径**。QA1 同档「重连夺回 ✓」系取**旧 welcome 的空洞绿**（断言未查 resume 回执，`wl=最后一条 welcome` 含建房欢迎——QA2 显式断言 r.json.ok 后暴露）。四证闭合：①拒绝回执（409）；②逾窗后席位鱼恒活且托管觅食（M 22→24 dead=0）；③让位机制满编臂实证（§六）；④**真 quick 房端到端**：12s 逾窗断线后 WS `join{roomId,mode:play}` → **welcome 就座 role=player 零错误**（分得让位席 seat21≠原席 19——让位分配空位、原席托管 bot 不顶替；本人鱼 M/tier 快照未及采样为探针时序残余，披露）。注：首条 error「roomId required」为裸 join 先错后 quick 补位的协议形状（QA1 §九已录）。
 
 ### 3.4 托管（H1，AFK 60s 门）——绿
 - **托管门=afk.t≥600**（60s 输入签名不变，`st.afk` 簿记在线可读）；冻结前窗航向恒定（本人输入仍生效=0 自转）与托管窗自转 ≥2 次对照——代打生效判据。
