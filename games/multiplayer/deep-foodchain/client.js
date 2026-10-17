@@ -165,7 +165,7 @@
     /* 手感层（GAMES-167）：动效态只读消费快照/事件，不入模拟 */
     gulp: null, scatters: [], combo: null, tierBurst: null, whale: null,
     panicUntil: 0, threatNear: false, lbDeltas: {}, lbPrev: null, mHist: [],
-    specDemo: 0, curveUntil: 0, lastBubble: 0,
+    specDemo: 0, curveUntil: 0, lastBubble: 0, vizLock: 0, noRings: 0,
   }
   const cam = { x: K.W / 2, y: K.H / 2, zoom: 1, zTarget: 1, vx: 0, vy: 0 }
   let now = performance.now()
@@ -625,14 +625,17 @@
       const flicker = rec.p > 0 && Math.floor(now / 100) % 2 === 0
       g.globalAlpha = (rec.fade === undefined ? 1 : rec.fade) * (flicker ? 0.45 : 1) * crowdFade
       drawFish(s.x, s.y, rPx, rec.a, tier, SKIN[rec.skin] || SKIN[0], rec, isKing, lod, crowdFade)
-      /* 敌我关系环（§7：可吞=绿细描边环、威胁=红边缘光晕——K=1.25 判据渲染镜像） */
-      if (meRec && rec !== meRec && lod >= 1) {
+      /* 敌我关系环（§7：可吞=绿细描边环、威胁=红边缘光晕——K=1.25 判据渲染镜像；
+       * noRings=VIS 灰度形状采样位（GAMES-169）：关环取纯体轮廓，色盲形通道取证用） */
+      if (meRec && rec !== meRec && lod >= 1 && !S.noRings) {
         const myR = K.rOf(meRec.M), orR = K.rOf(rec.M)
-        if (myR * 4 >= orR * 5 && rec.p === 0) { // 可吞目标（F10 猎物高亮描边）
+        if (myR * 4 >= orR * 5 && rec.p === 0) { // 可吞目标（F10 猎物高亮描边；虚线=形状通道，与威胁实线环双色编码，GAMES-169）
           g.strokeStyle = 'rgba(61,220,132,.55)'; g.lineWidth = 1.5 * cam.zoom
+          g.setLineDash([4 * cam.zoom, 3 * cam.zoom])
           g.beginPath(); g.arc(s.x, s.y, rPx + 4 * cam.zoom, 0, Math.PI * 2); g.stroke()
+          g.setLineDash([])
           fxDraw('F10')
-        } else if (orR * 4 >= myR * 5) { // 威胁（可吞我者，F11 天敌红名警示）
+        } else if (orR * 4 >= myR * 5) { // 威胁（可吞我者，F11 天敌红名警示——实线粗环+红名=色外第二通道）
           g.strokeStyle = 'rgba(255,60,40,' + (0.30 + 0.15 * Math.sin(now / 160)).toFixed(3) + ')'
           g.lineWidth = 3 * cam.zoom
           g.beginPath(); g.arc(s.x, s.y, rPx + 5 * cam.zoom, 0, Math.PI * 2); g.stroke()
@@ -812,8 +815,8 @@
       g.beginPath(); g.ellipse(0, 0, r * 1.0, r * 0.82, 0, 0, Math.PI * 2)
       g.fillStyle = body; g.fill()
     } else if (tier === 1) { // 梭形（纺锤+小尾鳍）
-      if (lod >= 1) { // 尾鳍
-        g.save(); g.rotate(Math.PI + wag)
+      if (lod >= 1) { // 尾鳍（GAMES-169 修正：rotate(π) 会把 -x 尾鳍翻到 +x 嘴侧——像素实证越出鼻端；改 wag 即尾在后方摆动）
+        g.save(); g.rotate(wag)
         g.beginPath(); g.moveTo(-r * 0.8, 0); g.lineTo(-r * 1.5, -r * 0.45); g.lineTo(-r * 1.5, r * 0.45); g.closePath()
         g.fillStyle = body; g.globalAlpha *= 0.85; g.fill(); g.restore()
       }
@@ -834,7 +837,7 @@
         g.beginPath(); g.moveTo(-r * 0.1, -r * 0.55); g.lineTo(r * 0.35, -r * 1.35); g.lineTo(r * 0.55, -r * 0.5); g.closePath()
         g.fillStyle = body; g.globalAlpha *= 0.9; g.fill(); g.globalAlpha /= 0.9
       }
-      g.save(); g.rotate(Math.PI + wag)
+      g.save(); g.rotate(wag) // GAMES-169：同 T1 尾鳍 rotate(π) 翻转修正
       g.beginPath(); g.moveTo(-r * 0.9, 0); g.lineTo(-r * 1.8, -r * 0.5); g.lineTo(-r * 1.65, r * 0.1); g.lineTo(-r * 1.8, r * 0.5); g.closePath()
       g.fillStyle = body; g.globalAlpha *= 0.85; g.fill(); g.restore()
       g.beginPath()
@@ -850,7 +853,7 @@
       g.quadraticCurveTo(r * 0.15, r * 0.55, r * 1.2, 0)
       g.fillStyle = body; g.fill()
     } else { // T3 宽巨形（巨口+宽尾）+金描边（§7）
-      g.save(); g.rotate(Math.PI + wag * 0.6)
+      g.save(); g.rotate(wag * 0.6) // GAMES-169：同 T1 尾鳍 rotate(π) 翻转修正
       g.beginPath(); g.moveTo(-r * 0.85, 0); g.lineTo(-r * 1.7, -r * 0.75); g.lineTo(-r * 1.45, 0); g.lineTo(-r * 1.7, r * 0.75); g.closePath()
       g.fillStyle = body; g.globalAlpha *= 0.85; g.fill(); g.restore()
       g.beginPath()
@@ -924,6 +927,23 @@
     g.strokeStyle = '#B8860B'; g.lineWidth = 1; g.stroke()
     g.restore()
   }
+  /* 档位微型轮廓（GAMES-169 色盲双编码补漏）：与 §7 四档轮廓形同构的迷你版——
+   * T0 圆卵/T1 梭/T2 三角鳍/T3 宽巨菱，色=TIER_COL——排行榜/观战条的形色双通道
+   * （hud-font-standard §3：形状+颜色双通道，不依赖单通道可辨） */
+  function tierGlyph(x, y, t, s) {
+    g.save(); g.translate(x, y)
+    g.fillStyle = TIER_COL[t]
+    if (t === 0) { g.beginPath(); g.ellipse(0, 0, s, s * 0.82, 0, 0, Math.PI * 2); g.fill() }
+    else if (t === 1) {
+      g.beginPath(); g.moveTo(s, 0); g.lineTo(-s * 0.4, -s * 0.5); g.lineTo(-s * 0.9, 0); g.lineTo(-s * 0.4, s * 0.5); g.closePath(); g.fill()
+    } else if (t === 2) {
+      g.beginPath(); g.moveTo(s * 0.9, 0); g.lineTo(-s * 0.7, -s * 0.75); g.lineTo(-s * 0.9, 0); g.lineTo(-s * 0.7, s * 0.75); g.closePath(); g.fill()
+    } else {
+      g.beginPath(); g.moveTo(s * 1.1, 0); g.lineTo(0, -s * 0.8); g.lineTo(-s * 1.1, 0); g.lineTo(0, s * 0.8); g.closePath(); g.fill()
+      g.strokeStyle = '#FFD700'; g.lineWidth = 0.8; g.stroke()
+    }
+    g.restore()
+  }
 
   /* ---------- HUD（§7：顶栏/小地图/排行榜/dash 钮/页脚；HF 登记表+__applied） ---------- */
   let lbOpen = false
@@ -986,11 +1006,20 @@
       g.fillStyle = 'rgba(201,143,232,' + a.toFixed(3) + ')'
       g.fillRect(bx, by, mm.r, mm.r)
     }
+    /* 密度点：自位金点最后绘制置顶（GAMES-169：幽灵点同位覆盖会让自位标消失——自位恒可见） */
     for (const d of S.mm) {
+      if (d[0] === S.seat) continue
       const mx = mm.x + (d[1] - WORLD / 2) * (mm.r * 2 / WORLD) * 0.92
       const my = mm.y + (d[2] - WORLD / 2) * (mm.r * 2 / WORLD) * 0.92
-      g.beginPath(); g.arc(mx, my, d[0] === S.seat ? 3 : Math.max(1.4, Math.min(2.8, K.rOf(d[3]) / 8)), 0, Math.PI * 2)
-      g.fillStyle = d[0] === S.seat ? '#FFD700' : 'rgba(143,232,216,.75)'; g.fill()
+      g.beginPath(); g.arc(mx, my, Math.max(1.4, Math.min(2.8, K.rOf(d[3]) / 8)), 0, Math.PI * 2)
+      g.fillStyle = 'rgba(143,232,216,.75)'; g.fill()
+    }
+    for (const d of S.mm) {
+      if (d[0] !== S.seat) continue
+      const mx = mm.x + (d[1] - WORLD / 2) * (mm.r * 2 / WORLD) * 0.92
+      const my = mm.y + (d[2] - WORLD / 2) * (mm.r * 2 / WORLD) * 0.92
+      g.beginPath(); g.arc(mx, my, 3, 0, Math.PI * 2)
+      g.fillStyle = '#FFD700'; g.fill()
     }
     g.restore()
     /* 左侧排行榜 top5（tap 展开 top10，§7） */
@@ -1002,15 +1031,16 @@
       const r = rows[i]
       const y = TOP_H + 34 + i * 17
       const seatRec = S.roster.find((x) => x.seat === r.seat)
+      tierGlyph(16, y - 4, K.tierOf(r.M || 20, 0), 3.2) // 档位形色双通道 glyph（GAMES-169）
       g.font = HF('P0', 'lb-score', 13, 600)
       g.fillStyle = r.seat === S.seat ? '#FFD98E' : INK
-      g.fillText(String(i + 1) + '.', 12, y)
+      g.fillText(String(i + 1) + '.', 24, y)
       g.font = HF('P1', 'lb-name', 11)
       g.fillStyle = r.seat === S.seat ? '#FFD98E' : DIM
-      g.fillText((((seatRec && seatRec.name) || '鱼' + r.seat) + ' ·' + r.M).slice(0, 9), 30, y)
+      g.fillText((((seatRec && seatRec.name) || '鱼' + r.seat) + ' ·' + r.M).slice(0, 8), 40, y)
       g.font = HF('P0', 'lb-score', 13, 600)
       g.fillStyle = r.seat === S.seat ? '#FFD98E' : INK
-      g.fillText(String(r.score), 104, y)
+      g.fillText(String(r.score), 122, y)
       /* 变动差值标（F09：▲/▼ 900ms 淡出——快照 score 逐席对账驱动） */
       const dlt = S.lbDeltas && S.lbDeltas[r.seat]
       if (dlt && now - dlt.t0 < 900) {
@@ -1018,7 +1048,7 @@
         g.globalAlpha = Math.max(0, 1 - (now - dlt.t0) / 900)
         g.fillStyle = up ? '#7FE8D8' : '#FF6B5C'
         g.font = HF('P1', 'lb-delta', 11, 600)
-        g.fillText((up ? '▲' + dlt.d : '▼' + (-dlt.d)), 160, y)
+        g.fillText((up ? '▲' + dlt.d : '▼' + (-dlt.d)), 176, y)
         g.globalAlpha = 1
         fxDraw('F09')
       }
@@ -1065,6 +1095,7 @@
           g.font = HF('P2', 'spec-name', 9)
           g.fillStyle = r.seat === S.seat ? '#FFD98E' : DIM
           g.fillText((((seatRec && seatRec.name) || '鱼' + r.seat) + '').slice(0, 4), 12, yy + 8)
+          tierGlyph(49, yy + 4, K.tierOf(r.M || 20, 0), 2.6) // 档位 glyph（形通道——条长已是体型量通道，GAMES-169）
           g.fillStyle = 'rgba(127,232,216,.12)'; g.fillRect(56, yy + 1, W - 70, 7)
           g.fillStyle = TIER_COL[K.tierOf(r.M || 20, 0)]
           g.fillRect(56, yy + 1, (W - 70) * (rr / maxR), 7)
@@ -1223,12 +1254,13 @@
     }
     S.lb = Array.from({ length: 5 }, (_, i) => ({ seat: i, name: '幽灵' + (i + 1), M: 200 + i * 300, kills: i, score: 60 + i * 40 }))
     S.round = { n: 1, t: 1800, k: 3, rem: 1800 }
-    /* 幽灵节拍：100ms 推一次权威样本（走同一条插值管线） */
+    /* 幽灵节拍：100ms 推一次权威样本（走同一条插值管线；vizLock=VIS 确定性
+     * 采样冻结位——GAMES-169：锁巡游保 demo 位与镜头的相对屏位稳定） */
     setInterval(() => {
       let mi = 0
       for (const rec of S.ents.values()) {
         if (rec.k !== 'fish') continue
-        if (rec.seat !== -1) {
+        if (rec.seat !== -1 && !S.vizLock) {
           const d = Math.hypot(rec.wp.x - rec.x, rec.wp.y - rec.y)
           if (d < 160000) rec.wp = { x: (200000 + Math.random() * (K.W - 400000)) | 0, y: (200000 + Math.random() * (K.H - 400000)) | 0 }
           const ta = Math.atan2(rec.wp.y - rec.y, rec.wp.x - rec.x) * 180 / Math.PI
@@ -1298,6 +1330,40 @@
     if (name === 'tier') { onEvent({ k: 'tier', seat: S.seat, t: 2 }); return true }
     if (name === 'panic') { S.panicUntil = Math.max(S.panicUntil, now + 900); fxTrig('F05'); sfx.play('danger', ''); return true }
     if (name === 'whale') { const me = S.ents.get('s' + S.seat); const w = me || { x: cam.x, y: cam.y }; S.whale = { x: w.x, y: w.y, t0: now }; S.shakes = Math.max(S.shakes, 6); S.shakeT = Math.max(S.shakeT, 500); fxTrig('F13'); return true }
+    if (name === 'ringsOff') { S.noRings = 1; return true } // GAMES-169：灰度形状采样（敌我环属关系色面，非体形面）
+    if (name === 'ringsOn') { S.noRings = 0; return true }
+    if (name === 'visTiers') { // GAMES-169 VIS 确定性采样场：锁巡游+传送世界心+清场（随机幽灵/食物位与缘墙会污染灰度采样窗）
+      S.vizLock = 1
+      const me = S.ents.get('s' + S.seat)
+      if (me) {
+        me.x = K.W / 2; me.y = K.H / 2; me.a = 0 // 朝向定桩（嘴点位确定性）+居中（远离缓流墙）
+        me.smp = [] // 清旧样本（和解块 d>34px 硬贴齐会把传送弹回原位）
+      }
+      for (const [id, rec] of Array.from(S.ents)) if (rec.k === 'fish' || rec.k === 'alg' || rec.k === 'kri' || rec.k === 'cry' || rec.k === 'drop') if (!me || id !== 's' + S.seat) S.ents.delete(id)
+      if (me) {
+        const put = (id, M, dx, dy, seat) => {
+          S.ents.set(id, { id, k: 'fish', seat: seat == null ? -1 : seat, name: id, M, t: K.tierOf(M, 0), skin: 0,
+            x: me.x + dx, y: me.y + dy, a: 0, sc: 0, k2: 0, b: 0, d: 0, p: 0, smp: [{ t: 0, x: me.x + dx, y: me.y + dy, a: 0 }], fade: 1, pop: 0 })
+        }
+        put('zT0', 20, 58000, -105000)     // T0 圆卵（r=8）
+        put('zT1', 90, 58000, -55000)      // T1 梭形（r=10）
+        put('zT2', 420, 62000, 8000)       // T2 三角鳍（r=18）
+        put('zT3', 4000, 15000, 115000)    // T3 宽巨金描边（r=43）
+        put('s1', 60, -52000, 42000, 1)    // 吞噬演示位（seat=1 供 fxProbe devour 命中）
+        put('zPrey', 2, 48000, -142000)    // 猎物演示位（r=6 ≤ 8×0.8——绿虚线环；置于 T0 窗上方）
+        put('zPred', 600, -92000, 67000)   // 天敌演示位（r=20 ≥ 8×1.25——红实线环+红名）
+        S.ents.set('zCry', { id: 'zCry', k: 'cry', x: me.x - 55000, y: me.y - 60000, v: 4, on: 1 }) // 食物闪烁定点（左上远离形状窗）
+        S.ents.set('zAlg', { id: 'zAlg', k: 'alg', x: me.x - 55000, y: me.y + 40000, v: 1, on: 1 })
+      }
+      return true
+    }
+    if (name.slice(0, 5) === 'grow:') { // GAMES-169 三态冻结对照：浮游 t0/中期 mid/鲸级 t3（镜头档位 zoom 阶梯随之）
+      const me = S.ents.get('s' + S.seat); if (!me) return false
+      const M = { t0: 20, mid: 350, t3: 4000 }[name.slice(5)]
+      if (!M) return false
+      me.M = M; me.t = K.tierOf(M, me.t)
+      return true
+    }
     if (name === 'stateAll') { // 状态项打包驱动：近旁布猎物/天敌/资源演示位（seat=-1 不入幽灵巡游），draw-site 落真实绘制分支
       fxTrig('F03'); fxTrig('F07'); fxTrig('F08'); fxTrig('F09'); fxTrig('F10'); fxTrig('F11'); fxTrig('F15')
       S.specDemo = 1
