@@ -106,6 +106,10 @@
       S.degraded = !!pred && pred.hash !== P.ENGINE_HASH // 版本护栏：回退纯插值（§5.4）
     } else if (m.t === 'started') S.phase = 'live'
     else if (m.t === 'snapshot') onSnap(m)
+    else if (m.t === 'pong') { // F-4：ping 账本激活——网关 pong（c=回显时间戳）→ RTT 回写（徽标/结算战报源）
+      S.rec.pings.push(Math.max(1, Math.round(performance.now() - m.c)))
+      if (S.rec.pings.length > 20) S.rec.pings.shift() // 滚动窗 20 条（5s 一拍≈100s 履历）
+    }
     else if (m.t === 'end') { S.phase = 'ended'; S.endInfo = m.result }
     else if (m.t === 'closed') { S.phase = 'boot'; connect() }
   }
@@ -726,7 +730,7 @@
     ctx.fillText('连接糖豆岛…', W / 2, H / 2)
   }
 
-  /* ---------- ping（20s 一次；快照 RTT 代理） ---------- */
+  /* ---------- ping（5s 一拍；pong RTT 回写账本——F-4 修复前发送侧在而消费侧死码） ---------- */
   setInterval(() => {
     if (S.conn && S.conn.readyState === 1) {
       S.conn.send(JSON.stringify({ t: 'ping', c: performance.now() }))

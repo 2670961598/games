@@ -342,8 +342,13 @@ function fireWpn(st, p, events) {
     const ang = (p.aim + Math.trunc((srng() * 2 - 1) * spr)) & 0xffff // 含散布全参（iron fire 先例）
     const pid = st.projSeq++
     const ttl = (RANGE_PX / wp.v) | 0
-    st.projs.push({ pid, seat: p.seat, w: p.w, x: p.x, y: p.y, ang, v: wp.v, dmg: wp.dmg, ttl, dist: 0 })
-    events.push({ k: 'shot', seat: p.seat, w: p.w, ang, px: p.x, py: p.y, pid })
+    /* 枪口出生（F-3）：弹体从自身外缘外 1px（R_BASE+4k）起跳——玩家互不碰撞（§1.2）
+     * 下 bot 可重叠，中心出生=首拍扫掠段覆盖贴身敌必中即亡（124/130 寿命 Δ0 tick，
+     * 射程/TTK 数值面全失效）；shot 事件携枪口点，客户端二类重演同参一致 */
+    const mx0 = p.x + (((R_BASE + 4000) * cosQ16(ang)) >> 16)
+    const my0 = p.y + (((R_BASE + 4000) * sinQ16(ang)) >> 16)
+    st.projs.push({ pid, seat: p.seat, w: p.w, x: mx0, y: my0, ang, v: wp.v, dmg: wp.dmg, ttl, dist: 0 })
+    events.push({ k: 'shot', seat: p.seat, w: p.w, ang, px: mx0, py: my0, pid })
     st.stats.shots++
   }
   if (p.mag === 0 && p.ammo > 0) { p.rel = wp.rel; events.push({ k: 'reload', seat: p.seat }) }
@@ -700,6 +705,15 @@ function brainImpl(st, seat, level, rng, env) {
     }
     const armed = (p.w > 0 && (p.mag > 0 || p.ammo > 0)) || p.w === 0 // 空枪=饿武找箱不交战；拳=近程 HUNT（决赛圈收口）
     const engR = p.w === 0 ? WPNS[0].melee : (RANGE_PX * 47 / 100) | 0
+    /* 走射：保持交战距离（twin-stick 拉扯）——F-3：贴身(<want−6k)持续拉开，不受 HUNT
+     * 80 tick 冷却压制（巡逻/圈预算目标趋同 → 首遇即穿透 <31px 命中带，弹枪口出生后
+     * 仍首拍必中一拍即灭）；远距(>want+6k)无 goal 才接近；拳不拉扯（拳程 26px 贴近是本意） */
+    if (foe && p.w > 0 && (p.mag > 0 || p.ammo > 0)) {
+      const d = isqrtM(fd)
+      const want2 = per.hunt === 2 ? 120000 : 160000
+      if (d < want2 - 60000) goal = { x: p.x * 2 - foe.x, y: p.y * 2 - foe.y }
+      else if (d > want2 + 60000 && !goal) goal = { x: foe.x, y: foe.y }
+    }
     /* HUNT 时限（4s 未杀脱离——遭遇战不鏖战，royale 节奏面）；决赛圈（r≤120px）豁免=贴脸必收 */
     if (mem.huntT === undefined) mem.huntT = 0
     if (mem.huntT > 0) mem.huntT--
@@ -718,12 +732,6 @@ function brainImpl(st, seat, level, rng, env) {
         if (rng && aimErr) want = (want + Math.trunc((rng() * 2 - 1) * aimErr)) & 0xffff
         out.aim = want
         out.fire = 1
-        if (!goal) { // 走射：保持交战距离（twin-stick 拉扯）
-          const d = isqrtM(fd)
-          const want2 = per.hunt === 2 ? 120000 : 160000
-          if (d > want2 + 60000) goal = { x: foe.x, y: foe.y }
-          else if (d < want2 - 60000) goal = { x: p.x * 2 - foe.x, y: p.y * 2 - foe.y }
-        }
         if (p.nades > 0 && fd < 200000 * 200000 && p.w !== 5 && rng && rng() < 0.05) { out.skl = 1; out.aim = want }
       }
     }
@@ -769,7 +777,21 @@ function brainImpl(st, seat, level, rng, env) {
   mem.dt--
   const outSkl = mem.skl || 0, outPick = mem.pick !== undefined ? mem.pick : -1
   mem.skl = 0; mem.pick = -1 // 离散脉冲一次性（防决策间隔内逐拍重触发——cd 外的重复消费）
-  return { mx: mem.mx, my: mem.my, aim: mem.aim || p.aim, fire: mem.fire, skl: outSkl, pick: outPick }
+  /* F-3 开火距离门（逐拍实时）：贴身 ≤40px（枪口偏移 16px+敌命中半径上限 18px+余量）
+   * 停火——弹几何打不中重叠/贴身敌（枪口已越过敌身），继续射=空耗弹匣一整 reload 窗；
+   * 决策拍间隔内敌距可收敛穿透，门必须在消费拍实时量距；拳无弹体不受门 */
+  let fireOut = mem.fire
+  if (fireOut && p.w > 0) {
+    let dmin2 = Infinity
+    for (const o of st.players) {
+      if (o.seat === seat || !o.alive) continue
+      const ddx = o.x - p.x, ddy = o.y - p.y
+      const dd2 = ddx * ddx + ddy * ddy
+      if (dd2 < dmin2) dmin2 = dd2
+    }
+    if (isqrtM(dmin2) <= 40000) fireOut = 0
+  }
+  return { mx: mem.mx, my: mem.my, aim: mem.aim || p.aim, fire: fireOut, skl: outSkl, pick: outPick }
 }
 
 /* =====================================================================
