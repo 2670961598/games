@@ -705,14 +705,14 @@ function brainImpl(st, seat, level, rng, env) {
     }
     const armed = (p.w > 0 && (p.mag > 0 || p.ammo > 0)) || p.w === 0 // 空枪=饿武找箱不交战；拳=近程 HUNT（决赛圈收口）
     const engR = p.w === 0 ? WPNS[0].melee : (RANGE_PX * 47 / 100) | 0
-    /* 走射：保持交战距离（twin-stick 拉扯）——F-3：贴身(<want−6k)持续拉开，不受 HUNT
-     * 80 tick 冷却压制（巡逻/圈预算目标趋同 → 首遇即穿透 <31px 命中带，弹枪口出生后
-     * 仍首拍必中一拍即灭）；远距(>want+6k)无 goal 才接近；拳不拉扯（拳程 26px 贴近是本意） */
+    /* F-3 贴身持续拉扯：仅拉开、不添接近——巡逻/圈预算目标趋同 → 首遇即穿透 <31px
+     * 命中带（弹枪口出生后仍首拍必中一拍即灭），穿透后每拍持续拉开才有交战距离带；
+     * 接近仍由 HUNT 拍内承担（此处添接近会以 !goal 压制巡逻 → 全局 shots 产能塌缩）；
+     * 拳不拉扯（拳程 26px 贴近本意）；HUNT 80 tick 冷却期同样生效 */
     if (foe && p.w > 0 && (p.mag > 0 || p.ammo > 0)) {
       const d = isqrtM(fd)
       const want2 = per.hunt === 2 ? 120000 : 160000
       if (d < want2 - 60000) goal = { x: p.x * 2 - foe.x, y: p.y * 2 - foe.y }
-      else if (d > want2 + 60000 && !goal) goal = { x: foe.x, y: foe.y }
     }
     /* HUNT 时限（4s 未杀脱离——遭遇战不鏖战，royale 节奏面）；决赛圈（r≤120px）豁免=贴脸必收 */
     if (mem.huntT === undefined) mem.huntT = 0
@@ -732,6 +732,13 @@ function brainImpl(st, seat, level, rng, env) {
         if (rng && aimErr) want = (want + Math.trunc((rng() * 2 - 1) * aimErr)) & 0xffff
         out.aim = want
         out.fire = 1
+        /* 走射接近（twin-stick 拉扯的接近半边）：远距(>want+6k)无 goal 才接近——贴身
+         * 拉开已由上方 F-3 持续拉扯承担（含 HUNT 冷却期） */
+        {
+          const d = isqrtM(fd)
+          const want2 = per.hunt === 2 ? 120000 : 160000
+          if (d > want2 + 60000 && !goal) goal = { x: foe.x, y: foe.y }
+        }
         if (p.nades > 0 && fd < 200000 * 200000 && p.w !== 5 && rng && rng() < 0.05) { out.skl = 1; out.aim = want }
       }
     }
