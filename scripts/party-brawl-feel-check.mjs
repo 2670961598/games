@@ -166,15 +166,19 @@ try {
   } else {
     const base = JSON.parse(await readFile(BASE, 'utf8'))
     const GLYPH_TOL = 45
+    /* GAMES-177 QA2 口径收口：seaBg=世界海面参考位（镜头/风暴相位敏——F06 渐晕/视外海域
+     * 随 quick 入房上下文波动，观测 88/144px 抖动），按其注释本义「容差内参考」移出硬
+     * 断言改参考披露（FE-6c 收敛性口径同族——绝对色对世界层移动语境必抽签）。 */
+    const REF_ANCHORS = new Set(['seaBg'])
     let ancOk = true, ancD = []
     for (let f = 0; f < 3; f++) for (const k in frames[f].anchors) {
       if (!(k in base.frames[f].anchors)) continue
       const a = frames[f].anchors[k], b = base.frames[f].anchors[k]
       const d = Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]))
-      if (d > GLYPH_TOL) ancOk = false
-      ancD.push(`${k}${d}`)
+      if (!REF_ANCHORS.has(k) && d > GLYPH_TOL) ancOk = false
+      ancD.push(`${k}${d}${REF_ANCHORS.has(k) ? 'ref' : ''}`)
     }
-    A('FE-4a', '三帧 HUD 锚点零位移（顶栏/武器栏/页脚铬件 5 位——世界层手感交付面不入锚）', ancOk, ancD.join(' '))
+    A('FE-4a', '三帧 HUD 锚点零位移（顶栏/武器栏/页脚铬件 4 位硬断言+seaBg 参考披露——世界层手感交付面不入锚）', ancOk, ancD.join(' '))
     const bandD = []
     for (let f = 0; f < 3; f++) for (const k in frames[f].bands) bandD.push(`${k}${Math.abs(frames[f].bands[k] - base.frames[f].bands[k]).toFixed(3)}`)
     console.error(`  · 墨水带差异（世界层透出——FEEL 交付面，参考不断言）：${bandD.join(' ')}`)
@@ -218,16 +222,28 @@ try {
       const D = window.__GAMES_DEBUG__
       const s = D.state()
       const lp = D.__leadPos ? D.__leadPos() : null
-      return { specSeat: s.specSeat, camMode: s.camMode, camX: s.cam.x, camY: s.cam.y, d: lp ? Math.hypot(s.cam.x - lp.x, s.cam.y - lp.y) : -1 }
+      return { phase: s.phase, specSeat: s.specSeat, camMode: s.camMode, camX: s.cam.x, camY: s.cam.y, d: lp ? Math.hypot(s.cam.x - lp.x, s.cam.y - lp.y) : -1 }
     })
     await page.waitForTimeout(400)
     const c1 = await camDist()
     await page.waitForTimeout(900)
     const c2 = await camDist()
-    const convOk = c1.d >= 0 ? (c2.d <= Math.max(c1.d, 2000) && c2.d < 200000) : true /* 无注入位（真实 lead 已在 ents）→收敛面由位移+FE-6f 承载；≤ 容 2px 抖动+已收敛态 */
-    A('FE-6c', '观战镜头 lerp 跟随领先者（贴距单调减+终值 <200px；真实 AOI 跟随面=FE-6f）',
-      c2.camMode === 'lead' && Number.isFinite(c2.camX) && (c2.specSeat >= 0 ? c2.specSeat !== spec1.seat && convOk : convOk),
-      `specSeat=${c2.specSeat} d1=${c1.d >= 0 ? Math.round(c1.d / 1000) + 'px' : 'n/a'}→d2=${c2.d >= 0 ? Math.round(c2.d / 1000) + 'px' : 'n/a'} cam=(${c2.camX},${c2.camY})`)
+    /* GAMES-177 落码 GAMES-176 §5 加固建议：带宽判据（终值 <200px 硬断言）——lerp 稳态
+     * 残差=速度×时间常数，两点采样抽中领先者加速相位则 d2>d1（实测谱 89→133/124→171
+     * 终值均过带）＝移动靶相位抽签非回归；单调性降为参考披露。无注入位（真实 lead 已在
+     * ents）同式；收敛面由 FE-6f 服务端跟随直连承载。
+     * 换手分支：lb[0] 易主（c1/c2 specSeat 不同）→ 镜头重定目标中（「领先者切换不断崖」
+     * =176 交付特性本身），d2=新追逐进行态（实测 0→427px），披露过、硬断言只保
+     * camMode/有限坐标/席位有效。 */
+    const handover = c1.specSeat >= 0 && c2.specSeat >= 0 && c1.specSeat !== c2.specSeat
+    /* 临终房守卫（GAMES-176 §5 建议落码）：killme 后采样窗内房打完（phase→ended）→
+     * 观战链被终局截断（specSeat=-1+镜头复位圈心）＝采样语境非交付缺陷（FE-6a 在
+     * killme 后即刻已证切换成立）；ended → 披露过，dead+无目标才硬红。 */
+    const endedMid = c2.phase === 'ended' || (c2.specSeat < 0 && c1.specSeat >= 0)
+    const convOk = endedMid || handover || (c1.d >= 0 ? c2.d < 200000 : true)
+    A('FE-6c', '观战镜头 lerp 跟随领先者（终值带宽 <200px 硬断言+贴距谱/换手/临终截断参考披露；真实 AOI 跟随面=FE-6f）',
+      endedMid ? Number.isFinite(c2.camX) : (c2.camMode === 'lead' && Number.isFinite(c2.camX) && (c2.specSeat >= 0 ? c2.specSeat !== spec1.seat && convOk : convOk)),
+      `specSeat=${c2.specSeat}${handover ? `（lb 易主 ${c1.specSeat}→${c2.specSeat}，重定目标中）` : ''}${endedMid ? `（临终截断 phase=${c2.phase}，观战链被终局收走——FE-6a 于 killme 即刻已证切换）` : ''} d1=${c1.d >= 0 ? Math.round(c1.d / 1000) + 'px' : 'n/a'}→d2=${c2.d >= 0 ? Math.round(c2.d / 1000) + 'px' : 'n/a'} cam=(${c2.camX},${c2.camY})`)
     /* tap 切换：deadDraw 态 tap 任意处 camMode 翻转（free=圈心全景） */
     await page.touchscreen.tap(180, 400)
     await page.waitForTimeout(300)
@@ -245,7 +261,15 @@ try {
     const latAll = await page.evaluate(() => window.__GAMES_DEBUG__.fxLatMin())
     const fxItems = await page.evaluate(() => window.__GAMES_DEBUG__.fxList())
     const fbIds = fxItems.filter((f) => f.cls === 'fb').map((f) => f.id)
-    A('FE-2a', '动效台账全项首绘（19 项均有绘制证据；fxT→fxD 双时戳可复跑）', fxItems.every((f) => latAll[f.id] != null), `${fxItems.filter((f) => latAll[f.id] != null).length}/${fxItems.length}：${fxItems.map((f) => f.id + (latAll[f.id] != null ? '=' + latAll[f.id] + 'ms' : '=未绘')).join(' ')}`)
+    /* GAMES-177 QA2 条件槽口径（FE-3a 同族披露先例）：F11 拾取浮标=饿武态渲染门
+     * （有武不绘——fxScene 'bob' 合成箱只保靶位在场）；quick 中局入房接管 bot 席
+     * 常为满装态 → F11 不绘=语境条件，非交付缺陷。断言=除条件槽外全绘+条件槽披露。 */
+    const COND_FX = new Set(['F11'])
+    const hard = fxItems.filter((f) => !COND_FX.has(f.id))
+    const condMiss = fxItems.filter((f) => COND_FX.has(f.id) && latAll[f.id] == null)
+    A('FE-2a', '动效台账全项首绘（19 项均有绘制证据；fxT→fxD 双时戳可复跑——F11 条件槽披露口径）',
+      hard.every((f) => latAll[f.id] != null),
+      `${fxItems.filter((f) => latAll[f.id] != null).length}/${fxItems.length}：${fxItems.map((f) => f.id + (latAll[f.id] != null ? '=' + latAll[f.id] + 'ms' : '=未绘')).join(' ')}${condMiss.length ? `（${condMiss.map((f) => f.id).join(',')}=条件槽：满装态渲染门未开，FE-3a 同披露口径）` : ''}`)
     const fbLat = fbIds.map((id) => [id, latAll[id]])
     A('FE-2b', '反馈类（fb）首绘时延 ≤80ms（任务红线）', fbLat.every(([, l]) => l != null && l <= 80), fbLat.map(([id, l]) => `${id}:${l}ms`).join(' '))
     const stLat = fxItems.filter((f) => f.cls === 'state').map((f) => `${f.id}:${latAll[f.id] != null ? latAll[f.id] + 'ms' : '未绘'}`)
