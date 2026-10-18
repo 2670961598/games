@@ -100,8 +100,10 @@ for (const seed of SEEDS) {
 const casKillsMax = Math.max(...agg.map((a) => a.row.casual.kills))
 ok('N1', '轴③对抗面：casual 主动开火≈0（4 seed 各 kills ≤1）', casKillsMax <= 1, `cas kills=[${agg.map((a) => a.row.casual.kills).join(',')}]`)
 /* 档序分化 DoD（≥2 seed 一致方向）：kills 序 comp>bal>cas 4/4 精确 + rank 序稳定同序
- * ≥3/4（实测方向 bal<cas<comp——进攻性 kills 冠军 vs 机会主义存活者的生态分化，方向与
- * 设计 §4.2「comp 决赛豆 rank 2-5」预期相反，如实挂 REPORT 残差转 QA2 仲裁） */
+ * ≥3/4（实测方向 bal<cas<comp——进攻性 kills 冠军 vs 机会主义存活者的生态分化。
+ * GAMES-177 QA2 仲裁定案：非 persona 缺陷——tier 中位 rank=comp 密度泛函（6comp 基座
+ * 互猎 attrition 占 comp 死亡 2/3），设计 §4.2.2 重锚为「每局最佳 comp 席 rank≤5」
+ * 席位上限口径（生产 3/6/11 实配 7/8）+人均击杀率（7/8）——压力基座维持本断言原样） */
 const killsOrd = agg.filter((a) => a.row.competitive.kills > a.row.balanced.kills && a.row.balanced.kills >= a.row.casual.kills).length
 ok('N1', '档序分化 DoD·kills 轴：comp>bal≥cas 序 ≥2 seed（实测 4/4 精确）', killsOrd >= 2,
   `${killsOrd}/4（kills comp=[${agg.map((a) => a.row.competitive.kills).join(',')}] bal=[${agg.map((a) => a.row.balanced.kills).join(',')}] cas=[${agg.map((a) => a.row.casual.kills).join(',')}]）`)
