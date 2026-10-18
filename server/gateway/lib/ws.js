@@ -161,6 +161,11 @@ export class WsConn extends EventEmitter {
     if (!this.writable) return
     this.writable = false
     this.emit('close')
+    // O-1（GAMES-181）：非优雅路径兜底释放 fd。优雅关（close()/CLOSE 帧两处）先走
+    // socket.end()（writableEnded=true 跳过此处 destroy，close 帧随 FIN 自然冲刷）；
+    // 其余进入路径（socket 'error'=RST 急断/'end'=对端裸 FIN/'close'）未走 end——
+    // 补 destroy 防 fd 悬置 CLOSED/CLOSE_WAIT 态（移动掉线/后台杀进程路径无上界）。
+    if (!this.socket.writableEnded) { try { this.socket.destroy() } catch { /* 已断 */ } }
   }
 }
 
