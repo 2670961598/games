@@ -163,10 +163,15 @@ export class RoomManager {
     let target = null
     for (const s of room.seats) if (s.kind === 'empty' && !s.conn) { target = s; break }
     if (!target) {
-      for (let i = room.seats.length - 1; i >= 0; i--) {
-        const s = room.seats[i]
-        if (s.kind === 'bot') { target = s; break }
-      }
+      const bots = []
+      for (let i = room.seats.length - 1; i >= 0; i--) if (room.seats[i].kind === 'bot') bots.push(room.seats[i])
+      /* GAMES-176 quick 池活席维持（party-brawl §4.3 承接）：royale 淘汰不可逆——接管
+       * 已淘汰 bot 席=新玩家秒变观战；party-brawl 优先「sim 态存活」bot 席（seat 最大
+       * 优先的协议 §2 语义在活席子集内保持），无活 bot 席才退回（全灭房接管=直接观战）。
+       * 别作 alive 语义不同（重生制）不适用——gameId 限定零外溢 */
+      if (bots.length && room.gameId === 'party-brawl' && room.state && room.state.players) {
+        target = bots.find((s) => { const p = room.state.players[s.seat]; return !p || p.alive !== 0 }) || bots[0]
+      } else if (bots.length) target = bots[0]
     }
     if (!target) {
       // 满员：转旁观
