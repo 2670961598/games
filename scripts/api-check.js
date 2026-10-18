@@ -1880,7 +1880,11 @@ for (const [name, sc] of Object.entries(script.scenarios)) {
          HTTP 注入局有墙钟抖动（deterministic 靠 autopilot 才可双跑），单局中位=单局
          真值，kills 这类高方差面逐跑摆振（armB 同配置实测 0↔8）；铁律=统计制按声明跑满三局。
          仅 party-brawl（本单口径）——别作 arms 循环是单局校准面，改三局=改别人断言语义） */
-      const statSeeds = gameId === 'party-brawl' ? [script.seed, script.seed + 1, script.seed + 2] : [script.seed]
+      /* 统计制五 seed（设计 §6.1 派生 seed 取中位——GAMES-180 校准五，agent-8 2026-10-18：
+         校准四（差≤2 泊松带）后实测 k0 尾部仍见 3（verify 轮 3/0 差 3）——中位-of-3 在
+         λ≈1 长尾下离散跳变覆盖不足；五局中位把中位数钉回众数带（P(中位≥2) 显著压低），
+         断言阈值不动（语义=延迟不改战果，强度不降），样本量升。仅 party-brawl。 */
+      const statSeeds = gameId === 'party-brawl' ? [script.seed, script.seed + 1, script.seed + 2, script.seed + 3, script.seed + 4] : [script.seed]
       for (let ai = 0; ai < sc.arms.length; ai++) {
         const ranksA = [], killsA = [], resultsA = []
         let carriedA = 0, tickA = 0, lastPlayed = null, lastRR = null
