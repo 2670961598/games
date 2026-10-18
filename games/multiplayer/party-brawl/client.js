@@ -1145,6 +1145,18 @@
     else if (name === 'heal') onEvent({ k: 'heal', seat: S.seat, v: 25 }, S.frame) // F16
     else if (name === 'boost') onEvent({ k: 'boost', seat: S.seat }, S.frame) // F19
     else if (name === 'specfree') { S.camMode = S.camMode === 'lead' ? 'free' : 'lead' } // F13 镜头模式切换（不切 phase 的轻量驱动）
+    else if (name === 'victim') { // VIS 识图取证（GAMES-179）：屏内确定位受害席——killme 同式注入面，零判定零服务端；返回注入席
+      // 席选=ents 缺席席全扫（在场席 10Hz 快照 Object.assign(rec.cur,e) 会把注入位拉回真实位——缺席席零回踩窗）；
+      // buf:[] ⇒ interp 跳过（豆体不渲染）——仅 dmgnum/confetti 按 cur 取位。避 %8∈{2,3,6}（绿/天蓝/奶油——糖粒雨
+      // 暖三支分类器不可见：绿=草地底同色、天蓝 r<150、奶油=沙底同带）
+      let other = -1
+      for (let d = 1; d < 20 && other < 0; d++) { const s2 = (S.seat + d) % 20; if (s2 % 8 !== 2 && s2 % 8 !== 3 && s2 % 8 !== 6 && !S.ents.has(s2)) other = s2 }
+      if (other < 0) other = (S.seat + 1) % 20 // 满员 AOI 兜底（快照回踩风险——探针窗短）
+      S.ents.set(other, { cur: { x: (haveVis ? vis.x : 1200000) + 40000, y: (haveVis ? vis.y : 1200000) - 10000, a: 0, sh: 0, hp: 88 }, buf: [] })
+      return other
+    }
+    else if (name === 'stormsave') { if (!S.stormSaved) S.stormSaved = S.storm } // VIS 确定性场前存真实毒圈视图（GAMES-179）
+    else if (name === 'stormrestore') { if (S.stormSaved) { S.storm = S.stormSaved; S.stormSaved = null } } // 复位（注入场用毕——自然相位面还原真圈）
     return true
   }
   window.__GAMES_DEBUG__ = {
@@ -1169,7 +1181,7 @@
       const avg = cs.length ? cs.reduce((a, b) => a + b, 0) / cs.length : 0
       const sorted = cs.slice().sort((a, b) => a - b)
       const gAvg = gs.length ? gs.reduce((a, b) => a + b, 0) / gs.length : 0
-      return { n: cs.length, costAvgMs: +avg.toFixed(2), costP95Ms: +(sorted[Math.floor(sorted.length * 0.95)] || 0).toFixed(2), costJankPct: +(cs.filter((c) => c > 25).length / Math.max(1, cs.length) * 100).toFixed(2), rafGapMs: +gAvg.toFixed(1) }
+      return { n: cs.length, costAvgMs: +avg.toFixed(2), costP95Ms: +(sorted[Math.floor(sorted.length * 0.95)] || 0).toFixed(2), costJankPct: +(cs.filter((c) => c > 25).length / Math.max(1, cs.length) * 100).toFixed(2), rafGapMs: +gAvg.toFixed(1), rafN }
     },
     fxProbe: (ev) => { onEvent(ev, S.frame); return true }, // 合成事件走同一 onEvent 管线
     __leadPos: () => S.leadInjected || null, // killme 注入领先者位（feel-check 贴合断言锚——QA 面）
