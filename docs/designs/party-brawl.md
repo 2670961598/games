@@ -307,7 +307,7 @@ Q5 巡逻：casual 全图箱点游走（拾取优先）；balanced 圈内资源�
 ```
 客户端收快照(ack, 权威己席态@tick T)：
   ① 丢弃输入环中 seq ≤ ack 的历史
-  ② 己席态回滚到权威态@T，重放 seq∈(ack, 本地最新]（RTT200 ≈ 4-6 条，<0.1ms）
+  ② 己席态回滚到权威态@T，重放未确认输入（GAMES-178 域统一：重放域=sim tick——推送拍=simTick+flight、抬钟=frame+下行折算拍，输入 seq 只作 ack 回执账本；RTT200 ≈ 4-6 条，<0.1ms）
   ③ Δpos ≤ 6px → 软收敛 0.35/帧（~100ms 抹平）；> 6px → 硬回滚+120ms 混合带（视觉 ≤2.5px/帧）
   ④ 每 10 张快照携 ext.hash = fnv1a32(serialize(己席权威态@T))——本地同式重放态算 hash 比对：
      不符 → 分歧计数++，sync 全量（版本哨兵；连续 3 次上报告警）
@@ -346,6 +346,8 @@ Q5 巡逻：casual 全图箱点游走（拾取优先）；balanced 圈内资源�
 | hash 分歧 | =0（同源同版必零） | 0（>0 即 bug 哨兵） | 单源 sim+烘焙表纪律 |
 
 QA2/FEEL 复核口径：200ms 臂实测落入预算带，超带即红（预测实现缺陷或宽限参数错），不带容忍开关（卡丁 §5.3 同律前置）。
+
+**激活态注记（GAMES-178 FIX2，2026-10-18）**：DEV 期起 predictor 的 anchor tick（sim frame 域）与 advanceTo/push at（输入 seq 域）两域错配——重放窗恒空转，预测位退化为「最近权威位」（100ms 阶跃、无撕裂也无超前），上表全行处于未真激活态（GAMES-176 披露、QA2 §2.3 复核维持转本单）。修复=**重放域统一到 sim tick**（卡丁范式整链搬运）：① simTick=本地墙钟累计器步进（rAF 驱动——50ms interval 抖动慢于服务器拍，会使本地钟每张快照被抬钟钉平）；② flight EMA 自校准（ack 回执×发送拍对账观测）；③ 输入推送拍=simTick+flight 单调不回退；④ 抬钟=frame+下行折算拍（ping RTT/2——快照到达即已陈旧下行半程，只按 frame 抬钟=本地钟锁相在到达沿，超前恒塌 0）；⑤ 权威锚补 vx/vy/bt（锚缺速度=满速回放自静止爬速，系统性滞后 ~1.75 tick≈13px>p95 预算——适配器 ext.me 增量，非协议面变更）。200ms 臂实测（`scripts/party-brawl-fix2-pred.mjs`，quick 真房+TCP 双向 100ms 垫臂）：修正量中位 0.00px/p95 0.00px/p99 12.6px/max 17.7px（预算带内）；软收敛事件 0.04 次/s、硬回滚 0.23 次/s（≤峰值列）；混合带步长 max 2.26px/帧（≤2.5 封顶实测）、累计修正 2.7px/s（≤60）；**超前渲染真激活：影子超前权威锚中位 30px（≈RTT 4 tick）——修复前恒 0**。帧级数据 `kernel/workers/GAMES-178-shots/pred-band.json`。
 
 ### 5.4 状态同步与快照（10Hz 二式+圈即 AOI——S6 底盘复用+两处新面）
 

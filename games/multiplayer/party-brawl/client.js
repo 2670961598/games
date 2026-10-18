@@ -67,6 +67,11 @@
     conn: null, seat: -1, role: null, room: null, tickMs: 50, seed: 0,
     phase: 'boot', // boot→lobby(countdown)→live→dead(观战)→ended
     frame: 0, ack: -1, seq: 0,
+    /* GAMES-178 FIX2 域统一（卡丁范式搬运）：simTick=本地服务器拍估计（重放域统一
+     * 基座——anchor@snapshot.frame 与 push/advanceTo 同为 sim tick 域；输入 seq 只作
+     * 环账本 q）；flight=飞行窗 EMA（ack 回执自校准）；sentLog={q,tick} 供回执对账 */
+    simTick: 0, lastFrame: null, flight: 3, sentLog: [], lastPushAt: 0, blend: null,
+    predLog: [], // 和解逐快照账本（帧级偏差带取证：d=同拍预测偏差 mpx，lead=超前权威 px——§5.3 激活态证据）
     ents: new Map(), // 远人插值缓冲（100ms）
     me: null, storm: null, alive: 20, lb: [], mm: [],
     projs: new Map(), nades: new Map(), // 二类重演域（弹体/手雷——事件全参本地推进）
@@ -103,11 +108,19 @@
     if (m.t === 'welcome') {
       S.room = m.roomId; S.seat = m.seat; S.role = m.role; S.tickMs = m.tickMs || 50
       S.seed = m.seed; S.frame = m.frame; S.startFrame = m.frame // 淘汰信息卡在场时长锚（接管中局=入房拍起算）
+      /* GAMES-178：新房=预测域重置（旧房 seq/tick 域残留会污染新锚）+全量态即锚
+       * （welcome.state 自席记录含 x/y/vx/vy/boost——中局接管首帧影子即有效，不等首张快照） */
+      S.predictor = P.makePredictor()
+      S.simTick = m.frame; S.lastFrame = null; S.flight = 3
+      S.sentLog = []; S.lastPushAt = 0; S.blend = null; S.clockAt = 0; S.clockAcc = 0
+      haveVis = false; S.predLog = []
       const st = m.state
       if (st && st.players) for (const p of st.players) if (p.seat !== S.seat) S.ents.set(p.seat, { cur: { ...p }, buf: [{ t: m.frame, p: { ...p } }], a: p.a })
       if (st && st.storm) { S.storm = mkStormView(st.storm, st.tick || 0); S.storm.ph = st.storm.ph }
       if (st && st.projs) for (const pr of st.projs) S.projs.set(pr.pid, { ...pr, born: S.frame }) // 重连补列（§5.7）
       if (st && st.nades) for (const n of st.nades) S.nades.set(n.id, { ...n })
+      const own0 = st && st.players ? st.players.find((p) => p.seat === S.seat) : null
+      if (own0) S.predictor.anchor({ x: own0.x, y: own0.y, vx: own0.vx, vy: own0.vy, w: own0.w, nades: own0.nades, boost: own0.boost, aim: 0 }, m.frame)
       S.alive = st ? st.alive : 20
       S.phase = m.room && m.room.state === 'live' ? 'live' : 'lobby'
       const bootEl = document.getElementById('boot')
@@ -149,6 +162,7 @@
   /* ---------- 快照处理（ack 和解+二类重演+三类确认+AOI 增量） ---------- */
   function onSnap(m) {
     S.frame = m.frame
+    S.lastFrame = m.frame // GAMES-178：本地时钟护栏上界（快照断流防开环跑飞，卡丁同式）
     if (m.ext) {
       if (m.ext.storm) { S.storm = mkStormView(m.ext.storm) }
       if (m.ext.alive !== undefined) S.alive = m.ext.alive
@@ -388,8 +402,19 @@
     if (IN.skl) keys.skl = IN.skl
     if (IN.pick >= 0) keys.pick = IN.pick
     IN.skl = 0; IN.pick = -1
-    /* 一类·预测：采样即本地预测 tick 输入（零等待 §3.1） */
-    if (!S.degraded) S.predictor.push(S.seq + 1, { mx, my, aim, fire })
+    /* 一类·预测：采样即本地预测 tick 输入（零等待 §3.1）。GAMES-178 域统一：
+     * 推送拍=simTick+flight（sim tick 域——与 anchor/advanceTo 同域，卡丁范式）；
+     * 输入 seq 只作上行 q（ack 回执对账源→flight EMA）；simTick 步进在渲染循环
+     * wall-clock 累计器（50ms interval 抖动会慢于服务器拍） */
+    S.sentLog.push({ q: S.seq, tick: S.simTick })
+    if (S.sentLog.length > 96) S.sentLog.shift()
+    if (!S.degraded) {
+      /* 推送拍单调不回退（flight EMA 单步可降≥2 时估算拍倒序，强制 ≥前推+1 保
+       * 到达序——GAMES-111 F4 卡丁同坑） */
+      const pushAt = Math.max(S.simTick + S.flight, (S.lastPushAt || 0) + 1)
+      S.lastPushAt = pushAt
+      S.predictor.push(pushAt, { mx, my, aim, fire })
+    }
     S.conn.send(JSON.stringify({ t: 'input', frame: S.seq, keys }))
     S.seq++
     lastUp = keys
@@ -399,23 +424,48 @@
 
   /* ---------- 和解（§5.1 ①-③；§3.1 撕裂预算） ---------- */
   let vis = { x: 0, y: 0 }, haveVis = false
+  const visLedger = [] // 逐帧视觉步长台账 {s:vis步长px, b:混合带, m:影子步长px}（§5.3 撕裂预算取证：修正位移 vs 运动位移分离计量）
+  function syncFlightAck(ack, srvTick) {
+    /* 飞行窗自校准（卡丁范式）：ack 回执（服务器已消费 seq）→ 观测发送 tick→消费 tick 差 EMA */
+    if (ack < 0 || !S.sentLog.length) return
+    while (S.sentLog.length && S.sentLog[0].q <= ack) {
+      const obs = srvTick - S.sentLog[0].tick
+      if (obs >= 0 && obs < 64) S.flight = (S.flight * 3 + obs + 1) >> 2
+      S.sentLog.shift()
+    }
+  }
   function reconcile(m) {
     const me = S.me
     if (!me || me.al === 0 || S.degraded || me.x === undefined) return // x/y=权威锚原料（GAMES-176 适配器配套；缺坐标=旧网关兼容跳过）
-    /* 权威锚点：ack 裁剪由 predictor.anchor 内部（at≤tick 出环） */
-    S.predictor.anchor({ x: me.x, y: me.y, vx: 0, vy: 0, w: me.w, nades: me.na, boost: 0, aim: 0 }, m.frame)
-    const sh = S.predictor.advanceTo(S.seq + 1) // 重放未确认（seq-ack ≈ RTT/tick 条）
+    syncFlightAck(S.ack, m.frame)
+    /* 抬钟=快照到达即已陈旧下行半程（ping RTT/2 折算拍——TCP 垫臂/真网同义）：只按
+     * m.frame 抬钟会把本地钟锁相在快照到达沿（st≡f，预测超前塌 0——GAMES-178 次验实测）；
+     * 修正前后同拍对照不变（抬钟先行） */
+    const rttNow = S.rec.pings.length ? S.rec.pings[S.rec.pings.length - 1] : 0
+    const downTicks = Math.min(4, Math.ceil(rttNow / 2 / S.tickMs))
+    if (S.simTick < m.frame + downTicks) S.simTick = m.frame + downTicks
+    /* 修正前预测态先捕获再 anchor 覆盖（卡丁 F1 教训：先 anchor 后取 pre=锚点重放终态，
+     * d 结构性 ≡0——台账/软硬分流/撕裂预算全死码） */
+    const pre = S.predictor.advanceTo(S.simTick)
+    const preX = pre ? pre.x : me.x, preY = pre ? pre.y : me.y
+    /* 权威锚点：ack 裁剪由 predictor.anchor 内部（at≤tick 出环；GAMES-178 域统一后
+     * tick=snapshot.frame 与推送拍同域）+ vx/vy/bt 锚定速度与加速剩余拍（缺速度=满速
+     * 回放系统性滞后 ~1.75 tick≈13px>p95 预算，适配器配套） */
+    S.predictor.anchor({ x: me.x, y: me.y, vx: me.vx || 0, vy: me.vy || 0, w: me.w, nades: me.na, boost: me.bt || 0, aim: 0 }, m.frame)
+    const sh = S.predictor.advanceTo(S.simTick) // 重放未确认（simTick-frame ≈ flight+1 tick）
     if (!sh) return
-    if (!haveVis) { vis.x = sh.x; vis.y = sh.y; haveVis = true; S.rec.hardMix = 0; return }
-    const dx = sh.x - vis.x, dy = sh.y - vis.y
-    const d = Math.hypot(dx, dy)
-    S.rec.sum += d; S.rec.n++
+    if (!haveVis) { vis.x = sh.x; vis.y = sh.y; haveVis = true; S.blend = null; return }
+    const d = Math.hypot(sh.x - preX, sh.y - preY) // 同拍预测偏差（mpx）=§5.3 修正量
+    const lead = Math.hypot(sh.x - me.x, sh.y - me.y) // 超前权威锚距离（预测激活观测：≈v×(simTick-frame)）
+    if (d > 500) S.rec.n++ // 修正事件（>0.5px 才入账——事件率口径，卡丁同阈值；亚像素抖动不计）
+    S.rec.sum += d
     if (d > S.rec.maxPx) S.rec.maxPx = d
-    if (d > 6000) { // 硬回滚：120ms 混合带（≤2.5px/帧）
+    S.predLog.push({ f: m.frame, st: S.simTick, fl: S.flight, d: Math.round(d), lead: Math.round(lead) })
+    if (S.predLog.length > 240) S.predLog.shift()
+    if (d > 6000) { // 硬回滚：120ms 混合带（视觉 ≤2.5px/帧，渲染循环封顶）
       S.rec.hard++
-      vis.x = sh.x - dx * 0.7; vis.y = sh.y - dy * 0.7
+      S.blend = { t0: performance.now() }
     } else if (d > 600) S.rec.soft++
-    vis.x += dx * 0.35; vis.y += dy * 0.35 // 软收敛 0.35/帧
   }
 
   /* ---------- 渲染主循环（60fps：本地 sim 态间渲染+毒圈闭式外推+弹体重演） ---------- */
@@ -428,12 +478,44 @@
     if (paused) { requestAnimationFrame(frame); return } // QA 冻结采样（GAMES-103 范式：保留末帧供识图）
     const dt = Math.min(50, now - lastT); lastT = now
     rafN++
-    /* 本地 sim 时钟步进（20Hz 渲染插值近似：每帧按 dt 推进 predictor） */
+    /* 本地 sim 时钟（wall-clock 累计器，rAF 驱动）：simTick 按真实 20Hz 步进——
+     * 50ms setInterval 抖动会慢于服务器拍 → 每张快照抬钟钉平 → 预测超前塌 0
+     * （GAMES-178 首验实测 st≡f）；护栏：不超前权威帧 flight+10（快照断流防开环跑飞） */
     if (!S.degraded && S.phase === 'live' && S.me && S.me.al) {
-      const target = S.ack + Math.max(2, Math.ceil((now - (S.lastPingAt || now)) / 50) + 2) + 4
-      const sh = S.predictor.advanceTo(Math.min(S.seq + 2, target))
-      if (sh) { if (!haveVis) { vis.x = sh.x; vis.y = sh.y; haveVis = true } }
+      const lastClk = S.clockAt || now
+      S.clockAt = now
+      S.clockAcc = (S.clockAcc || 0) + Math.min(100, now - lastClk)
+      while (S.clockAcc >= 50) {
+        S.clockAcc -= 50
+        S.simTick++
+        if (S.lastFrame != null && S.simTick - S.lastFrame > S.flight + 10) S.simTick = S.lastFrame + S.flight + 10
+      }
+      S.predictor.advanceTo(S.simTick)
     }
+    /* 视觉自席：影子已由本地 sim 时钟步进（sim tick 域），渲染层只做收敛——
+     * 软收敛 0.35/帧（~100ms 抹平）/硬回滚 120ms 混合带（每帧位移封顶 2.5px，
+     * §5.1 ③+§5.3 撕裂预算——卡丁同式） */
+    if (!S.degraded && S.phase === 'live' && S.me && S.me.al && haveVis) {
+      const sh = S.predictor.me()
+      const wasBlend = !!S.blend
+      if (S.blend) {
+        const p = Math.min(1, (now - S.blend.t0) / 120)
+        const k = 0.18 + p * 0.5
+        let mx = (sh.x - vis.x) * k, my = (sh.y - vis.y) * k
+        const mv = Math.hypot(mx, my) / 1000
+        if (mv > 2.5) { const c = 2.5 / mv; mx *= c; my *= c }
+        vis.x += mx; vis.y += my
+        if (p >= 1 || Math.abs(sh.x - vis.x) < 500) S.blend = null
+      } else {
+        vis.x += (sh.x - vis.x) * 0.35
+        vis.y += (sh.y - vis.y) * 0.35
+      }
+      const step = visLedger._prev ? Math.hypot(vis.x - visLedger._prev.x, vis.y - visLedger._prev.y) / 1000 : 0
+      const mstep = visLedger._prevSh ? Math.hypot(sh.x - visLedger._prevSh.x, sh.y - visLedger._prevSh.y) / 1000 : 0
+      visLedger._prev = { x: vis.x, y: vis.y }; visLedger._prevSh = { x: sh.x, y: sh.y }
+      visLedger.push({ s: Math.round(step * 100) / 100, b: wasBlend ? 1 : 0, m: Math.round(mstep * 100) / 100 })
+      if (visLedger.length > 1800) visLedger.shift()
+    } else { visLedger._prev = null; visLedger._prevSh = null }
     /* 二类重演推进（弹体按 tick 步进——事件帧起算的确定性积分） */
     stepProjs()
     draw(now)
@@ -1074,6 +1156,11 @@
       feedN: S.feed.length, killedBy: S.killedBy, deadFrame: S.deadFrame, startFrame: S.startFrame, kills: S.kills, rank: S.me && S.me.rank,
     }),
     stormNow: () => stormAt(S.frame),
+    predProbe: () => ({ // GAMES-178 预测域取证面：flight/simTick/偏差带逐快照账本+视觉步长台账（§5.3 激活态证据）
+      flight: S.flight, simTick: S.simTick, lastFrame: S.lastFrame, seq: S.seq, ack: S.ack,
+      rec: { n: S.rec.n, soft: S.rec.soft, hard: S.rec.hard, maxPx: S.rec.maxPx, sum: S.rec.sum },
+      predLog: S.predLog.slice(), visSteps: visLedger.slice(),
+    }),
     projsN: () => S.projs.size,
     entsN: () => S.ents.size,
     pause: (v) => { paused = !!v },
