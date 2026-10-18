@@ -1,1224 +1,1232 @@
 {
-  "_meta": {
-    "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 backlog/designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail；iterations 记迭代轮数；notes 记案例库编号引用",
-    "更新人": "PM（每波交付后回填）",
-    "SOP": "docs/quality-pipeline.md v2"
+ "_meta": {
+  "说明": "每款游戏的质量档案（生命周期追踪）：stage 取值 backlog/designed/dev/testing/tuning/accepted；perf/play/visual 取值 pending/pass/fail；iterations 记迭代轮数；notes 记案例库编号引用",
+  "更新人": "PM（每波交付后回填）",
+  "SOP": "docs/quality-pipeline.md v2"
+ },
+ "games": {
+  "block-drop:block-drop-cascade-01": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
   },
-  "games": {
-    "block-drop:block-drop-cascade-01": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-drop:block-drop-cascade-02": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-drop:block-drop-cascade-03": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-drop:block-drop-cascade-04": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-drop:block-drop-cascade-05": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-fit:block-fit-mosaic-01": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-fit:block-fit-mosaic-02": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-fit:block-fit-mosaic-03": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-fit:block-fit-mosaic-04": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "block-fit:block-fit-mosaic-05": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
-    },
-    "breakout:breakout-brick-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "breakout:breakout-brick-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-dodge:bullet-dodge-weave-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "bullet-shmup:bullet-shmup-raid-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "chain-shot:chain-shot-orbit-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "color-reaction:color-reaction-stroop-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:color-strike": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pass",
-      "iterations": 0,
-      "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
-    },
-    "demo:mole-grid": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:number-hunt": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:pop-dot": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "demo:quick-math": {
-      "stage": "testing",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pass",
-      "iterations": 2,
-      "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
-    },
-    "drop-catcher:drop-catcher-harvest-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "drop-catcher:drop-catcher-harvest-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "fruit-slice:fruit-slice-blade-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "lane-runner:lane-runner-dash-01": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-02": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-03": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-04": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "lane-runner:lane-runner-dash-05": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "match3:match3-candy-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "match3:match3-candy-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "maze-dash:maze-dash-hedge-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "memory-flip:memory-flip-pair-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mini-td:mini-td-guard-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "mole-whack:mole-whack-garden-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "paddle-pong:paddle-pong-rally-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "rhythm-tap:rhythm-tap-beat-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "simon-sequence:simon-sequence-echo-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "slide-merge:slide-merge-tile-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "snake:snake-meander-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "stacker:stacker-calm-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-burst:tap-burst-pop-01": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-02": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-03": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-04": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-burst:tap-burst-pop-05": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
-    },
-    "tap-jump:tap-jump-flap-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "tap-jump:tap-jump-flap-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-01": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-02": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-03": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-04": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "water-sort:water-sort-aqua-05": {
-      "stage": "backlog",
-      "perf": "pending",
-      "play": "pending",
-      "visual": "pending",
-      "iterations": 0,
-      "notes": ""
-    },
-    "multiplayer:net-tank": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 2,
-      "net": {
-        "tech": "S1",
-        "bot": "三档(休闲/均衡/竞技)+真人让位"
-      },
-      "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
-    },
-    "multiplayer:slg-battlefield": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 10,
-      "net": {
-        "tech": "S1",
-        "bot": "三档人格(陪玩/让力/开局树)",
-        "chain": "GAMES-42..58 十单链完整"
-      },
-      "notes": "E6 首条完整 10/10 单链。STRESS 三组 PASS（PM 亲自组装五跑工件，Q-007）；QA1/QA2 红线全过；200ms 延迟无偏置；确定性与压测零泄漏。合并链 8078586→7c35b30→e8b03f7（第 6 跑收官复核：修正 2 口径+B 组实测入表+T2b 补跑）"
-    },
-    "multiplayer:mmo-township": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 10,
-      "net": {
-        "tech": "S2+AOI",
-        "bot": "三档居民人格(勤恳/游手/商人·日程/陪聚集)+常驻镇人口动态 8-12",
-        "aoi": "r=300px 滞回 15px 预算 40",
-        "chain": "GAMES-50..65 十单链完整"
-      },
-      "notes": "E6-W1-T2 轨 S2 状态同步首证（常驻世界/续镇存档/席位托管）。STRESS 三组 PASS（6 镇并行 8min tick 满频 ±0.46%、满编 12/12 spot、三游戏混编零错误；实测 18:53 守 Q-007 预算）；四单 ≈98min 长局零钉死；200ms 延迟无偏置；重连窗 10s+1 拍；feed ≤388ms；回收重建 2.3s 续镇。合并链 696babf→e2e84ac→5d74468→5d90e2f→fe7f376→05907f6→98bc0fd→539c816→c73b314"
-    },
-    "multiplayer:empire-sprout": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 10,
-      "net": {
-        "tech": "S3",
-        "bot": "三档人格(慢发展/均衡/军备竞速·建设倾向×战斗时机双轴+开局树 rng 定桩×2/档)+陪玩 carry 三态",
-        "chain": "GAMES-66..76 十单链完整"
-      },
-      "notes": "E6-W1-T3 轨 S3 混合同步首证收官（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥 T+1/静默期 tick1800 爆发）。STRESS 三组 PASS（6 test 房+BotHost 并行 8min tick 10Hz 漂移[0,1]、5min 满编 4/4 spot 9.97-10.00Hz、四游戏混编零错误；四件套全过附 RSS 高水位披露）；QA1/QA2 红线全过（200ms 延迟无偏置[房型分层判据]/重连 10s+1 拍/满员旁观/feed ≤404ms）；两轮事故复盘（影子网关缺省 PORT 静默死亡/接力器复活竞态误 SIGTERM）。合并链 f672fe0→1fd9966→66bad6f→3c2ad71→df7048a→3bd218c→1bae6ff→de4579c→41ef278→(GAMES-76)"
-    },
-    "multiplayer:pool-physics": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 10,
-      "net": {
-        "tech": "S4",
-        "bot": "三档物理Bot(casual 随手杆/balanced ghost-ball 几何+一库反射/competitive ≤16 次前瞻+犯规感知+走位·开局树 rng 定桩×2/档)+超时 casual 代打+陪玩放水",
-        "chain": "GAMES-77..86 十单链完整"
-      },
-      "notes": "E6-W1-T4 轨 S4 服务端权威物理首证收官（100Hz 快钟/双相快照静止事件驱动+球动 10Hz/op-ruling S5 通道复用/客户端确定性重演 16k 锚 0 偏差）。STRESS 三组 PASS（6 测试槽+BotHost 并行 8min cadence 100.021Hz 漂移[-4,+5]、5min 满编 2/2 spot burst 99.65-102.43Hz+撤席 abandon@15.05s/dispose@+8.03s 闭环、五游戏混编零错误+护栏 429；四件套全过：245==245/16==16 全配对+二段 RSS 起点重置补证）；QA1/QA2 红线全过（200ms 回合制容忍论证实证/重连三档/满员旁观/feed ≤0.5s）；横切事故复盘（GAMES-84 abandon 锚点+重演伪杆号，波及五作）。合并链 6da49ae→7a11ea5→4d526d5→bf64eab→5410cf8→9180bc6→5a3125e→72ef4b0→(GAMES-85 9883b4a 待合并)→(GAMES-86)"
-    },
-    "multiplayer:element-duel": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 10,
-      "net": {
-        "tech": "S5",
-        "bot": "三档卡牌Bot(casual 随手/balanced 整数V+scratch贪心/competitive 斩杀线闭式+combo模拟)+托管三层(超时casual单回合/持续=牌组配方faceBias·comboBias/主动host op)+陪玩放水+牌桌评语quip",
-        "chain": "GAMES-87..96 十单链完整"
-      },
-      "notes": "E6-W1-T5 轨 S5 回合权威本格首证收官（共享3×3棋盘位置即决策/六对元素反应确定性结算/零快照纯事件驱动=ruling即全量个性化态/迷雾个性化state目录/deckSeed双流派生+零隐藏随机/托管三层）。STRESS 三组 PASS（6测试槽错峰承载8min frame 100.144/100.046Hz漂移[-4,+2]/ruling 810条全量0错、5min满编2/2 spot 6世代滚动99.995Hz+疲劳4/8参与致死在线实证、六游戏混编30/30全在场零错误+护栏429+mmo镇10.004Hz；四件套全过：一段321==321全配对+RSS二段起点重置101→66-72MB闭环QA2 O-2）；QA1/QA2红线全过（200ms延迟容忍论/重连三档/满员旁观frame共同窗全同/feed≤1s）；F1反应表键序死代码事故复盘（排序键死码双防线+穷举断言）。VIS 链位 GAMES-95 已交付 feature/GAMES-95 待合并 main"
-    },
-    "multiplayer:snake-king": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 9,
-      "notes": "E6-W1-T6 轨 S6 海量实体首证收官（20+蛇同房巨房竞技场/AOI 个性化增量快照/path 回放蛇身/轮赛常驻房 persistent 跳过 abandon）。STRESS 三组 PASS（6 测试槽 churn 8min 漂移[-1,+1]+swarm 双锚 9.99Hz/生态 kill 6557·die 7045/18 代 round-end、满编 20/20 spot 18/18 采样+10.001Hz+撤席托管转移@10-20s、七游戏混编全在场零错误+RSS 二段起点重置）；QA2 五面退回 0（200ms 延迟 ack=RTT 零放大/重连三档/满员 24 席第 25 旁观/长局 5min 3002 快照零帧隙）；QA1/FIX1/BOT 剧本方差三单攻坚（负载三档对照证伪→随机相位方差定级→开关保留）；bothost swarm 白名单死码事故（浏览器目击反推）；VIS 色盲双编码+识图 v2 20 断言 4 连绿。实录=知识库草稿 GAMES-106/蛇王争霸开发实录",
-      "net": {
-        "tech": "S6",
-        "bot": "生态位三档 PERSONA（casual 饲料蛇·碰撞流死亡源/balanced 觅食者 AOI 价值评估+机会击杀/competitive 猎手三技：拦截闭式解+围杀弧线+危险断尾）+放水链（连败代理=房内 deaths/kills，常驻房无终局脉冲）+swarm 让位/45s 防抖补员",
-        "chain": "GAMES-98..106 九单链完整+FIX2 跳过（QA2 退回 0 全低危观察项，无修复对象——PM 裁量不派单）"
-      }
-    },
-    "multiplayer:speed-kart": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 9,
-      "notes": "E6-W1-T7 轨 S7 预测与和解首证收官（影子预测核心 makePredictor anchor/push/advanceTo api 与浏览器共用/和解回路 ack 锚定重放+软收敛 35%+硬回滚 120ms 混合带+A8 双臂 ts2 设计口径）。STRESS 三组 PASS+无泄漏四件套（6 测试房 8min ts2 churn 漂移带内/满编 6/6+旁观+让位 spot 7 断言/八游戏混编全家福+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/speed-kart-stress.md）；QA2 五面退回 0（§5.3 预算表 FIX1 后首次可测全落带/延迟三点扫描/重连三档/abandon 锚/满员让位循环）；QA1 揪和解观测面双死码（F1 dPx≡0/F2 hash 哨兵欠跑态假绿）退 FIX1 修复；BOT 赛车线三档人格+放水链（连败代理=pulsePos 名次 pulse）；FEEL 16 项动效（胎痕速度门/motion 量纲两枚死码激活+fx 双时戳台账）；VIS 色盲双编码（ping 信号条 3-2-1 形通道升 P0 裁量例）+识图 v2 22 断言。实录=知识库草稿 GAMES-116/极速卡丁开发实录",
-      "net": {
-        "tech": "S7",
-        "bot": "赛车线三档（casual 巡航者中心线+噪声+失误窗/balanced 学徒×0.92+并线礼让/competitive 车手蓄放漂移+尾流抽头+防守卡位）+放水链两档（连败≥2 ×0.90/≥4 ×0.78+停漂，信号源=pulsePos 名次 pulse）——pure pursuit 前瞻×14+线速画像烘焙 tracks.cjs",
-        "chain": "GAMES-108..116 九单链完整+FIX2 跳过（QA2 五面退回 0 全绿无修复对象——W1 波收官裁量同蛇王 GAMES-106 先例）"
-      }
-    },
-    "multiplayer:tactics-duel": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 9,
-      "notes": "E6-W2-T1 轨 S1+S5 双技术复用首款收官（W2 波首款收官=单链 9/10+FIX2 跳过：QA2 五面全 PASS 退回 0 无修复对象——蛇王 GAMES-106/极速卡丁 GAMES-116 收官裁量同型）。STRESS 三组 PASS+无泄漏四件套（6 战棋测试房 8min ts2 churn 漂移带内/满编 2/2 双真人+旁观 spot 10 断言（bot 补席→让位→静默转旁观）/九游戏同网关混编全家福 S1-S7 全在场（双技术复用款活性面=$sync 双拍 frame≈102tick/s）+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/tactics-duel-stress.md）。单链要目：DEV 确定性整数引擎（A6 双跑 stateHash==replayHash，S1+S5 首个双技术复用款实证）；QA1 揪 F1 席位路由门禁盲区（席 1 opRulings 静默丢）+O1 Bot 梯度倒挂（competitive 反输 casual）双红退 FIX1；FIX1 席位路由修复+competitive 四件套重锚+win-seat1 API 席=1 门禁臂；BOT 评估函数分层+放水链+开局库只提议不替搜索；FEEL fx 六绘制分支补齐+冻结态 sendOp 接敌驱动器；QA2 200ms 延迟对照（Δp50=203ms≈RTT）+重连三档+abandon 锚+满员让位循环+5min 长局续局观察窗 310s；VIS HUD 字号三重自证+色盲双编码+识图 v2 23 断言。实录=知识库草稿《战棋对决开发实录》",
-      "net": {
-        "tech": "S1+S5",
-        "bot": "三档战棋 Bot（casual 随机合法拟人延时/balanced 整数 V+scratch 副本逐激活贪心 argmax 零随机/competitive 精确威胁图叠加封顶+击杀确认 +8 偏置+棋形三项+束宽 3 两 ply 前瞻）+托管三层（超时=casual 单回合代打/断线·主动=倾向继承 balanced：faceBias=0.5+attackOpRatio·pointBias=0.5+pointwardRatio 输入日志复算/主动 host op）+棋桌评语 quip 七优先级",
-        "chain": "GAMES-117..125 九单链完整+FIX2 跳过（GAMES-123 QA2 五面退回 0 无修复对象）：117 设计书（S1+S5 复用首款）/118 DEV/119 QA1/120 FIX1/121 BOT/122 FEEL/123 QA2/124 VIS/125 STRESS"
-      }
-    },
-    "multiplayer:mini-moba": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 10,
-      "notes": "E6-W2-T2 状态同步轨第二款收官（单链 10/10 完整、无跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→FIX2→VIS→STRESS——平台第 10 条完整单链=E6 双位数里程碑+W2 波第二款收官）。STRESS 三组 PASS+无泄漏四件套（6 间 MOBA 3v3 测试房 8min ts2 实体量重载 churn/满编 3v3+第 7 人观战 spot/十游戏同网关混编全家福 E6 全在场+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/mini-moba-stress.md）。单链要目：DEV S2 状态同步第二款（10Hz 二式快照+AOI 即战争迷雾+草丛加层+ext.ack 预测和解+ruling 化战斗事件账本）；QA1 剧本口径三坑（lose 剧本 comp 队友「能输」成「被躺赢」/seed=建单字面量/裁定序水晶HP%→塔→击杀）；FIX1 entView 白名单先 grep 消费者+O2 半修；BOT 放水观测面塔杀污染（真人站中线安全位+kill 归因「被英雄杀」）；FEEL fx 时戳 Date.now/rAF 混用存量死码（飘字从未可见）；QA2 延迟/重连/满员预算版（tick=100ms 延迟锚 ms 级）；FIX2 O5 core-down 终局判定死码（rulingPass 同拍删实体×phase 按存在性查 hp 永不命中）+席位对称两候选实验留档回退；VIS HF 非法 CSS font 简写（'13px 700px' canvas 静默忽略=登记表只记调用值不记生效值）+观战导演 UI。实录=知识库草稿《迷你MOBA开发实录》",
-      "net": {
-        "tech": "S2",
-        "bot": "三档 MOBA Bot（casual 站线兵：P0/P3'/P4/P8 无技能/balanced 补刀师傅：+P3 窗口+P5 换血+P6 营地/competitive 指挥官：全栈+连招序列+抱团集火+圣所游走）+终局收尾窗（closer：towerOpen 泉中回城/挂机席不计守备+core 远程停位防白嫖位死区）；断线托管=balanced（MOBA 挂机=送塔送赏金，设计附决策 7）",
-        "chain": "GAMES-126 设计书/GAMES-127 DEV/GAMES-128 QA1/GAMES-129 FIX1/GAMES-130 BOT/GAMES-131 FEEL/GAMES-132 QA2/GAMES-133 FIX2/GAMES-135 VIS/GAMES-136 STRESS（GAMES-134 为别单占用非本链）"
-      }
-    },
-    "multiplayer:street-soccer": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 8,
-      "notes": "E6-W2-T3 混合轨第三款收官（单链 8/8 预算版、FIX1/FIX2 零退回跳过：设计书→DEV→QA1→BOT→FEEL→QA2→VIS→STRESS——平台第 11 条完整单链=W2 波第三款收官+E6 11/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间街头足球 2v2 测试房 8min ts2 churn+观战锚/满编 2v2+第 5 人观战 spot/十一游戏同网关混编全家福 street 第 11 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/street-soccer-stress.md）。单链要目：DEV S3+S4 双技术复用第三款（单流双域：球员域 tick 步进+球域 Q16 子步；empire 分帧型的实时体育单流变体+pool 定点物理/TRIG16 跨作复用）；持球权零预测=谁带球谁预测的另一半（状态归属表落地）；QA1 测试房 WS 面隔离/观战须 4 真人反证/HTTP 时延伪带（n0 计数+250ms 弃样窗）；BOT 传球线封堵 excl 坑（终点=队友自身恒封堵→直塞死代码）/放水链回放零扰动/生态位让位两层；FEEL 终局探针两段式坑（ended 后世界层停绘）/SND.fired 持久集/rAF 首帧播种死码；QA2 mercy 制败死锁三因（ambient 局长 180s>帽/弃房回灌/skip 错字段）+庆柷墙钟帽余量——终跑 6/9 结构链代码实证；VIS HF 非法 font 简写 canvas 静默忽略首证（全 HUD 10px 缺省字）+双编码像素核法+识图 v2 九探针。实录=知识库草稿《街头足球开发实录》",
-      "net": {
-        "tech": "S3+S4",
-        "bot": "两档街头 Bot（casual 街坊：基础移动+随机射门/balanced 老鸟：站位+传球线+门线看守抢断）+放水链（L1 让力 pow≡552/L2 降档散布 340-680，game.json bot.mercy/bot.casual 可调）+团队作 pulse（META.pulseTeam seat%2）；断线托管=balanced（挂机=空门放对手，设计 §4.3）",
-        "chain": "GAMES-137 设计书/GAMES-138 DEV/GAMES-139 QA1/GAMES-140 BOT/GAMES-141 FEEL/GAMES-142 QA2/GAMES-143 VIS/GAMES-144 STRESS（FIX1/FIX2 零退回跳过未占单号）"
-      }
-    },
-    "multiplayer:iron-torrent": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 9,
-      "notes": "E6-W2-T4 混合轨第四款收官（单链 9/9 预算版、FIX2 零退回跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→VIS→STRESS——平台第 12 条完整单链=W2 波第四款收官+E6 12/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间钢铁洪流 2v2 测试房 8min ts2 churn+观战锚/满编 2v2+第 5 人观战 spot（击杀特写横幅数据面）/十二游戏同网关混编全家福 iron 第 12 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/iron-torrent-stress.md）。单链要目：DEV S4 预测弹道第二证（连续预测+离散段重演组合：坦克域 tick 步进 input ring ack 和解+弹道域 Q16 子步 fire 全参下发）；QA1 离散 cmd 塞 20Hz 自计数 input 帧恒越预约窗（testapi≠WS 路径盲区）；FIX1 三层根因（复刻缺陷形状不能定位层/testapi payload-当-keys/设计书即缺陷载体）+sanitizeKeys 加法式零感知+网关三态谱清点定案；BOT 决策节流 forceFresh+站桩带冻占点圈+换班窗陈旧五实例；FEEL 对照带计量点错位/临终并房/探针窗阵亡三假红源；QA2 latency 逐局谓词低尾翻转（Δmean=+1.43 稳）+端口并存陷阱+mercy 三坑；VIS 快照整清吃探针段/木箱串色谓词/焰叠本体合成色/双编码像素核。实录=知识库草稿《钢铁洪流开发实录》",
-      "net": {
-        "tech": "S4",
-        "bot": "三档装甲 Bot（casual 散兵：无提前量/balanced 老兵：1-2 轮迭代提前量+站桩带冻占点圈/competitive 神炮手：3 轮闭式迭代+换班窗）+决策节流 forceFresh+卡死滑墙账本；断线托管=balanced（挂机=送命池，设计 §4.3）",
-        "chain": "GAMES-145 设计书/GAMES-146 DEV/GAMES-147 QA1/GAMES-148 FIX1/GAMES-149 BOT/GAMES-150 FEEL/GAMES-151 QA2/GAMES-152 VIS/GAMES-154 STRESS（GAMES-153 为别单占用非本链；FIX2 零退回跳过未占单号）"
-      }
-    },
-    "multiplayer:yi-pavilion": {
-      "stage": "accepted",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass",
-      "iterations": 9,
-      "notes": "E6-W2-T5 第五款收官（单链 9/9 预算版、FIX2 零退回跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→VIS→STRESS——平台第 13 条完整单链=W2 波第五款收官+E6 13/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间弈界棋阁 1v1 测试房 8min ts2 三模式混开 churn（gomoku/reversi/cascade）+keeper 观战锚/满编 1v1 双真人+第 3 人观战 spot（观战手数进度 ruling moveNo 顶层面）/十三游戏同网关混编全家福 yi 第 13 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/yi-pavilion-stress.md）。单链要目：DEV S5 回合权威第三证·多规则集统一引擎（RULES 五函数注册表 gomoku/reversi/cascade 一套引擎零代码分叉；井字 SUB[19683] 完美解表入 hash；feat 特征提取器=RULES 一等公民服务器 Bot 与客户端威胁提示同源；零隐藏=个性化恒等映射观战即对局视图；一套 engine hash 护栏三模式）；QA1 F1 反应表键序失配族（S5 个性化谱系第三作恒等位）+双真人席慢打钟率交叉引用 0.01%；FIX1 F1 双成因（featOf 求交落导出面+balanced ΔV≤0 弃权）；BOT 开局树奖金制（硬接管丢强度二证）+行动性悬崖 3↔5+判别器原则等价；FEEL 离线零网关口径+批内自清+ruleOf 短路三坑；QA2 bothost 全 casual 档=mercy 在线观测位在托管接管 bot（双接管协议复证）+welcome seats 键 level 误杀+长局 8min 钟尽终局 reason=clock 设计态验证面；VIS 无头帧塌带瞬态墨取证三律+探针红先证产品码。实录=知识库草稿《弈界棋阁开发实录》",
-      "net": {
-        "tech": "S5",
-        "bot": "多规则三档棋士 Bot（casual 棋感：一阶特征即走+30s 步限单步代走/balanced 棋士：feat 求交威胁读+开局树奖金制/competitive 棋圣：判别器原则等价+行动性悬崖 3↔5 调参）+Ultimate TTT 送位策略；断线托管=balanced+倾向继承（主动托管 host op 三层：单步代走/持续续打/afk 世代）",
-        "chain": "GAMES-153 设计书/GAMES-155 DEV/GAMES-156 QA1/GAMES-157 FIX1/GAMES-158 BOT/GAMES-159 FEEL/GAMES-160 QA2/GAMES-161 VIS/GAMES-162 STRESS（GAMES-154 为别单占用非本链；FIX2 零退回跳过未占单号）"
-      }
-    },
-    "multiplayer:deep-foodchain": {
-      "status": "accepted",
-      "date": "2026-10-17",
-      "net": {
-        "tech": "S6"
-      },
-      "bot": {
-        "levels": 3,
-        "swarm": true,
-        "takeOver": "casual"
-      },
-      "chain": {
-        "design": "GAMES-163",
-        "dev": "GAMES-164",
-        "qa1": "GAMES-165",
-        "bot": "GAMES-166",
-        "feel": "GAMES-167",
-        "qa2": "GAMES-168",
-        "vis": "GAMES-169",
-        "stress": "GAMES-170",
-        "count": 8,
-        "note": "8/8 预算版：FIX1/FIX2 零退回跳过未占单号"
-      },
-      "notes": "E6-W2-T6 第六款收官（单链 8/8 预算版、FIX1/FIX2 零退回跳过：设计书→DEV→QA1→BOT→FEEL→QA2→VIS→STRESS——平台第 14 条完整单链=W2 波第六款收官+E6 14/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间深海食物链 24 席测试房 8min ts2 满编混档（null+comp×3+bal×6+cas×14）+实体量重载 cap{fish24/site180/drop240/M4000} churn（maxTicks2400 投影终局=测试房专属终局路径，生产常驻渔场恒不终局）/满编 24 席双真人+bot 让位+第 3 人观战 spot（观战体型对比条 ext.lb=[seat,score,M]×5 ·1Hz+观战固定 AOI460）/十四游戏同网关混编全家福 deep 第 14 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/deep-foodchain-stress.md）。单链要目：DEV S6 海量实体第二证·吞噬成长链（吞噬裁决 ruling 化一裁三账 {k:devour} 单事件原子携带击杀/质量转移/化粒；质量守恒账本六计数恒等式 A8 残差 0；K=1.25 连续体型比判定+档位是标签不是判定）；QA1 秒配 20 鱼+资源位 180+实体三顶声明块/K1.25 临界定档双向+档位滞回（降档带 −5%）/AOI 体型分级 {380,440,500,560}+15px 滞回带/重连三档（5s 全测+10s 复席+30s 逾窗 bot 接管夺回）；BOT 放水三层（降问+失误注入+让位）+avoid 转实职+persona 覆写；FEEL 同 tick 探针批与 calm 清场竞态三坑；QA2 放水台账重生清零/轮末 deaths 重置/活鱼<20 泊松口径+三房指纹交集=deterministic 在线范式；VIS freeze 复绘竞态/rotate(π) 尾鳍翻面/AOI 底缘角带 Δ 采样 34 面。实录=知识库草稿《深海食物链开发实录》",
-      "perf": "pass",
-      "play": "pass",
-      "visual": "pass"
-    },
-    "multiplayer:party-brawl": {
-      "status": "in-progress",
-      "date": "2026-10-17",
-      "net": {
-        "tech": "S6+S7"
-      },
-      "bot": {
-        "levels": 3,
-        "swarm": true,
-        "takeOver": "casual"
-      },
-      "chain": {
-        "design": "GAMES-171",
-        "dev": "GAMES-172",
-        "count": 2
-      },
-      "notes": "E6-W2-T7 单链 2/10+（D+DEV 已落）。S7 预测和解第二证（多实体预测边界四类谱：己席预测/投掷物 shot 全参事件重演·弹体零快照/拾取权威分账/毒圈闭式同源）+S6 底盘（20 实体房+圈即 AOI r=min(500,r_storm+240)）。net.tech='S6+S7' 双记法第三款（street S3+S4/tactics S1+S5 先例，roadmap §3 行已改注）。"
-    }
+  "block-drop:block-drop-cascade-02": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-drop:block-drop-cascade-03": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-drop:block-drop-cascade-04": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-drop:block-drop-cascade-05": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-fit:block-fit-mosaic-01": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-fit:block-fit-mosaic-02": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-fit:block-fit-mosaic-03": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-fit:block-fit-mosaic-04": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "block-fit:block-fit-mosaic-05": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "E1-W1 照黄金样本范式迁移（GAMES-49，merge 8e6b06f）：三支柱 20/20+20/20+10/10，平台零回归"
+  },
+  "breakout:breakout-brick-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "breakout:breakout-brick-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-dodge:bullet-dodge-weave-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "bullet-shmup:bullet-shmup-raid-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "chain-shot:chain-shot-orbit-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "color-reaction:color-reaction-stroop-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:color-strike": {
+   "stage": "testing",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pass",
+   "iterations": 0,
+   "notes": "PM亲诊：375视口几何实测零越界元素、按钮26→349对称；三连BROKEN均为识图通道伪影(Q-005)，非游戏缺陷。剩perf/play待跑"
+  },
+  "demo:mole-grid": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:number-hunt": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:pop-dot": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "demo:quick-math": {
+   "stage": "testing",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pass",
+   "iterations": 2,
+   "notes": "二轮FIX(GAMES-31)后PM亲诊：375视口几何实测 scrollW=clientW=375 零溢出、按钮26→349对称；此前'仍BROKEN'为截图通道DPR伪影(Q-005)。剩perf/play待跑"
+  },
+  "drop-catcher:drop-catcher-harvest-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "drop-catcher:drop-catcher-harvest-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "fruit-slice:fruit-slice-blade-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "lane-runner:lane-runner-dash-01": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-02": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-03": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-04": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "lane-runner:lane-runner-dash-05": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "match3:match3-candy-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "match3:match3-candy-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "maze-dash:maze-dash-hedge-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "memory-flip:memory-flip-pair-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mini-td:mini-td-guard-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "mole-whack:mole-whack-garden-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "paddle-pong:paddle-pong-rally-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "rhythm-tap:rhythm-tap-beat-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "simon-sequence:simon-sequence-echo-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "slide-merge:slide-merge-tile-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "snake:snake-meander-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "stacker:stacker-calm-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-burst:tap-burst-pop-01": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-02": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-03": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-04": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-burst:tap-burst-pop-05": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": "GAMES-30 原生重建，待FEEL | 2026-09-27 PM 试玩代签通过（授权升级），黄金样本基准生效"
+  },
+  "tap-jump:tap-jump-flap-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "tap-jump:tap-jump-flap-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-01": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-02": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-03": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-04": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "water-sort:water-sort-aqua-05": {
+   "stage": "backlog",
+   "perf": "pending",
+   "play": "pending",
+   "visual": "pending",
+   "iterations": 0,
+   "notes": ""
+  },
+  "multiplayer:net-tank": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 2,
+   "net": {
+    "tech": "S1",
+    "bot": "三档(休闲/均衡/竞技)+真人让位"
+   },
+   "notes": "E6-M0 参考游戏。PM 验收 2026-09-26：api-check 14/14（注入→帧7ms/重连1.2s/能赢能输）；net-check 25/25×2（入房/让位/旁观/feed 5s/abandon 清房/常驻补房）；首跑 23/25 两项闪烁（时序敏感，QA 模板观察项）。合并链 443e0ce→bf248bb(M0)+bd01c67(M1)"
+  },
+  "multiplayer:slg-battlefield": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "net": {
+    "tech": "S1",
+    "bot": "三档人格(陪玩/让力/开局树)",
+    "chain": "GAMES-42..58 十单链完整"
+   },
+   "notes": "E6 首条完整 10/10 单链。STRESS 三组 PASS（PM 亲自组装五跑工件，Q-007）；QA1/QA2 红线全过；200ms 延迟无偏置；确定性与压测零泄漏。合并链 8078586→7c35b30→e8b03f7（第 6 跑收官复核：修正 2 口径+B 组实测入表+T2b 补跑）"
+  },
+  "multiplayer:mmo-township": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "net": {
+    "tech": "S2+AOI",
+    "bot": "三档居民人格(勤恳/游手/商人·日程/陪聚集)+常驻镇人口动态 8-12",
+    "aoi": "r=300px 滞回 15px 预算 40",
+    "chain": "GAMES-50..65 十单链完整"
+   },
+   "notes": "E6-W1-T2 轨 S2 状态同步首证（常驻世界/续镇存档/席位托管）。STRESS 三组 PASS（6 镇并行 8min tick 满频 ±0.46%、满编 12/12 spot、三游戏混编零错误；实测 18:53 守 Q-007 预算）；四单 ≈98min 长局零钉死；200ms 延迟无偏置；重连窗 10s+1 拍；feed ≤388ms；回收重建 2.3s 续镇。合并链 696babf→e2e84ac→5d74468→5d90e2f→fe7f376→05907f6→98bc0fd→539c816→c73b314"
+  },
+  "multiplayer:empire-sprout": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "net": {
+    "tech": "S3",
+    "bot": "三档人格(慢发展/均衡/军备竞速·建设倾向×战斗时机双轴+开局树 rng 定桩×2/档)+陪玩 carry 三态",
+    "chain": "GAMES-66..76 十单链完整"
+   },
+   "notes": "E6-W1-T3 轨 S3 混合同步首证收官（建设 S2 快照+战斗 S1 帧单 tick 源/attack 桥 T+1/静默期 tick1800 爆发）。STRESS 三组 PASS（6 test 房+BotHost 并行 8min tick 10Hz 漂移[0,1]、5min 满编 4/4 spot 9.97-10.00Hz、四游戏混编零错误；四件套全过附 RSS 高水位披露）；QA1/QA2 红线全过（200ms 延迟无偏置[房型分层判据]/重连 10s+1 拍/满员旁观/feed ≤404ms）；两轮事故复盘（影子网关缺省 PORT 静默死亡/接力器复活竞态误 SIGTERM）。合并链 f672fe0→1fd9966→66bad6f→3c2ad71→df7048a→3bd218c→1bae6ff→de4579c→41ef278→(GAMES-76)"
+  },
+  "multiplayer:pool-physics": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "net": {
+    "tech": "S4",
+    "bot": "三档物理Bot(casual 随手杆/balanced ghost-ball 几何+一库反射/competitive ≤16 次前瞻+犯规感知+走位·开局树 rng 定桩×2/档)+超时 casual 代打+陪玩放水",
+    "chain": "GAMES-77..86 十单链完整"
+   },
+   "notes": "E6-W1-T4 轨 S4 服务端权威物理首证收官（100Hz 快钟/双相快照静止事件驱动+球动 10Hz/op-ruling S5 通道复用/客户端确定性重演 16k 锚 0 偏差）。STRESS 三组 PASS（6 测试槽+BotHost 并行 8min cadence 100.021Hz 漂移[-4,+5]、5min 满编 2/2 spot burst 99.65-102.43Hz+撤席 abandon@15.05s/dispose@+8.03s 闭环、五游戏混编零错误+护栏 429；四件套全过：245==245/16==16 全配对+二段 RSS 起点重置补证）；QA1/QA2 红线全过（200ms 回合制容忍论证实证/重连三档/满员旁观/feed ≤0.5s）；横切事故复盘（GAMES-84 abandon 锚点+重演伪杆号，波及五作）。合并链 6da49ae→7a11ea5→4d526d5→bf64eab→5410cf8→9180bc6→5a3125e→72ef4b0→(GAMES-85 9883b4a 待合并)→(GAMES-86)"
+  },
+  "multiplayer:element-duel": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "net": {
+    "tech": "S5",
+    "bot": "三档卡牌Bot(casual 随手/balanced 整数V+scratch贪心/competitive 斩杀线闭式+combo模拟)+托管三层(超时casual单回合/持续=牌组配方faceBias·comboBias/主动host op)+陪玩放水+牌桌评语quip",
+    "chain": "GAMES-87..96 十单链完整"
+   },
+   "notes": "E6-W1-T5 轨 S5 回合权威本格首证收官（共享3×3棋盘位置即决策/六对元素反应确定性结算/零快照纯事件驱动=ruling即全量个性化态/迷雾个性化state目录/deckSeed双流派生+零隐藏随机/托管三层）。STRESS 三组 PASS（6测试槽错峰承载8min frame 100.144/100.046Hz漂移[-4,+2]/ruling 810条全量0错、5min满编2/2 spot 6世代滚动99.995Hz+疲劳4/8参与致死在线实证、六游戏混编30/30全在场零错误+护栏429+mmo镇10.004Hz；四件套全过：一段321==321全配对+RSS二段起点重置101→66-72MB闭环QA2 O-2）；QA1/QA2红线全过（200ms延迟容忍论/重连三档/满员旁观frame共同窗全同/feed≤1s）；F1反应表键序死代码事故复盘（排序键死码双防线+穷举断言）。VIS 链位 GAMES-95 已交付 feature/GAMES-95 待合并 main"
+  },
+  "multiplayer:snake-king": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 9,
+   "notes": "E6-W1-T6 轨 S6 海量实体首证收官（20+蛇同房巨房竞技场/AOI 个性化增量快照/path 回放蛇身/轮赛常驻房 persistent 跳过 abandon）。STRESS 三组 PASS（6 测试槽 churn 8min 漂移[-1,+1]+swarm 双锚 9.99Hz/生态 kill 6557·die 7045/18 代 round-end、满编 20/20 spot 18/18 采样+10.001Hz+撤席托管转移@10-20s、七游戏混编全在场零错误+RSS 二段起点重置）；QA2 五面退回 0（200ms 延迟 ack=RTT 零放大/重连三档/满员 24 席第 25 旁观/长局 5min 3002 快照零帧隙）；QA1/FIX1/BOT 剧本方差三单攻坚（负载三档对照证伪→随机相位方差定级→开关保留）；bothost swarm 白名单死码事故（浏览器目击反推）；VIS 色盲双编码+识图 v2 20 断言 4 连绿。实录=知识库草稿 GAMES-106/蛇王争霸开发实录",
+   "net": {
+    "tech": "S6",
+    "bot": "生态位三档 PERSONA（casual 饲料蛇·碰撞流死亡源/balanced 觅食者 AOI 价值评估+机会击杀/competitive 猎手三技：拦截闭式解+围杀弧线+危险断尾）+放水链（连败代理=房内 deaths/kills，常驻房无终局脉冲）+swarm 让位/45s 防抖补员",
+    "chain": "GAMES-98..106 九单链完整+FIX2 跳过（QA2 退回 0 全低危观察项，无修复对象——PM 裁量不派单）"
+   }
+  },
+  "multiplayer:speed-kart": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 9,
+   "notes": "E6-W1-T7 轨 S7 预测与和解首证收官（影子预测核心 makePredictor anchor/push/advanceTo api 与浏览器共用/和解回路 ack 锚定重放+软收敛 35%+硬回滚 120ms 混合带+A8 双臂 ts2 设计口径）。STRESS 三组 PASS+无泄漏四件套（6 测试房 8min ts2 churn 漂移带内/满编 6/6+旁观+让位 spot 7 断言/八游戏混编全家福+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/speed-kart-stress.md）；QA2 五面退回 0（§5.3 预算表 FIX1 后首次可测全落带/延迟三点扫描/重连三档/abandon 锚/满员让位循环）；QA1 揪和解观测面双死码（F1 dPx≡0/F2 hash 哨兵欠跑态假绿）退 FIX1 修复；BOT 赛车线三档人格+放水链（连败代理=pulsePos 名次 pulse）；FEEL 16 项动效（胎痕速度门/motion 量纲两枚死码激活+fx 双时戳台账）；VIS 色盲双编码（ping 信号条 3-2-1 形通道升 P0 裁量例）+识图 v2 22 断言。实录=知识库草稿 GAMES-116/极速卡丁开发实录",
+   "net": {
+    "tech": "S7",
+    "bot": "赛车线三档（casual 巡航者中心线+噪声+失误窗/balanced 学徒×0.92+并线礼让/competitive 车手蓄放漂移+尾流抽头+防守卡位）+放水链两档（连败≥2 ×0.90/≥4 ×0.78+停漂，信号源=pulsePos 名次 pulse）——pure pursuit 前瞻×14+线速画像烘焙 tracks.cjs",
+    "chain": "GAMES-108..116 九单链完整+FIX2 跳过（QA2 五面退回 0 全绿无修复对象——W1 波收官裁量同蛇王 GAMES-106 先例）"
+   }
+  },
+  "multiplayer:tactics-duel": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 9,
+   "notes": "E6-W2-T1 轨 S1+S5 双技术复用首款收官（W2 波首款收官=单链 9/10+FIX2 跳过：QA2 五面全 PASS 退回 0 无修复对象——蛇王 GAMES-106/极速卡丁 GAMES-116 收官裁量同型）。STRESS 三组 PASS+无泄漏四件套（6 战棋测试房 8min ts2 churn 漂移带内/满编 2/2 双真人+旁观 spot 10 断言（bot 补席→让位→静默转旁观）/九游戏同网关混编全家福 S1-S7 全在场（双技术复用款活性面=$sync 双拍 frame≈102tick/s）+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/tactics-duel-stress.md）。单链要目：DEV 确定性整数引擎（A6 双跑 stateHash==replayHash，S1+S5 首个双技术复用款实证）；QA1 揪 F1 席位路由门禁盲区（席 1 opRulings 静默丢）+O1 Bot 梯度倒挂（competitive 反输 casual）双红退 FIX1；FIX1 席位路由修复+competitive 四件套重锚+win-seat1 API 席=1 门禁臂；BOT 评估函数分层+放水链+开局库只提议不替搜索；FEEL fx 六绘制分支补齐+冻结态 sendOp 接敌驱动器；QA2 200ms 延迟对照（Δp50=203ms≈RTT）+重连三档+abandon 锚+满员让位循环+5min 长局续局观察窗 310s；VIS HUD 字号三重自证+色盲双编码+识图 v2 23 断言。实录=知识库草稿《战棋对决开发实录》",
+   "net": {
+    "tech": "S1+S5",
+    "bot": "三档战棋 Bot（casual 随机合法拟人延时/balanced 整数 V+scratch 副本逐激活贪心 argmax 零随机/competitive 精确威胁图叠加封顶+击杀确认 +8 偏置+棋形三项+束宽 3 两 ply 前瞻）+托管三层（超时=casual 单回合代打/断线·主动=倾向继承 balanced：faceBias=0.5+attackOpRatio·pointBias=0.5+pointwardRatio 输入日志复算/主动 host op）+棋桌评语 quip 七优先级",
+    "chain": "GAMES-117..125 九单链完整+FIX2 跳过（GAMES-123 QA2 五面退回 0 无修复对象）：117 设计书（S1+S5 复用首款）/118 DEV/119 QA1/120 FIX1/121 BOT/122 FEEL/123 QA2/124 VIS/125 STRESS"
+   }
+  },
+  "multiplayer:mini-moba": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 10,
+   "notes": "E6-W2-T2 状态同步轨第二款收官（单链 10/10 完整、无跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→FIX2→VIS→STRESS——平台第 10 条完整单链=E6 双位数里程碑+W2 波第二款收官）。STRESS 三组 PASS+无泄漏四件套（6 间 MOBA 3v3 测试房 8min ts2 实体量重载 churn/满编 3v3+第 7 人观战 spot/十游戏同网关混编全家福 E6 全在场+RSS 二段起点重置+句柄+房间回收+日志零 uncaught，docs/qa/mini-moba-stress.md）。单链要目：DEV S2 状态同步第二款（10Hz 二式快照+AOI 即战争迷雾+草丛加层+ext.ack 预测和解+ruling 化战斗事件账本）；QA1 剧本口径三坑（lose 剧本 comp 队友「能输」成「被躺赢」/seed=建单字面量/裁定序水晶HP%→塔→击杀）；FIX1 entView 白名单先 grep 消费者+O2 半修；BOT 放水观测面塔杀污染（真人站中线安全位+kill 归因「被英雄杀」）；FEEL fx 时戳 Date.now/rAF 混用存量死码（飘字从未可见）；QA2 延迟/重连/满员预算版（tick=100ms 延迟锚 ms 级）；FIX2 O5 core-down 终局判定死码（rulingPass 同拍删实体×phase 按存在性查 hp 永不命中）+席位对称两候选实验留档回退；VIS HF 非法 CSS font 简写（'13px 700px' canvas 静默忽略=登记表只记调用值不记生效值）+观战导演 UI。实录=知识库草稿《迷你MOBA开发实录》",
+   "net": {
+    "tech": "S2",
+    "bot": "三档 MOBA Bot（casual 站线兵：P0/P3'/P4/P8 无技能/balanced 补刀师傅：+P3 窗口+P5 换血+P6 营地/competitive 指挥官：全栈+连招序列+抱团集火+圣所游走）+终局收尾窗（closer：towerOpen 泉中回城/挂机席不计守备+core 远程停位防白嫖位死区）；断线托管=balanced（MOBA 挂机=送塔送赏金，设计附决策 7）",
+    "chain": "GAMES-126 设计书/GAMES-127 DEV/GAMES-128 QA1/GAMES-129 FIX1/GAMES-130 BOT/GAMES-131 FEEL/GAMES-132 QA2/GAMES-133 FIX2/GAMES-135 VIS/GAMES-136 STRESS（GAMES-134 为别单占用非本链）"
+   }
+  },
+  "multiplayer:street-soccer": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 8,
+   "notes": "E6-W2-T3 混合轨第三款收官（单链 8/8 预算版、FIX1/FIX2 零退回跳过：设计书→DEV→QA1→BOT→FEEL→QA2→VIS→STRESS——平台第 11 条完整单链=W2 波第三款收官+E6 11/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间街头足球 2v2 测试房 8min ts2 churn+观战锚/满编 2v2+第 5 人观战 spot/十一游戏同网关混编全家福 street 第 11 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/street-soccer-stress.md）。单链要目：DEV S3+S4 双技术复用第三款（单流双域：球员域 tick 步进+球域 Q16 子步；empire 分帧型的实时体育单流变体+pool 定点物理/TRIG16 跨作复用）；持球权零预测=谁带球谁预测的另一半（状态归属表落地）；QA1 测试房 WS 面隔离/观战须 4 真人反证/HTTP 时延伪带（n0 计数+250ms 弃样窗）；BOT 传球线封堵 excl 坑（终点=队友自身恒封堵→直塞死代码）/放水链回放零扰动/生态位让位两层；FEEL 终局探针两段式坑（ended 后世界层停绘）/SND.fired 持久集/rAF 首帧播种死码；QA2 mercy 制败死锁三因（ambient 局长 180s>帽/弃房回灌/skip 错字段）+庆柷墙钟帽余量——终跑 6/9 结构链代码实证；VIS HF 非法 font 简写 canvas 静默忽略首证（全 HUD 10px 缺省字）+双编码像素核法+识图 v2 九探针。实录=知识库草稿《街头足球开发实录》",
+   "net": {
+    "tech": "S3+S4",
+    "bot": "两档街头 Bot（casual 街坊：基础移动+随机射门/balanced 老鸟：站位+传球线+门线看守抢断）+放水链（L1 让力 pow≡552/L2 降档散布 340-680，game.json bot.mercy/bot.casual 可调）+团队作 pulse（META.pulseTeam seat%2）；断线托管=balanced（挂机=空门放对手，设计 §4.3）",
+    "chain": "GAMES-137 设计书/GAMES-138 DEV/GAMES-139 QA1/GAMES-140 BOT/GAMES-141 FEEL/GAMES-142 QA2/GAMES-143 VIS/GAMES-144 STRESS（FIX1/FIX2 零退回跳过未占单号）"
+   }
+  },
+  "multiplayer:iron-torrent": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 9,
+   "notes": "E6-W2-T4 混合轨第四款收官（单链 9/9 预算版、FIX2 零退回跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→VIS→STRESS——平台第 12 条完整单链=W2 波第四款收官+E6 12/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间钢铁洪流 2v2 测试房 8min ts2 churn+观战锚/满编 2v2+第 5 人观战 spot（击杀特写横幅数据面）/十二游戏同网关混编全家福 iron 第 12 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/iron-torrent-stress.md）。单链要目：DEV S4 预测弹道第二证（连续预测+离散段重演组合：坦克域 tick 步进 input ring ack 和解+弹道域 Q16 子步 fire 全参下发）；QA1 离散 cmd 塞 20Hz 自计数 input 帧恒越预约窗（testapi≠WS 路径盲区）；FIX1 三层根因（复刻缺陷形状不能定位层/testapi payload-当-keys/设计书即缺陷载体）+sanitizeKeys 加法式零感知+网关三态谱清点定案；BOT 决策节流 forceFresh+站桩带冻占点圈+换班窗陈旧五实例；FEEL 对照带计量点错位/临终并房/探针窗阵亡三假红源；QA2 latency 逐局谓词低尾翻转（Δmean=+1.43 稳）+端口并存陷阱+mercy 三坑；VIS 快照整清吃探针段/木箱串色谓词/焰叠本体合成色/双编码像素核。实录=知识库草稿《钢铁洪流开发实录》",
+   "net": {
+    "tech": "S4",
+    "bot": "三档装甲 Bot（casual 散兵：无提前量/balanced 老兵：1-2 轮迭代提前量+站桩带冻占点圈/competitive 神炮手：3 轮闭式迭代+换班窗）+决策节流 forceFresh+卡死滑墙账本；断线托管=balanced（挂机=送命池，设计 §4.3）",
+    "chain": "GAMES-145 设计书/GAMES-146 DEV/GAMES-147 QA1/GAMES-148 FIX1/GAMES-149 BOT/GAMES-150 FEEL/GAMES-151 QA2/GAMES-152 VIS/GAMES-154 STRESS（GAMES-153 为别单占用非本链；FIX2 零退回跳过未占单号）"
+   }
+  },
+  "multiplayer:yi-pavilion": {
+   "stage": "accepted",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass",
+   "iterations": 9,
+   "notes": "E6-W2-T5 第五款收官（单链 9/9 预算版、FIX2 零退回跳过：设计书→DEV→QA1→FIX1→BOT→FEEL→QA2→VIS→STRESS——平台第 13 条完整单链=W2 波第五款收官+E6 13/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间弈界棋阁 1v1 测试房 8min ts2 三模式混开 churn（gomoku/reversi/cascade）+keeper 观战锚/满编 1v1 双真人+第 3 人观战 spot（观战手数进度 ruling moveNo 顶层面）/十三游戏同网关混编全家福 yi 第 13 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/yi-pavilion-stress.md）。单链要目：DEV S5 回合权威第三证·多规则集统一引擎（RULES 五函数注册表 gomoku/reversi/cascade 一套引擎零代码分叉；井字 SUB[19683] 完美解表入 hash；feat 特征提取器=RULES 一等公民服务器 Bot 与客户端威胁提示同源；零隐藏=个性化恒等映射观战即对局视图；一套 engine hash 护栏三模式）；QA1 F1 反应表键序失配族（S5 个性化谱系第三作恒等位）+双真人席慢打钟率交叉引用 0.01%；FIX1 F1 双成因（featOf 求交落导出面+balanced ΔV≤0 弃权）；BOT 开局树奖金制（硬接管丢强度二证）+行动性悬崖 3↔5+判别器原则等价；FEEL 离线零网关口径+批内自清+ruleOf 短路三坑；QA2 bothost 全 casual 档=mercy 在线观测位在托管接管 bot（双接管协议复证）+welcome seats 键 level 误杀+长局 8min 钟尽终局 reason=clock 设计态验证面；VIS 无头帧塌带瞬态墨取证三律+探针红先证产品码。实录=知识库草稿《弈界棋阁开发实录》",
+   "net": {
+    "tech": "S5",
+    "bot": "多规则三档棋士 Bot（casual 棋感：一阶特征即走+30s 步限单步代走/balanced 棋士：feat 求交威胁读+开局树奖金制/competitive 棋圣：判别器原则等价+行动性悬崖 3↔5 调参）+Ultimate TTT 送位策略；断线托管=balanced+倾向继承（主动托管 host op 三层：单步代走/持续续打/afk 世代）",
+    "chain": "GAMES-153 设计书/GAMES-155 DEV/GAMES-156 QA1/GAMES-157 FIX1/GAMES-158 BOT/GAMES-159 FEEL/GAMES-160 QA2/GAMES-161 VIS/GAMES-162 STRESS（GAMES-154 为别单占用非本链；FIX2 零退回跳过未占单号）"
+   }
+  },
+  "multiplayer:deep-foodchain": {
+   "status": "accepted",
+   "date": "2026-10-17",
+   "net": {
+    "tech": "S6"
+   },
+   "bot": {
+    "levels": 3,
+    "swarm": true,
+    "takeOver": "casual"
+   },
+   "chain": {
+    "design": "GAMES-163",
+    "dev": "GAMES-164",
+    "qa1": "GAMES-165",
+    "bot": "GAMES-166",
+    "feel": "GAMES-167",
+    "qa2": "GAMES-168",
+    "vis": "GAMES-169",
+    "stress": "GAMES-170",
+    "count": 8,
+    "note": "8/8 预算版：FIX1/FIX2 零退回跳过未占单号"
+   },
+   "notes": "E6-W2-T6 第六款收官（单链 8/8 预算版、FIX1/FIX2 零退回跳过：设计书→DEV→QA1→BOT→FEEL→QA2→VIS→STRESS——平台第 14 条完整单链=W2 波第六款收官+E6 14/21 里程碑）。STRESS 三组 PASS+无泄漏四件套（6 间深海食物链 24 席测试房 8min ts2 满编混档（null+comp×3+bal×6+cas×14）+实体量重载 cap{fish24/site180/drop240/M4000} churn（maxTicks2400 投影终局=测试房专属终局路径，生产常驻渔场恒不终局）/满编 24 席双真人+bot 让位+第 3 人观战 spot（观战体型对比条 ext.lb=[seat,score,M]×5 ·1Hz+观战固定 AOI460）/十四游戏同网关混编全家福 deep 第 14 款注册成员+RSS 二段+句柄+房间回收+日志零 uncaught，docs/qa/deep-foodchain-stress.md）。单链要目：DEV S6 海量实体第二证·吞噬成长链（吞噬裁决 ruling 化一裁三账 {k:devour} 单事件原子携带击杀/质量转移/化粒；质量守恒账本六计数恒等式 A8 残差 0；K=1.25 连续体型比判定+档位是标签不是判定）；QA1 秒配 20 鱼+资源位 180+实体三顶声明块/K1.25 临界定档双向+档位滞回（降档带 −5%）/AOI 体型分级 {380,440,500,560}+15px 滞回带/重连三档（5s 全测+10s 复席+30s 逾窗 bot 接管夺回）；BOT 放水三层（降问+失误注入+让位）+avoid 转实职+persona 覆写；FEEL 同 tick 探针批与 calm 清场竞态三坑；QA2 放水台账重生清零/轮末 deaths 重置/活鱼<20 泊松口径+三房指纹交集=deterministic 在线范式；VIS freeze 复绘竞态/rotate(π) 尾鳍翻面/AOI 底缘角带 Δ 采样 34 面。实录=知识库草稿《深海食物链开发实录》",
+   "perf": "pass",
+   "play": "pass",
+   "visual": "pass"
+  },
+  "multiplayer:party-brawl": {
+   "status": "accepted",
+   "date": "2026-10-18",
+   "net": {
+    "tech": "S6+S7"
+   },
+   "bot": {
+    "levels": 3,
+    "swarm": true,
+    "takeOver": "casual"
+   },
+   "chain": {
+    "design": "GAMES-171",
+    "dev": "GAMES-172",
+    "qa1": "GAMES-173",
+    "fix1": "GAMES-174",
+    "bot": "GAMES-175",
+    "feel": "GAMES-176",
+    "qa2": "GAMES-177",
+    "fix2": "GAMES-178",
+    "vis": "GAMES-179",
+    "stress": "GAMES-180",
+    "count": 10
+   },
+   "notes": "E6-W2-T7 十单链完整收官（平台第 15 条完整单链·单链 10/10 无跳过首例）。S7 预测和解第二证+多实体预测边界四类谱（己席/投掷物 shot 全参重演·弹体零快照 320k 张零 projs/拾取分账/毒圈闭式同源 A8 对账）+S6 底盘（20 席+圈即 AOI）。链内里程碑：FIX1 四面修复+F-3 弹体经济重构（≤31px 几何必中界）+A7-lose 窗校准 2400→4200（首杀带 2980t 网关网格扫描）；BOT 四枚 P0 结构性根因（出生环 int32 回绕/huntT 递减域/拉扯镜像点死区/拾取跳窗）+档序分化 4/4+A9 λ 对称化（接触窗计长器两臂同帽）；FEEL reconcile 死码产品级修复（预测器接线+ext.me 权威坐标）+19 项 FXLIST；FIX2 anchor 域统一（sim tick 域全链+§5.3 撕裂预算激活 lead 26.9px）；VIS 18 帧 18/18+HF 23 键；STRESS 三面 PASS（带宽三红线 625B≤850/1.66%≤8%/9.88≤15KB/s+观战 AOI −39%+决赛圈 H3 4.80 自然下行/30 房 637s RTT p50 1.41ms/泄漏①②）。移交：O-1 网关 ws.js 急断 fd 泄漏（P1 横切 15 款，ws _teardown 缺 destroy 三证实测）+O-2 AOI 滞回只扩不缩+O-3 带宽口径仲裁（5KB/s 单据 vs §5.5 硬线 15KB/s——按设计硬线+常态带 5.3-6.4 落档）。W2 波第七款收官=W2 7/7 全达成，E6 15/21 里程碑。"
   }
+ }
 }
